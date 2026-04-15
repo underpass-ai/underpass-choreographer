@@ -1,0 +1,234 @@
+asyncapi: 3.0.0
+
+info:
+  title: Underpass Choreographer Async API
+  version: 0.1.0
+  description: |
+    Event-driven contract for the Underpass Choreographer. Consumed and
+    published subjects are intentionally use-case agnostic. Domain-specific
+    triggers MUST be mapped onto `TriggerEvent` by the integrating product,
+    not baked into this spec.
+
+    The Choreographer publishes outcome events on the `choreo.*` subject
+    tree. Inbound triggers arrive on `choreo.trigger.*` with a fully
+    self-describing `TriggerEvent` payload (see component).
+  license:
+    name: Apache-2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+
+defaultContentType: application/json
+
+servers:
+  nats:
+    host: nats:4222
+    protocol: nats
+    description: NATS JetStream broker.
+
+channels:
+  trigger:
+    address: choreo.trigger.>
+    messages:
+      triggerEvent:
+        $ref: '#/components/messages/TriggerEvent'
+    description: |
+      Inbound domain events that request deliberations. The concrete
+      subject suffix (e.g. `choreo.trigger.alert.fired`) is chosen by the
+      producer; the Choreographer dispatches based on `requested_specialties`.
+
+  deliberationCompleted:
+    address: choreo.deliberation.completed
+    messages:
+      deliberationCompleted:
+        $ref: '#/components/messages/DeliberationCompleted'
+
+  taskDispatched:
+    address: choreo.task.dispatched
+    messages:
+      taskDispatched:
+        $ref: '#/components/messages/TaskDispatched'
+
+  taskCompleted:
+    address: choreo.task.completed
+    messages:
+      taskCompleted:
+        $ref: '#/components/messages/TaskCompleted'
+
+  taskFailed:
+    address: choreo.task.failed
+    messages:
+      taskFailed:
+        $ref: '#/components/messages/TaskFailed'
+
+  phaseChanged:
+    address: choreo.phase.changed
+    messages:
+      phaseChanged:
+        $ref: '#/components/messages/PhaseChanged'
+
+operations:
+  onTrigger:
+    action: receive
+    channel:
+      $ref: '#/channels/trigger'
+    summary: Dispatch deliberations from an inbound domain trigger.
+
+  publishDeliberationCompleted:
+    action: send
+    channel:
+      $ref: '#/channels/deliberationCompleted'
+
+  publishTaskDispatched:
+    action: send
+    channel:
+      $ref: '#/channels/taskDispatched'
+
+  publishTaskCompleted:
+    action: send
+    channel:
+      $ref: '#/channels/taskCompleted'
+
+  publishTaskFailed:
+    action: send
+    channel:
+      $ref: '#/channels/taskFailed'
+
+  publishPhaseChanged:
+    action: send
+    channel:
+      $ref: '#/channels/phaseChanged'
+
+components:
+  messages:
+    TriggerEvent:
+      name: TriggerEvent
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/TriggerEvent'
+
+    DeliberationCompleted:
+      name: DeliberationCompleted
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/DeliberationCompleted'
+
+    TaskDispatched:
+      name: TaskDispatched
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/TaskDispatched'
+
+    TaskCompleted:
+      name: TaskCompleted
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/TaskCompleted'
+
+    TaskFailed:
+      name: TaskFailed
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/TaskFailed'
+
+    PhaseChanged:
+      name: PhaseChanged
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/PhaseChanged'
+
+  schemas:
+    EventEnvelope:
+      type: object
+      required: [event_id, emitted_at, source]
+      properties:
+        event_id: { type: string, format: uuid }
+        emitted_at: { type: string, format: date-time }
+        source: { type: string, description: "Logical producer identifier." }
+        correlation_id: { type: string, description: "Optional causal chain id." }
+
+    TriggerEvent:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          required: [kind, requested_specialties]
+          properties:
+            kind:
+              type: string
+              description: "Free-form event kind (no enum). Chosen by the producer."
+            requested_specialties:
+              type: array
+              items: { type: string }
+              minItems: 1
+            task_description_template:
+              type: string
+              description: "Optional templated description; receives `payload` on render."
+            constraints:
+              $ref: '#/components/schemas/Constraints'
+            payload:
+              type: object
+              additionalProperties: true
+              description: "Opaque domain payload."
+
+    Constraints:
+      type: object
+      properties:
+        rubric:
+          type: object
+          additionalProperties: true
+        rounds: { type: integer, minimum: 0 }
+        num_agents: { type: integer, minimum: 0 }
+        deadline_ms: { type: integer, minimum: 0 }
+
+    DeliberationCompleted:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          required: [task_id, specialty, winner_proposal_id, duration_ms]
+          properties:
+            task_id: { type: string }
+            specialty: { type: string }
+            winner_proposal_id: { type: string }
+            duration_ms: { type: integer, minimum: 0 }
+            num_candidates: { type: integer, minimum: 0 }
+            score: { type: number }
+
+    TaskDispatched:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          required: [task_id, specialty]
+          properties:
+            task_id: { type: string }
+            specialty: { type: string }
+            trigger_event_id: { type: string, format: uuid }
+
+    TaskCompleted:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          required: [task_id, specialty, duration_ms]
+          properties:
+            task_id: { type: string }
+            specialty: { type: string }
+            duration_ms: { type: integer, minimum: 0 }
+            agent_id: { type: string }
+
+    TaskFailed:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          required: [task_id, specialty, error]
+          properties:
+            task_id: { type: string }
+            specialty: { type: string }
+            error: { type: string }
+            error_type: { type: string }
+
+    PhaseChanged:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          required: [task_id, from_phase, to_phase]
+          properties:
+            task_id: { type: string }
+            from_phase: { type: string }
+            to_phase: { type: string }

@@ -1,0 +1,25 @@
+apiVersion: v2
+name: choreographer
+description: |
+  Underpass Choreographer — event-driven coordinator of specialist agent
+  councils. Use-case agnostic and provider-agnostic (vLLM, Anthropic,
+  OpenAI, local, rule-based, human-in-the-loop).
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.28.0-0"
+home: https://github.com/underpass-ai/underpass-choreographer
+sources:
+  - https://github.com/underpass-ai/underpass-choreographer
+maintainers:
+  - name: Underpass AI
+    url: https://github.com/underpass-ai
+keywords:
+  - underpass
+  - choreographer
+  - agents
+  - event-driven
+  - grpc
+  - nats
+annotations:
+  category: AI

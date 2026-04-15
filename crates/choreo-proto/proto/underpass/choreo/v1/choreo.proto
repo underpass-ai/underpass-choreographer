@@ -1,0 +1,322 @@
+// Copyright Underpass AI. Licensed under Apache-2.0.
+//
+// Underpass Choreographer — event-driven coordinator of specialist agent
+// councils. Use-case agnostic: no vocabulary from any specific domain
+// (software engineering, clinical, supply chain, etc.) is baked in.
+//
+// Key concepts:
+//   - Specialty: a free-form label identifying a kind of expertise
+//                (e.g. "triage", "reviewer", "planner"). Defined by the
+//                operator, never enumerated by this contract.
+//   - Agent:     a participant capable of proposing, critiquing, and
+//                revising solutions for a task.
+//   - Council:   a group of Agents for a given Specialty that deliberates
+//                over a task.
+//   - Task:      a unit of work submitted for deliberation; carries a
+//                description and structured constraints.
+//   - Deliberation: proposal -> peer critique -> revision -> validation
+//                   -> scoring -> ranked results.
+//   - TriggerEvent: an inbound domain event that instructs the
+//                   choreographer to dispatch deliberations across one
+//                   or more specialties.
+//
+// All domain-specific content is carried as opaque, structured data
+// (google.protobuf.Struct / map<string, Value>) so any use case can
+// attach its own attributes without modifying this contract.
+
+syntax = "proto3";
+
+package underpass.choreo.v1;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+// ============================================================================
+// Service
+// ============================================================================
+
+service Choreographer {
+  // ---- Deliberation ----------------------------------------------------
+
+  // Run a deliberation on the council registered for the requested
+  // specialty. Blocks until the ranked results are ready.
+  rpc Deliberate(DeliberateRequest) returns (DeliberateResponse);
+
+  // Like Deliberate but streams progress updates (proposals, critiques,
+  // revisions, scores) as they happen.
+  rpc StreamDeliberation(DeliberateRequest) returns (stream DeliberationUpdate);
+
+  // Retrieve a previously-executed deliberation by task id.
+  rpc GetDeliberationResult(GetDeliberationResultRequest)
+      returns (GetDeliberationResultResponse);
+
+  // End-to-end orchestration: deliberate AND execute the winning
+  // proposal via the configured executor port. Opaque to the
+  // choreographer what "execute" means — determined by the adapter.
+  rpc Orchestrate(OrchestrateRequest) returns (OrchestrateResponse);
+
+  // ---- Council / Agent registry ---------------------------------------
+
+  rpc CreateCouncil(CreateCouncilRequest) returns (CreateCouncilResponse);
+  rpc ListCouncils(ListCouncilsRequest) returns (ListCouncilsResponse);
+  rpc DeleteCouncil(DeleteCouncilRequest) returns (DeleteCouncilResponse);
+
+  rpc RegisterAgent(RegisterAgentRequest) returns (RegisterAgentResponse);
+  rpc UnregisterAgent(UnregisterAgentRequest) returns (UnregisterAgentResponse);
+
+  // ---- Triggers (generic, replaces ProcessPlanningEvent) --------------
+
+  // Submit a domain event that should fan out to one or more
+  // deliberations. Mirrors the behavior of the NATS auto-dispatch path
+  // but exposed as a synchronous RPC for callers without a broker.
+  rpc ProcessTriggerEvent(TriggerEvent) returns (TriggerAck);
+
+  // ---- Observability --------------------------------------------------
+
+  rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
+  rpc GetMetrics(GetMetricsRequest) returns (GetMetricsResponse);
+}
+
+// ============================================================================
+// Core value objects
+// ============================================================================
+
+// A Task is the unit of work a council deliberates over.
+// `description` is a free-form prompt; `attributes` is an opaque bag
+// for use-case-specific structured data (alert payloads, records,
+// document refs, etc.).
+message Task {
+  string task_id = 1;
+  string description = 2;
+  string specialty = 3;
+  Constraints constraints = 4;
+  google.protobuf.Struct attributes = 5;
+}
+
+// Constraints shape how the council deliberates.
+// `rubric` is opaque to the choreographer — passed verbatim to agents
+// and validators as part of the deliberation context.
+message Constraints {
+  google.protobuf.Struct rubric = 1;
+  uint32 rounds = 2;        // peer-review rounds; 0 means implementation default
+  uint32 num_agents = 3;    // requested parallelism; 0 means use council size
+  uint64 deadline_ms = 4;   // optional soft deadline; 0 means none
+}
+
+// A single agent's output from one step of deliberation.
+message Proposal {
+  string proposal_id = 1;
+  string author_agent_id = 2;
+  string content = 3;                 // free-form solution artifact
+  google.protobuf.Struct metadata = 4; // opaque per-agent annotations
+}
+
+// Outcome of validating and scoring a proposal.
+message ValidationOutcome {
+  double score = 1;
+  bool passed = 2;
+  repeated ValidatorReport reports = 3;
+}
+
+message ValidatorReport {
+  string validator = 1;    // free-form validator id
+  bool passed = 2;
+  string summary = 3;
+  google.protobuf.Struct details = 4;
+}
+
+// A ranked deliberation result.
+message DeliberationResult {
+  Proposal proposal = 1;
+  ValidationOutcome validation = 2;
+  uint32 rank = 3;         // 0 = winner
+}
+
+// Incremental update emitted during streaming deliberation.
+message DeliberationUpdate {
+  string task_id = 1;
+  DeliberationPhase phase = 2;
+  oneof payload {
+    Proposal proposal = 10;
+    Critique critique = 11;
+    Revision revision = 12;
+    ValidationOutcome validation = 13;
+    DeliberationResult result = 14;
+  }
+  google.protobuf.Timestamp emitted_at = 20;
+}
+
+enum DeliberationPhase {
+  DELIBERATION_PHASE_UNSPECIFIED = 0;
+  DELIBERATION_PHASE_PROPOSING = 1;
+  DELIBERATION_PHASE_CRITIQUING = 2;
+  DELIBERATION_PHASE_REVISING = 3;
+  DELIBERATION_PHASE_VALIDATING = 4;
+  DELIBERATION_PHASE_SCORING = 5;
+  DELIBERATION_PHASE_COMPLETED = 6;
+}
+
+message Critique {
+  string reviewer_agent_id = 1;
+  string target_proposal_id = 2;
+  string feedback = 3;
+}
+
+message Revision {
+  string author_agent_id = 1;
+  string proposal_id = 2;
+  string updated_content = 3;
+}
+
+// ============================================================================
+// Council / Agent
+// ============================================================================
+
+message CouncilSummary {
+  string specialty = 1;
+  uint32 num_agents = 2;
+  repeated AgentSummary agents = 3;    // optional; populated on request
+  google.protobuf.Timestamp created_at = 4;
+}
+
+message AgentSummary {
+  string agent_id = 1;
+  string specialty = 2;
+  string kind = 3;                     // adapter-defined, e.g. "vllm", "frontier", "rule", "human"
+  google.protobuf.Struct attributes = 4;
+}
+
+// ============================================================================
+// Triggers
+// ============================================================================
+
+// Opaque event instructing the choreographer to run deliberations.
+// The event carries its own domain payload and the list of specialties
+// whose councils should be dispatched.
+message TriggerEvent {
+  string event_id = 1;
+  string kind = 2;                     // free-form, e.g. "alert.fired", "case.opened"
+  string source = 3;                   // producer identifier
+  google.protobuf.Timestamp emitted_at = 4;
+
+  repeated string requested_specialties = 5;
+  string task_description_template = 6;  // optional; rendered with `payload`
+  Constraints constraints = 7;
+
+  google.protobuf.Struct payload = 8;  // opaque domain data
+}
+
+message TriggerAck {
+  string event_id = 1;
+  bool accepted = 2;
+  repeated string dispatched_task_ids = 3;
+  string reason = 4;                   // populated when accepted=false
+}
+
+// ============================================================================
+// RPC request / response messages
+// ============================================================================
+
+message DeliberateRequest {
+  Task task = 1;
+}
+
+message DeliberateResponse {
+  string task_id = 1;
+  repeated DeliberationResult results = 2;
+  string winner_proposal_id = 3;
+  uint64 duration_ms = 4;
+  google.protobuf.Struct metadata = 5;
+}
+
+message GetDeliberationResultRequest {
+  string task_id = 1;
+}
+
+message GetDeliberationResultResponse {
+  bool found = 1;
+  DeliberateResponse result = 2;
+}
+
+message OrchestrateRequest {
+  Task task = 1;
+  google.protobuf.Struct execution_options = 2;  // opaque for executor adapter
+}
+
+message OrchestrateResponse {
+  string task_id = 1;
+  string execution_id = 2;
+  DeliberationResult winner = 3;
+  repeated DeliberationResult candidates = 4;
+  uint64 duration_ms = 5;
+  google.protobuf.Struct metadata = 6;
+}
+
+message CreateCouncilRequest {
+  string specialty = 1;
+  uint32 num_agents = 2;
+  google.protobuf.Struct agent_config = 3;  // passed to agent factory
+}
+
+message CreateCouncilResponse {
+  CouncilSummary council = 1;
+}
+
+message ListCouncilsRequest {
+  bool include_agents = 1;
+}
+
+message ListCouncilsResponse {
+  repeated CouncilSummary councils = 1;
+}
+
+message DeleteCouncilRequest {
+  string specialty = 1;
+}
+
+message DeleteCouncilResponse {
+  bool deleted = 1;
+}
+
+message RegisterAgentRequest {
+  string specialty = 1;
+  AgentSummary agent = 2;
+  google.protobuf.Struct agent_config = 3;
+}
+
+message RegisterAgentResponse {
+  string agent_id = 1;
+}
+
+message UnregisterAgentRequest {
+  string agent_id = 1;
+}
+
+message UnregisterAgentResponse {
+  bool unregistered = 1;
+}
+
+message GetStatusRequest {
+  bool include_stats = 1;
+}
+
+message GetStatusResponse {
+  string version = 1;
+  uint64 uptime_seconds = 2;
+  string health = 3;                  // "healthy" | "degraded" | "unhealthy"
+  Statistics stats = 4;
+}
+
+message GetMetricsRequest {}
+
+message GetMetricsResponse {
+  Statistics stats = 1;
+}
+
+message Statistics {
+  uint64 total_deliberations = 1;
+  uint64 total_orchestrations = 2;
+  uint64 total_duration_ms = 3;
+  double average_duration_ms = 4;
+  map<string, uint64> per_specialty_counts = 5;
+}

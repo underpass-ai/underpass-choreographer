@@ -1,0 +1,60 @@
+name: e2e
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: e2e-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # --------------------------------------------------------------------
+  # docker-compose-based E2E: fastest feedback loop. The full stack
+  # (Choreographer + NATS + fake agent) is brought up with compose and a
+  # runner container drives the scenarios over the gRPC contract.
+  # --------------------------------------------------------------------
+  e2e-compose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Verify Docker / Compose
+        run: |
+          docker version
+          docker compose version
+
+      - name: Run E2E (docker compose)
+        run: bash scripts/ci/e2e-compose.sh
+
+  # --------------------------------------------------------------------
+  # Kubernetes-in-a-job E2E: validates the Helm chart against a real
+  # cluster (kind) with the runner executing as a Kubernetes Job. This
+  # is the contract-true path used in production-like validation.
+  # --------------------------------------------------------------------
+  e2e-kubernetes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Create kind cluster
+        uses: helm/kind-action@a1b0e391336a6ee6713a0583f8c6240d70863de3
+        with:
+          cluster_name: choreographer-e2e
+
+      - name: Install Helm
+        run: bash scripts/ci/install-helm.sh
+
+      - name: Run E2E (kubernetes job)
+        run: bash scripts/ci/e2e-kubernetes.sh

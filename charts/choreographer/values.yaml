@@ -1,0 +1,103 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/underpass-ai/underpass-choreographer
+  pullPolicy: IfNotPresent
+  # One of `tag` or `digest` MUST be set. There is no default: mutable
+  # `:latest` pulls are refused in production to keep releases reproducible.
+  tag: ""
+  digest: ""
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+service:
+  type: ClusterIP
+  port: 50055
+  annotations: {}
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 1
+    memory: 512Mi
+
+probes:
+  liveness:
+    enabled: true
+    initialDelaySeconds: 10
+    periodSeconds: 10
+  readiness:
+    enabled: true
+    initialDelaySeconds: 5
+    periodSeconds: 10
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# ---------------------------------------------------------------------------
+# Runtime configuration
+# ---------------------------------------------------------------------------
+#
+# The Choreographer is provider-agnostic. None of these fields select a
+# specific LLM vendor; agent providers are configured by the deployment
+# (e.g. via secret-mounted config files or additional env vars) and plug in
+# through the `AgentPort` trait.
+config:
+  grpcPort: 50055
+  logLevel: info
+
+messaging:
+  nats:
+    enabled: true
+    url: nats://nats:4222
+    # Subject prefix used for Choreographer-published events.
+    publishPrefix: choreo
+    # Wildcard of inbound trigger subjects consumed by the service.
+    triggerSubject: choreo.trigger.>
+
+tls:
+  # Transport security mode for the gRPC service.
+  # One of: "none" | "server" | "mutual".
+  mode: none
+  existingSecret: ""
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts: []
+  tls: []
+
+development:
+  # Setting `image.tag` to a mutable reference (e.g. "latest") is rejected
+  # unless explicitly allowed in a non-production environment.
+  allowMutableImageTags: false

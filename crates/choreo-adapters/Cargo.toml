@@ -1,0 +1,53 @@
+[package]
+name = "choreo-adapters"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Infrastructure adapters implementing Choreographer ports. Provider-agnostic; each integration is opt-in via a Cargo feature."
+
+[lints]
+workspace = true
+
+# Provider adapters are opt-in. The Choreographer core is agnostic to any
+# particular LLM vendor, transport, or message bus; concrete integrations
+# live behind features so that consumers pick what they need.
+[features]
+default = []
+
+# Transports / infra
+nats = ["dep:async-nats"]
+
+# Agent providers (LLMs, humans-in-the-loop, rule engines, ...).
+# Each is a peer adapter behind its own feature flag — none is privileged.
+agent-vllm = ["_http"]
+agent-anthropic = ["_http"]
+agent-openai = ["_http"]
+
+# Internal helper feature: shared HTTP client wiring for any provider adapter.
+_http = ["dep:reqwest"]
+
+[dependencies]
+choreo-core = { workspace = true }
+choreo-proto = { workspace = true }
+async-trait = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+futures = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+figment = { workspace = true }
+time = { workspace = true }
+uuid = { workspace = true }
+
+async-nats = { workspace = true, optional = true }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false, optional = true }
+
+[dev-dependencies]
+mockall = { workspace = true }
+tokio-test = { workspace = true }

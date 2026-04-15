@@ -1,0 +1,10 @@
+image:
+  tag: latest
+
+development:
+  allowMutableImageTags: true
+
+messaging:
+  nats:
+    enabled: true
+    url: nats://nats:4222

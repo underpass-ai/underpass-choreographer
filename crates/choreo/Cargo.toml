@@ -1,0 +1,30 @@
+[package]
+name = "choreo"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Underpass Choreographer binary: wires adapters and runs the gRPC + event-driven service."
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "choreo"
+path = "src/main.rs"
+
+[dependencies]
+choreo-core = { workspace = true }
+choreo-app = { workspace = true }
+choreo-adapters = { workspace = true, features = ["nats"] }
+choreo-proto = { workspace = true }
+
+tokio = { workspace = true }
+tonic = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+figment = { workspace = true }
+serde = { workspace = true }

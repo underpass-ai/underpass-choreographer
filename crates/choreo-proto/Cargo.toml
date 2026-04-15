@@ -1,0 +1,20 @@
+[package]
+name = "choreo-proto"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Protobuf / tonic-generated gRPC bindings for underpass.choreo.v1."
+
+[lints]
+workspace = true
+
+[dependencies]
+tonic = { workspace = true }
+prost = { workspace = true }
+prost-types = { workspace = true }
+
+[build-dependencies]
+tonic-build = { workspace = true }
