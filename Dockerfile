@@ -17,7 +17,10 @@ ENV CARGO_INCREMENTAL=0 \
     RUSTFLAGS="-C strip=symbols"
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends protobuf-compiler ca-certificates \
+ && apt-get install -y --no-install-recommends \
+      protobuf-compiler \
+      libprotobuf-dev \
+      ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
