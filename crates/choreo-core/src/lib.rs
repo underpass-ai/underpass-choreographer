@@ -18,6 +18,8 @@
 
 pub mod entities;
 pub mod error;
+pub mod events;
+pub mod ports;
 pub mod value_objects;
 
 pub use error::DomainError;

@@ -35,7 +35,7 @@ import "google/protobuf/timestamp.proto";
 // Service
 // ============================================================================
 
-service Choreographer {
+service ChoreographerService {
   // ---- Deliberation ----------------------------------------------------
 
   // Run a deliberation on the council registered for the requested
@@ -44,11 +44,10 @@ service Choreographer {
 
   // Like Deliberate but streams progress updates (proposals, critiques,
   // revisions, scores) as they happen.
-  rpc StreamDeliberation(DeliberateRequest) returns (stream DeliberationUpdate);
+  rpc StreamDeliberation(StreamDeliberationRequest) returns (stream StreamDeliberationResponse);
 
   // Retrieve a previously-executed deliberation by task id.
-  rpc GetDeliberationResult(GetDeliberationResultRequest)
-      returns (GetDeliberationResultResponse);
+  rpc GetDeliberationResult(GetDeliberationResultRequest) returns (GetDeliberationResultResponse);
 
   // End-to-end orchestration: deliberate AND execute the winning
   // proposal via the configured executor port. Opaque to the
@@ -69,7 +68,7 @@ service Choreographer {
   // Submit a domain event that should fan out to one or more
   // deliberations. Mirrors the behavior of the NATS auto-dispatch path
   // but exposed as a synchronous RPC for callers without a broker.
-  rpc ProcessTriggerEvent(TriggerEvent) returns (TriggerAck);
+  rpc ProcessTriggerEvent(ProcessTriggerEventRequest) returns (ProcessTriggerEventResponse);
 
   // ---- Observability --------------------------------------------------
 
@@ -98,16 +97,16 @@ message Task {
 // and validators as part of the deliberation context.
 message Constraints {
   google.protobuf.Struct rubric = 1;
-  uint32 rounds = 2;        // peer-review rounds; 0 means implementation default
-  uint32 num_agents = 3;    // requested parallelism; 0 means use council size
-  uint64 deadline_ms = 4;   // optional soft deadline; 0 means none
+  uint32 rounds = 2; // peer-review rounds; 0 means implementation default
+  uint32 num_agents = 3; // requested parallelism; 0 means use council size
+  uint64 deadline_ms = 4; // optional soft deadline; 0 means none
 }
 
 // A single agent's output from one step of deliberation.
 message Proposal {
   string proposal_id = 1;
   string author_agent_id = 2;
-  string content = 3;                 // free-form solution artifact
+  string content = 3; // free-form solution artifact
   google.protobuf.Struct metadata = 4; // opaque per-agent annotations
 }
 
@@ -119,7 +118,7 @@ message ValidationOutcome {
 }
 
 message ValidatorReport {
-  string validator = 1;    // free-form validator id
+  string validator = 1; // free-form validator id
   bool passed = 2;
   string summary = 3;
   google.protobuf.Struct details = 4;
@@ -129,7 +128,7 @@ message ValidatorReport {
 message DeliberationResult {
   Proposal proposal = 1;
   ValidationOutcome validation = 2;
-  uint32 rank = 3;         // 0 = winner
+  uint32 rank = 3; // 0 = winner
 }
 
 // Incremental update emitted during streaming deliberation.
@@ -175,14 +174,14 @@ message Revision {
 message CouncilSummary {
   string specialty = 1;
   uint32 num_agents = 2;
-  repeated AgentSummary agents = 3;    // optional; populated on request
+  repeated AgentSummary agents = 3; // optional; populated on request
   google.protobuf.Timestamp created_at = 4;
 }
 
 message AgentSummary {
   string agent_id = 1;
   string specialty = 2;
-  string kind = 3;                     // adapter-defined, e.g. "vllm", "frontier", "rule", "human"
+  string kind = 3; // adapter-defined, e.g. "vllm", "frontier", "rule", "human"
   google.protobuf.Struct attributes = 4;
 }
 
@@ -195,22 +194,30 @@ message AgentSummary {
 // whose councils should be dispatched.
 message TriggerEvent {
   string event_id = 1;
-  string kind = 2;                     // free-form, e.g. "alert.fired", "case.opened"
-  string source = 3;                   // producer identifier
+  string kind = 2; // free-form, e.g. "alert.fired", "case.opened"
+  string source = 3; // producer identifier
   google.protobuf.Timestamp emitted_at = 4;
 
   repeated string requested_specialties = 5;
-  string task_description_template = 6;  // optional; rendered with `payload`
+  string task_description_template = 6; // optional; rendered with `payload`
   Constraints constraints = 7;
 
-  google.protobuf.Struct payload = 8;  // opaque domain data
+  google.protobuf.Struct payload = 8; // opaque domain data
+}
+
+message ProcessTriggerEventRequest {
+  TriggerEvent event = 1;
+}
+
+message ProcessTriggerEventResponse {
+  TriggerAck ack = 1;
 }
 
 message TriggerAck {
   string event_id = 1;
   bool accepted = 2;
   repeated string dispatched_task_ids = 3;
-  string reason = 4;                   // populated when accepted=false
+  string reason = 4; // populated when accepted=false
 }
 
 // ============================================================================
@@ -219,6 +226,14 @@ message TriggerAck {
 
 message DeliberateRequest {
   Task task = 1;
+}
+
+message StreamDeliberationRequest {
+  Task task = 1;
+}
+
+message StreamDeliberationResponse {
+  DeliberationUpdate update = 1;
 }
 
 message DeliberateResponse {
@@ -240,7 +255,7 @@ message GetDeliberationResultResponse {
 
 message OrchestrateRequest {
   Task task = 1;
-  google.protobuf.Struct execution_options = 2;  // opaque for executor adapter
+  google.protobuf.Struct execution_options = 2; // opaque for executor adapter
 }
 
 message OrchestrateResponse {
@@ -255,7 +270,7 @@ message OrchestrateResponse {
 message CreateCouncilRequest {
   string specialty = 1;
   uint32 num_agents = 2;
-  google.protobuf.Struct agent_config = 3;  // passed to agent factory
+  google.protobuf.Struct agent_config = 3; // passed to agent factory
 }
 
 message CreateCouncilResponse {
@@ -303,7 +318,7 @@ message GetStatusRequest {
 message GetStatusResponse {
   string version = 1;
   uint64 uptime_seconds = 2;
-  string health = 3;                  // "healthy" | "degraded" | "unhealthy"
+  string health = 3; // "healthy" | "degraded" | "unhealthy"
   Statistics stats = 4;
 }
 
