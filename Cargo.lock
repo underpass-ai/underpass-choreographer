@@ -306,16 +306,21 @@ name = "choreo"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-nats",
+ "async-trait",
  "choreo-adapters",
  "choreo-app",
  "choreo-core",
  "choreo-proto",
  "figment",
  "serde",
+ "thiserror 1.0.69",
+ "time",
  "tokio",
  "tonic",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
