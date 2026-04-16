@@ -336,6 +336,7 @@ mod tests {
     }
 
     // --- Agent -----------------------------------------------------------
+    #[derive(Debug)]
     struct StubAgent {
         id: AgentId,
         specialty: Specialty,
@@ -765,6 +766,7 @@ mod tests {
     /// `(i+1) % N`.
     #[tokio::test]
     async fn peer_review_pairs_each_agent_with_its_neighbour() {
+        #[derive(Debug)]
         struct MarkerAgent {
             id: AgentId,
             specialty: Specialty,

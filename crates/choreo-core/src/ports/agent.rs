@@ -38,7 +38,7 @@ pub struct Revision {
 }
 
 #[async_trait]
-pub trait AgentPort: Send + Sync {
+pub trait AgentPort: std::fmt::Debug + Send + Sync {
     /// Stable identity of this agent. Used for attribution and logging.
     fn id(&self) -> &AgentId;
 
