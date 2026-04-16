@@ -106,11 +106,17 @@ impl DeliberateUseCase {
             started_at,
         );
 
-        self.seed_proposals(&mut deliberation, &agents, &task)
+        let seeded_proposal_ids = self
+            .seed_proposals(&mut deliberation, &agents, &task)
             .await?;
         deliberation.advance()?; // Proposing -> Revising
-        self.run_peer_review_rounds(&mut deliberation, &agents, task.constraints())
-            .await?;
+        self.run_peer_review_rounds(
+            &mut deliberation,
+            &agents,
+            &seeded_proposal_ids,
+            task.constraints(),
+        )
+        .await?;
         deliberation.advance()?; // Revising -> Validating
         self.attach_validations(&mut deliberation, task.constraints())
             .await?;
@@ -170,13 +176,24 @@ impl DeliberateUseCase {
         self.agent_resolver.resolve_all(&ids).await
     }
 
+    /// Seed one proposal per agent and return the list of proposal
+    /// ids **in the same order as `agents`**. This preserves the
+    /// agent→proposal mapping which the peer-review round algorithm
+    /// relies on to pick the correct peer (e.g. agent `i` critiques
+    /// the proposal authored by agent `(i+1) % N`).
+    ///
+    /// Using `deliberation.proposals().keys()` instead would iterate
+    /// in sorted `ProposalId` order (the UUID lexicographic order)
+    /// which has no relation to agent order and would scramble the
+    /// peer-review pairing.
     async fn seed_proposals(
         &self,
         deliberation: &mut Deliberation,
         agents: &[Arc<dyn AgentPort>],
         task: &Task,
-    ) -> Result<(), DomainError> {
+    ) -> Result<Vec<ProposalId>, DomainError> {
         let now = self.clock.now();
+        let mut ordered_ids = Vec::with_capacity(agents.len());
         for agent in agents {
             let draft = agent
                 .generate(DraftRequest {
@@ -185,8 +202,9 @@ impl DeliberateUseCase {
                     diverse: true,
                 })
                 .await?;
+            let proposal_id = new_proposal_id()?;
             let proposal = Proposal::new(
-                new_proposal_id()?,
+                proposal_id.clone(),
                 agent.id().clone(),
                 task.specialty().clone(),
                 draft.content,
@@ -194,22 +212,23 @@ impl DeliberateUseCase {
                 now,
             )?;
             deliberation.add_proposal(proposal)?;
+            ordered_ids.push(proposal_id);
         }
-        Ok(())
+        Ok(ordered_ids)
     }
 
     async fn run_peer_review_rounds(
         &self,
         deliberation: &mut Deliberation,
         agents: &[Arc<dyn AgentPort>],
+        ordered_proposal_ids: &[ProposalId],
         constraints: &TaskConstraints,
     ) -> Result<(), DomainError> {
         let rounds = constraints.rounds().get();
         if rounds == 0 || agents.len() < 2 {
             return Ok(());
         }
-        let proposal_ids: Vec<ProposalId> = deliberation.proposals().keys().cloned().collect();
-        if proposal_ids.len() != agents.len() {
+        if ordered_proposal_ids.len() != agents.len() {
             // Invariant: one proposal per agent after seeding. If this
             // fires it is a bug in the seeding step, not adapter-shaped.
             return Err(DomainError::InvariantViolated {
@@ -220,7 +239,7 @@ impl DeliberateUseCase {
         for round in 0..rounds {
             for (i, agent) in agents.iter().enumerate() {
                 let peer_idx = (i + 1) % agents.len();
-                let peer_proposal_id = proposal_ids[peer_idx].clone();
+                let peer_proposal_id = ordered_proposal_ids[peer_idx].clone();
                 let peer_content = deliberation
                     .proposals()
                     .get(&peer_proposal_id)
@@ -731,5 +750,111 @@ mod tests {
                 .as_str(),
             "short"
         );
+    }
+
+    /// Regression test: peer-review pairs agent `i` with proposal
+    /// `(i+1) % N`. An earlier version of `run_peer_review_rounds`
+    /// iterated `deliberation.proposals().keys()` (sorted by
+    /// ProposalId, i.e. random UUID order) which scrambled the pairing
+    /// silently. This test would fail under that buggy ordering.
+    ///
+    /// Setup: a bespoke agent stub whose `revise` returns
+    /// `"<agent_id>_saw:<own_content>"`. After one round of peer
+    /// review each proposal's content identifies the reviewer — so we
+    /// can check that agent `i` revised the proposal of agent
+    /// `(i+1) % N`.
+    #[tokio::test]
+    async fn peer_review_pairs_each_agent_with_its_neighbour() {
+        struct MarkerAgent {
+            id: AgentId,
+            specialty: Specialty,
+            draft: String,
+        }
+        #[async_trait]
+        impl AgentPort for MarkerAgent {
+            fn id(&self) -> &AgentId {
+                &self.id
+            }
+            fn specialty(&self) -> &Specialty {
+                &self.specialty
+            }
+            async fn generate(&self, _request: DraftRequest) -> Result<Revision, DomainError> {
+                Ok(Revision {
+                    content: self.draft.clone(),
+                })
+            }
+            async fn critique(
+                &self,
+                _peer_content: &str,
+                _constraints: &TaskConstraints,
+            ) -> Result<Critique, DomainError> {
+                Ok(Critique {
+                    feedback: String::new(),
+                })
+            }
+            async fn revise(
+                &self,
+                own_content: &str,
+                _critique: &Critique,
+            ) -> Result<Revision, DomainError> {
+                Ok(Revision {
+                    content: format!("{}_saw:{own_content}", self.id),
+                })
+            }
+        }
+
+        let sp = specialty();
+        let make = |id: &str, draft: &str| {
+            Arc::new(MarkerAgent {
+                id: AgentId::new(id).unwrap(),
+                specialty: sp.clone(),
+                draft: draft.to_owned(),
+            }) as Arc<dyn AgentPort>
+        };
+
+        // The use case resolves the council's agents in sorted-id
+        // order (BTreeSet iteration), so `agents[i]` below is the
+        // sorted order: a1, a2, a3.
+        let agents = vec![make("a1", "A"), make("a2", "B"), make("a3", "C")];
+        let council = council_with(&["a1", "a2", "a3"]);
+        let (usecase, _repo, _bus) = fixture(agents, council);
+
+        let t = task(TaskConstraints::new(
+            Rubric::empty(),
+            Rounds::new(1).unwrap(),
+            None,
+            None,
+        ));
+        let out = usecase.execute(t).await.unwrap();
+
+        // Build a map author_id -> content after the round.
+        let by_author: std::collections::HashMap<String, String> = out
+            .deliberation
+            .proposals()
+            .values()
+            .map(|p| (p.author().as_str().to_owned(), p.content().to_owned()))
+            .collect();
+
+        // Expected rotation:
+        //   agent a1 (index 0) critiqued proposal of a2 (index 1) → a1_saw:B
+        //   agent a2 (index 1) critiqued proposal of a3 (index 2) → a2_saw:C
+        //   agent a3 (index 2) critiqued proposal of a1 (index 0) → a3_saw:A
+        assert_eq!(
+            by_author["a1"], "a3_saw:A",
+            "a1's proposal was revised by a3"
+        );
+        assert_eq!(
+            by_author["a2"], "a1_saw:B",
+            "a2's proposal was revised by a1"
+        );
+        assert_eq!(
+            by_author["a3"], "a2_saw:C",
+            "a3's proposal was revised by a2"
+        );
+
+        // Every proposal must have been revised exactly once.
+        for p in out.deliberation.proposals().values() {
+            assert_eq!(p.revision_count(), 1);
+        }
     }
 }
