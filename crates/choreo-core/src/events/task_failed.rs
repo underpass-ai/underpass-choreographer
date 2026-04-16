@@ -10,6 +10,7 @@ const MAX_REASON_LEN: usize = 4096;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TaskFailedEvent {
+    #[serde(flatten)]
     envelope: EventEnvelope,
     task_id: TaskId,
     specialty: Specialty,

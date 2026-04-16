@@ -40,7 +40,7 @@ pub mod noop;
 pub mod grpc;
 
 #[cfg(feature = "nats")]
-pub mod nats {}
+pub mod nats;
 
 pub mod agents {
     #[cfg(feature = "agent-vllm")]

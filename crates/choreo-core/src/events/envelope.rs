@@ -121,4 +121,27 @@ mod tests {
         assert_eq!(env.emitted_at(), at());
         assert_eq!(env.correlation_id(), Some(&corr));
     }
+
+    #[test]
+    fn json_shape_matches_asyncapi_allof() {
+        // AsyncAPI composes EventEnvelope into each event via `allOf`,
+        // which produces a flat JSON object. Events use
+        // `#[serde(flatten)]` on their `envelope` field so the wire
+        // shape matches this expectation. This test locks in the
+        // EventEnvelope keys at the JSON root; breaking it is a
+        // breaking change on the event bus contract.
+        let env = EventEnvelope::new(
+            EventId::new("e").unwrap(),
+            at(),
+            "src",
+            Some(EventId::new("c").unwrap()),
+        )
+        .unwrap();
+        let json = serde_json::to_value(&env).unwrap();
+        let obj = json.as_object().unwrap();
+        assert!(obj.contains_key("event_id"));
+        assert!(obj.contains_key("emitted_at"));
+        assert!(obj.contains_key("source"));
+        assert!(obj.contains_key("correlation_id"));
+    }
 }
