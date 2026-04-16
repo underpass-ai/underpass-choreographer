@@ -1,0 +1,63 @@
+---
+# Minimal NATS deployment for the Kubernetes E2E.
+#
+# Not a production chart — intentionally tiny so the E2E path is
+# exact and debuggable. The Service name `nats` matches the default
+# `messaging.nats.url` the Choreographer chart ships with.
+apiVersion: v1
+kind: Service
+metadata:
+  name: nats
+  labels:
+    app: nats
+    app.kubernetes.io/part-of: choreographer-e2e
+spec:
+  selector:
+    app: nats
+  ports:
+    - name: client
+      port: 4222
+      targetPort: 4222
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nats
+  labels:
+    app: nats
+    app.kubernetes.io/part-of: choreographer-e2e
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nats
+  template:
+    metadata:
+      labels:
+        app: nats
+    spec:
+      containers:
+        - name: nats
+          image: nats:2
+          args: ["-js"]
+          ports:
+            - name: client
+              containerPort: 4222
+              protocol: TCP
+          readinessProbe:
+            tcpSocket:
+              port: client
+            periodSeconds: 2
+            failureThreshold: 30
+          livenessProbe:
+            tcpSocket:
+              port: client
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi

@@ -74,6 +74,12 @@ affinity: {}
 config:
   grpcPort: 50055
   logLevel: info
+  # Optional startup seeding. Comma-separated list of specialty
+  # labels: for each one the binary registers a deterministic
+  # `NoopAgent` and a single-agent council, so the service is
+  # immediately exercisable end-to-end. Off by default — real
+  # deployments register agents through other channels.
+  seedSpecialties: ""
 
 messaging:
   nats:

@@ -39,22 +39,26 @@ spec:
               containerPort: {{ .Values.config.grpcPort }}
               protocol: TCP
           env:
-            - name: GRPC_PORT
+            - name: CHOREO_GRPC_PORT
               value: {{ .Values.config.grpcPort | quote }}
             - name: RUST_LOG
               value: {{ .Values.config.logLevel | quote }}
             {{- if .Values.messaging.nats.enabled }}
-            - name: ENABLE_NATS
+            - name: CHOREO_NATS_ENABLED
               value: "true"
-            - name: NATS_URL
+            - name: CHOREO_NATS_URL
               value: {{ .Values.messaging.nats.url | quote }}
             - name: CHOREO_TRIGGER_SUBJECT
               value: {{ .Values.messaging.nats.triggerSubject | quote }}
             - name: CHOREO_PUBLISH_PREFIX
               value: {{ .Values.messaging.nats.publishPrefix | quote }}
             {{- else }}
-            - name: ENABLE_NATS
+            - name: CHOREO_NATS_ENABLED
               value: "false"
+            {{- end }}
+            {{- if .Values.config.seedSpecialties }}
+            - name: CHOREO_SEED_SPECIALTIES
+              value: {{ .Values.config.seedSpecialties | quote }}
             {{- end }}
           {{- if .Values.probes.liveness.enabled }}
           livenessProbe:
