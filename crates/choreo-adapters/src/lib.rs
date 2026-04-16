@@ -36,6 +36,9 @@ pub mod config;
 pub mod memory;
 pub mod noop;
 
+#[cfg(feature = "grpc")]
+pub mod grpc;
+
 #[cfg(feature = "nats")]
 pub mod nats {}
 
