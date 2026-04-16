@@ -16,12 +16,11 @@ services:
   nats:
     image: nats:2
     command: ["-js"]
-    healthcheck:
-      test: ["CMD", "sh", "-c", "wget -q -O- http://localhost:8222/varz >/dev/null 2>&1 || nc -z localhost 4222"]
-      interval: 2s
-      timeout: 2s
-      retries: 30
-      start_period: 2s
+    # No healthcheck: the upstream nats:2 image is distroless-ish and
+    # ships no shell, wget, nc, or curl, so any compose-level probe
+    # would be brittle. The choreographer retries its NATS connection
+    # on startup (see `compose::wire_messaging`), which is the real
+    # invariant we care about.
 
   choreographer:
     build:
@@ -36,8 +35,7 @@ services:
       CHOREO_SEED_SPECIALTIES: "triage"
       RUST_LOG: "info"
     depends_on:
-      nats:
-        condition: service_healthy
+      - nats
 
   e2e-runner:
     build:
