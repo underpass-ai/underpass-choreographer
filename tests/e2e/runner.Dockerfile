@@ -28,8 +28,8 @@ COPY Cargo.toml Cargo.lock ./
 COPY rust-toolchain.toml ./
 COPY crates ./crates
 
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/src/target \
+RUN --mount=type=cache,id=cargo-registry-e2e-runner,target=/usr/local/cargo/registry \
+    --mount=type=cache,id=cargo-target-e2e-runner,target=/src/target \
     cargo build --release --locked --bin choreo-e2e-runner \
  && install -Dm 0755 target/release/choreo-e2e-runner /out/runner
 
