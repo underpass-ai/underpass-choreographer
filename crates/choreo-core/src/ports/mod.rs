@@ -15,6 +15,7 @@
 //!   change.
 
 mod agent;
+mod agent_resolver;
 mod clock;
 mod configuration;
 mod council_registry;
@@ -25,6 +26,7 @@ mod scoring;
 mod validator;
 
 pub use agent::{AgentPort, Critique, DraftRequest, Revision};
+pub use agent_resolver::AgentResolverPort;
 pub use clock::ClockPort;
 pub use configuration::{ConfigurationPort, ServiceConfig};
 pub use council_registry::CouncilRegistryPort;
