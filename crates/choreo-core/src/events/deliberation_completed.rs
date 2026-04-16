@@ -7,6 +7,7 @@ use crate::value_objects::{DurationMs, ProposalId, Score, Specialty, TaskId};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DeliberationCompletedEvent {
+    #[serde(flatten)]
     envelope: EventEnvelope,
     task_id: TaskId,
     specialty: Specialty,

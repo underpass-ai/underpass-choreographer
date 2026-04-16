@@ -6,6 +6,7 @@ members = [
     "crates/choreo-adapters",
     "crates/choreo-proto",
     "crates/choreo",
+    "crates/choreo-tests-integration",
 ]
 
 [workspace.package]

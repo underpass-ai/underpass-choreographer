@@ -18,6 +18,7 @@ const MAX_KIND_LEN: usize = 128;
 /// An inbound event that fans out into deliberations.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TriggerEvent {
+    #[serde(flatten)]
     envelope: EventEnvelope,
     kind: String,
     requested_specialties: Vec<Specialty>,
@@ -190,6 +191,35 @@ mod tests {
         )
         .unwrap();
         assert_eq!(ev.requested_specialties().len(), 2);
+    }
+
+    #[test]
+    fn json_shape_is_flat_per_asyncapi() {
+        // Regression test: AsyncAPI declares TriggerEvent via allOf
+        // composition with EventEnvelope, so the JSON on the wire has
+        // envelope fields at the top level next to `kind`,
+        // `requested_specialties`, etc. This test would fail if the
+        // `#[serde(flatten)]` attribute on `envelope` regressed.
+        let ev = TriggerEvent::new(
+            env(),
+            "alert.fired",
+            vec![sp("triage")],
+            None,
+            TaskConstraints::default(),
+            Attributes::empty(),
+        )
+        .unwrap();
+        let json = serde_json::to_value(&ev).unwrap();
+        let obj = json.as_object().unwrap();
+        assert!(obj.contains_key("event_id"));
+        assert!(obj.contains_key("source"));
+        assert!(obj.contains_key("emitted_at"));
+        assert!(obj.contains_key("kind"));
+        assert!(obj.contains_key("requested_specialties"));
+        assert!(
+            !obj.contains_key("envelope"),
+            "envelope must flatten into the root"
+        );
     }
 
     #[test]

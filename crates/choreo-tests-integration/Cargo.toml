@@ -1,0 +1,34 @@
+[package]
+name = "choreo-tests-integration"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Integration tests for Choreographer adapters, backed by testcontainers-managed services. Not shipped."
+publish = false
+
+[lints]
+workspace = true
+
+[features]
+# Opt-in: CI enables this feature to actually run the tests. Without
+# the feature the crate compiles but exercises nothing, so `cargo
+# test --workspace` stays fast and network-free.
+container-tests = []
+
+[dependencies]
+choreo-core = { workspace = true }
+choreo-app = { workspace = true }
+choreo-adapters = { workspace = true, features = ["nats"] }
+
+[dev-dependencies]
+async-nats = { workspace = true }
+tokio = { workspace = true }
+time = { workspace = true }
+uuid = { workspace = true }
+serde_json = { workspace = true }
+async-trait = { workspace = true }
+futures = { workspace = true }
+testcontainers = "0.23"

@@ -14,6 +14,7 @@ const MAX_PHASE_LEN: usize = 64;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PhaseChangedEvent {
+    #[serde(flatten)]
     envelope: EventEnvelope,
     task_id: TaskId,
     from_phase: String,

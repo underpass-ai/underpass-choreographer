@@ -15,7 +15,7 @@ workspace = true
 # particular LLM vendor, transport, or message bus; concrete integrations
 # live behind features so that consumers pick what they need.
 [features]
-default = ["grpc"]
+default = ["grpc", "nats"]
 
 # Transports / infra
 grpc = ["dep:prost-types"]

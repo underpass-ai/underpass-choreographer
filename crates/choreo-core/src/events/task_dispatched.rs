@@ -8,6 +8,7 @@ use crate::value_objects::{EventId, Specialty, TaskId};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TaskDispatchedEvent {
+    #[serde(flatten)]
     envelope: EventEnvelope,
     task_id: TaskId,
     specialty: Specialty,
