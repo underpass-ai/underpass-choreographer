@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 IMAGE_TAG="${1:-underpass-choreographer:ci}"
+DOCKERFILE="${2:-Dockerfile}"
 : "${CONTAINER_RUNTIME:=auto}"
 
 select_container_cli() {
@@ -36,9 +37,9 @@ if [[ "${CONTAINER_CLI}" == "podman" ]]; then
   mkdir -p "${XDG_RUNTIME_DIR}"
 fi
 
-echo "building container image with ${CONTAINER_CLI}" >&2
+echo "building ${IMAGE_TAG} with ${CONTAINER_CLI} from ${DOCKERFILE}" >&2
 
 "${CONTAINER_CLI}" build \
-  --file Dockerfile \
+  --file "${DOCKERFILE}" \
   --tag "${IMAGE_TAG}" \
   "${ROOT_DIR}"

@@ -1,0 +1,44 @@
+---
+# End-to-end runner as a Kubernetes Job.
+#
+# Launched after the Choreographer chart is `helm install`-ed in the
+# kind cluster. The Job drives the Choreographer over its public
+# gRPC contract and exits 0 on success; `kubectl wait
+# --for=condition=complete` in the CI script turns that exit code
+# into the job's result.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: choreographer-e2e-runner
+  labels:
+    app.kubernetes.io/name: choreographer-e2e-runner
+    app.kubernetes.io/part-of: choreographer-e2e
+spec:
+  # The runner is intended to run exactly once; a restart on failure
+  # would mask the real error from the CI logs.
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: choreographer-e2e-runner
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: runner
+          image: underpass-choreographer-e2e-runner:e2e
+          imagePullPolicy: Never
+          env:
+            - name: CHOREOGRAPHER_ENDPOINT
+              value: http://choreographer:50055
+            - name: CHOREO_SEED_SPECIALTY
+              value: triage
+            - name: RUST_LOG
+              value: info
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 500m
+              memory: 128Mi
