@@ -11,6 +11,10 @@ description = "Underpass Choreographer binary: wires adapters and runs the gRPC 
 [lints]
 workspace = true
 
+[lib]
+name = "choreo"
+path = "src/lib.rs"
+
 [[bin]]
 name = "choreo"
 path = "src/main.rs"
@@ -18,9 +22,14 @@ path = "src/main.rs"
 [dependencies]
 choreo-core = { workspace = true }
 choreo-app = { workspace = true }
-choreo-adapters = { workspace = true, features = ["nats"] }
+choreo-adapters = { workspace = true, features = ["grpc", "nats"] }
 choreo-proto = { workspace = true }
 
+async-nats = { workspace = true }
+async-trait = { workspace = true }
+thiserror = { workspace = true }
+time = { workspace = true }
+uuid = { workspace = true }
 tokio = { workspace = true }
 tonic = { workspace = true }
 anyhow = { workspace = true }

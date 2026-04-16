@@ -14,8 +14,11 @@
 //! | [`memory::InMemoryCouncilRegistry`] | `CouncilRegistryPort`             |
 //! | [`memory::InMemoryDeliberationRepository`] | `DeliberationRepositoryPort` |
 //! | [`memory::InMemoryAgentRegistry`]   | `AgentResolverPort` (+ writes)    |
+//! | [`noop::NoopAgent`]                 | `AgentPort` (deterministic; tests / demos) |
 //! | [`noop::NoopExecutor`]              | `ExecutorPort`                    |
 //! | [`noop::NoopMessaging`]             | `MessagingPort`                   |
+//! | [`scoring::UniformScoring`]         | `ScoringPort` (pass fraction)     |
+//! | [`validators::ContentNonEmptyValidator`] | `ValidatorPort` (sanity check) |
 //!
 //! ## Feature-gated
 //!
@@ -35,6 +38,8 @@ pub mod clock;
 pub mod config;
 pub mod memory;
 pub mod noop;
+pub mod scoring;
+pub mod validators;
 
 #[cfg(feature = "grpc")]
 pub mod grpc;

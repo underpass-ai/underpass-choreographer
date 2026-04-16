@@ -66,6 +66,35 @@ This project follows the same discipline as its siblings
 
 ## Status
 
-Scaffold only. Porting underway from `swe-ai-fleet/services/orchestrator`,
-stripping all SWE identity as described in `docs/experiments/` and the
-PR template.
+**What runs today** (enforced by CI, every claim is backed by a test or
+gate in this repository):
+
+- `choreo` binary starts, reads config from `CHOREO_*` env vars, and
+  serves the full `underpass.choreo.v1` gRPC contract.
+- Implemented RPCs: `Deliberate`, `Orchestrate`, `CreateCouncil`,
+  `ListCouncils`, `DeleteCouncil`, `GetDeliberationResult`,
+  `ProcessTriggerEvent`.
+- Honestly `UNIMPLEMENTED` RPCs: `StreamDeliberation`, `RegisterAgent`,
+  `UnregisterAgent`, `GetStatus`, `GetMetrics`. They return
+  `UNIMPLEMENTED` so clients cannot mistake them for working.
+- Optional NATS messaging: when `CHOREO_NATS_ENABLED=true`, the service
+  publishes all 5 outbound events (`choreo.task.*`,
+  `choreo.deliberation.completed`, `choreo.phase.changed`) and
+  consumes inbound `TriggerEvent`s from `choreo.trigger.>`.
+  Otherwise a no-op messaging adapter is wired.
+- Optional seeding: `CHOREO_SEED_SPECIALTIES=triage,reviewer`
+  registers one `NoopAgent` and one single-agent council per specialty
+  so a fresh deployment is immediately exercisable end-to-end.
+
+**What is *not* wired yet**:
+
+- No real LLM / frontier / rule-based agent adapters — only the
+  deterministic `NoopAgent`. Provider adapters (vLLM, Anthropic,
+  OpenAI, …) land in later slices behind their own Cargo features.
+- Statistics / metrics reporting (the `StatisticsPort` is not yet in
+  core).
+- Deliberation streaming and runtime agent registration (their
+  matching RPCs return `UNIMPLEMENTED`).
+- Persistence beyond in-process memory.
+
+See `docs/experiments/` for anything beyond these bullet points.
