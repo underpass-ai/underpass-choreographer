@@ -383,6 +383,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "choreo-e2e-runner"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "choreo-proto",
+ "tokio",
+ "tonic",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "choreo-proto"
 version = "0.1.0"
 dependencies = [

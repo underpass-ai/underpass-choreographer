@@ -160,6 +160,36 @@ pub async fn compose() -> Result<Application, ComposeError> {
 /// application's `AutoDispatchService` has been constructed.
 type SubscriberFactory = Box<dyn FnOnce(Arc<AutoDispatchService>) -> NatsTriggerSubscriber>;
 
+/// How long to wait for NATS to be reachable during startup.
+///
+/// Deployments bring NATS and the choreographer up together (compose,
+/// Kubernetes, etc.). Failing fast on the first connection attempt
+/// means any transient unavailability forces a restart; a bounded
+/// retry is the production-correct behaviour.
+const NATS_CONNECT_BUDGET: std::time::Duration = std::time::Duration::from_secs(30);
+
+async fn connect_nats_with_retry(
+    url: &str,
+    total_budget: std::time::Duration,
+) -> Result<async_nats::Client, ComposeError> {
+    let deadline = std::time::Instant::now() + total_budget;
+    let mut last_err: Option<async_nats::ConnectError> = None;
+    while std::time::Instant::now() < deadline {
+        match async_nats::connect(url).await {
+            Ok(client) => return Ok(client),
+            Err(err) => {
+                tracing::warn!(url, error = %err, "nats not ready yet; retrying");
+                last_err = Some(err);
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            }
+        }
+    }
+    Err(ComposeError::NatsConnect(last_err.unwrap_or_else(|| {
+        // Unreachable: the loop exits only after at least one attempt.
+        panic!("nats connect budget elapsed with no error recorded")
+    })))
+}
+
 async fn wire_messaging(
     cfg: &ServiceConfig,
 ) -> Result<(Arc<dyn MessagingPort>, Option<SubscriberFactory>), ComposeError> {
@@ -170,9 +200,7 @@ async fn wire_messaging(
     }
 
     let nats_cfg = NatsConfig::new(&cfg.nats_url, &cfg.publish_prefix, &cfg.trigger_subject)?;
-    let client = async_nats::connect(&nats_cfg.url)
-        .await
-        .map_err(ComposeError::NatsConnect)?;
+    let client = connect_nats_with_retry(&nats_cfg.url, NATS_CONNECT_BUDGET).await?;
     info!(url = nats_cfg.url.as_str(), "nats connected");
 
     let messaging: Arc<dyn MessagingPort> = Arc::new(NatsMessaging::new(

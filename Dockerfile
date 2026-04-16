@@ -29,8 +29,8 @@ COPY Cargo.toml Cargo.lock ./
 COPY rust-toolchain.toml ./
 COPY crates ./crates
 
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/src/target \
+RUN --mount=type=cache,id=cargo-registry-choreo,target=/usr/local/cargo/registry \
+    --mount=type=cache,id=cargo-target-choreo,target=/src/target \
     cargo build --release --locked --bin choreo \
  && install -Dm 0755 target/release/choreo /out/choreo
 
