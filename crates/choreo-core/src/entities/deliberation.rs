@@ -9,11 +9,13 @@
 //! Phase graph (linear):
 //!
 //! ```text
-//! Proposing -> Critiquing -> Revising -> Validating -> Scoring -> Completed
+//! Proposing -> Revising -> Validating -> Scoring -> Completed
 //! ```
 //!
-//! Transitions are one-way. Methods reject operations that do not
-//! match the current phase.
+//! Transitions are one-way. `Revising` accepts many `revise_proposal`
+//! calls so the use-case layer can run multiple peer-review rounds
+//! (critique → revise) without adding externally-observable phases.
+//! Methods reject operations that do not match the current phase.
 
 use std::collections::BTreeMap;
 
@@ -28,11 +30,16 @@ use crate::value_objects::{DurationMs, ProposalId, Rounds, Specialty, TaskId};
 /// Lifecycle phases of a deliberation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum DeliberationPhase {
+    /// Agents are producing their initial proposals.
     Proposing,
-    Critiquing,
+    /// Peer-review rounds are running: critique → revise, possibly
+    /// many times within this single phase.
     Revising,
+    /// Validators are running against proposals.
     Validating,
+    /// Validator reports are being aggregated into a final ranking.
     Scoring,
+    /// The deliberation is finished; ranked outcomes are immutable.
     Completed,
 }
 
@@ -40,7 +47,6 @@ impl DeliberationPhase {
     fn name(self) -> &'static str {
         match self {
             Self::Proposing => "Proposing",
-            Self::Critiquing => "Critiquing",
             Self::Revising => "Revising",
             Self::Validating => "Validating",
             Self::Scoring => "Scoring",
@@ -50,8 +56,7 @@ impl DeliberationPhase {
 
     fn next(self) -> Option<Self> {
         Some(match self {
-            Self::Proposing => Self::Critiquing,
-            Self::Critiquing => Self::Revising,
+            Self::Proposing => Self::Revising,
             Self::Revising => Self::Validating,
             Self::Validating => Self::Scoring,
             Self::Scoring => Self::Completed,
@@ -211,7 +216,7 @@ impl Deliberation {
     /// Advance to the next phase, enforcing the preconditions of the
     /// transition:
     ///
-    /// - `Proposing -> Critiquing`: at least one proposal present.
+    /// - `Proposing -> Revising`: at least one proposal present.
     /// - `Validating -> Scoring`: every proposal has an outcome.
     /// - Other transitions are unconditional.
     pub fn advance(&mut self) -> Result<DeliberationPhase, DomainError> {
@@ -221,7 +226,7 @@ impl Deliberation {
         })?;
 
         match (self.phase, next) {
-            (DeliberationPhase::Proposing, DeliberationPhase::Critiquing) => {
+            (DeliberationPhase::Proposing, DeliberationPhase::Revising) => {
                 if self.proposals.is_empty() {
                     return Err(DomainError::InvariantViolated {
                         reason: "cannot leave Proposing without proposals",
@@ -363,7 +368,7 @@ mod tests {
     fn proposals_only_accepted_while_proposing() {
         let mut d = start();
         d.add_proposal(proposal("p1", "x")).unwrap();
-        d.advance().unwrap(); // Critiquing
+        d.advance().unwrap(); // Revising
         let err = d.add_proposal(proposal("p2", "y")).unwrap_err();
         assert!(matches!(err, DomainError::InvalidTransition { .. }));
     }
@@ -397,7 +402,6 @@ mod tests {
                 .unwrap_err(),
             DomainError::InvalidTransition { .. }
         ));
-        d.advance().unwrap(); // Critiquing
         d.advance().unwrap(); // Revising
         d.revise_proposal(&ProposalId::new("p1").unwrap(), "y", now())
             .unwrap();
@@ -415,7 +419,7 @@ mod tests {
         let mut d = start();
         d.add_proposal(proposal("p1", "x")).unwrap();
         d.add_proposal(proposal("p2", "y")).unwrap();
-        for _ in 0..3 {
+        for _ in 0..2 {
             d.advance().unwrap();
         }
         // Now in Validating. Attach only one outcome.
@@ -431,7 +435,7 @@ mod tests {
     fn duplicate_outcome_is_rejected() {
         let mut d = start();
         d.add_proposal(proposal("p1", "x")).unwrap();
-        for _ in 0..3 {
+        for _ in 0..2 {
             d.advance().unwrap();
         }
         d.attach_outcome(&ProposalId::new("p1").unwrap(), outcome(0.8))
@@ -449,7 +453,7 @@ mod tests {
         d.add_proposal(proposal("p1", "a")).unwrap();
         d.add_proposal(proposal("p2", "b")).unwrap();
         d.add_proposal(proposal("p3", "c")).unwrap();
-        for _ in 0..3 {
+        for _ in 0..2 {
             d.advance().unwrap();
         }
         d.attach_outcome(&ProposalId::new("p1").unwrap(), outcome(0.5))
@@ -473,7 +477,7 @@ mod tests {
         let mut d = start();
         d.add_proposal(proposal("p2", "a")).unwrap();
         d.add_proposal(proposal("p1", "b")).unwrap();
-        for _ in 0..3 {
+        for _ in 0..2 {
             d.advance().unwrap();
         }
         d.attach_outcome(&ProposalId::new("p1").unwrap(), outcome(0.7))
@@ -501,7 +505,7 @@ mod tests {
     fn completed_deliberation_has_duration() {
         let mut d = start();
         d.add_proposal(proposal("p1", "x")).unwrap();
-        for _ in 0..3 {
+        for _ in 0..2 {
             d.advance().unwrap();
         }
         d.attach_outcome(&ProposalId::new("p1").unwrap(), outcome(0.5))
@@ -516,7 +520,7 @@ mod tests {
     fn cannot_advance_past_completed() {
         let mut d = start();
         d.add_proposal(proposal("p1", "x")).unwrap();
-        for _ in 0..3 {
+        for _ in 0..2 {
             d.advance().unwrap();
         }
         d.attach_outcome(&ProposalId::new("p1").unwrap(), outcome(0.5))
