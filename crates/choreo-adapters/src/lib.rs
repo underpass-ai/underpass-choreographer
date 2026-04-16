@@ -5,7 +5,19 @@
 //! transport, message bus, or LLM vendor — is a peer adapter gated behind
 //! its own Cargo feature flag. No provider is privileged.
 //!
-//! ## Available feature-gated adapters
+//! ## Always available
+//!
+//! | Adapter                             | Port                              |
+//! |-------------------------------------|-----------------------------------|
+//! | [`clock::SystemClock`]              | `ClockPort`                       |
+//! | [`config::EnvConfiguration`]        | `ConfigurationPort`               |
+//! | [`memory::InMemoryCouncilRegistry`] | `CouncilRegistryPort`             |
+//! | [`memory::InMemoryDeliberationRepository`] | `DeliberationRepositoryPort` |
+//! | [`memory::InMemoryAgentRegistry`]   | `AgentResolverPort` (+ writes)    |
+//! | [`noop::NoopExecutor`]              | `ExecutorPort`                    |
+//! | [`noop::NoopMessaging`]             | `MessagingPort`                   |
+//!
+//! ## Feature-gated
 //!
 //! | Feature            | Integration                                 |
 //! |--------------------|---------------------------------------------|
@@ -17,7 +29,12 @@
 //! Additional provider adapters (frontier, local, rule-based, human-in-the-loop)
 //! plug in through the same `AgentPort` trait with no core changes.
 
-pub mod config {}
+#![deny(missing_debug_implementations)]
+
+pub mod clock;
+pub mod config;
+pub mod memory;
+pub mod noop;
 
 #[cfg(feature = "nats")]
 pub mod nats {}
