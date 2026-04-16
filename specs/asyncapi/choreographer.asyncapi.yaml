@@ -216,12 +216,16 @@ components:
       allOf:
         - $ref: '#/components/schemas/EventEnvelope'
         - type: object
-          required: [task_id, specialty, error]
+          required: [task_id, specialty, error_kind]
           properties:
             task_id: { type: string }
             specialty: { type: string }
-            error: { type: string }
-            error_type: { type: string }
+            # Adapter-defined category of the failure
+            # (e.g. `"validator.timeout"`, `"executor.error"`).
+            error_kind: { type: string }
+            # Free-form human-readable description. Bounded length
+            # (see Rust domain invariant) to avoid unbounded payloads.
+            error_reason: { type: string }
 
     PhaseChanged:
       allOf:

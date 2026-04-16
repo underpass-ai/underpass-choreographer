@@ -35,6 +35,20 @@ import "google/protobuf/timestamp.proto";
 // Service
 // ============================================================================
 
+// Implementation status (server side) at v0.1:
+//
+//   Deliberate, Orchestrate, GetDeliberationResult,
+//   CreateCouncil, ListCouncils, DeleteCouncil,
+//   ProcessTriggerEvent
+//     -> backed by a use case in `choreo-app/src/usecases/` (or
+//        `services/auto_dispatch.rs` for ProcessTriggerEvent).
+//
+//   StreamDeliberation, RegisterAgent, UnregisterAgent,
+//   GetStatus, GetMetrics
+//     -> declared here because they belong to the contract, but the
+//        server returns `UNIMPLEMENTED` until their backing use cases
+//        land. Enumerate what is real (not what is planned) per the
+//        project's honesty principles.
 service ChoreographerService {
   // ---- Deliberation ----------------------------------------------------
 
@@ -111,14 +125,20 @@ message Proposal {
 }
 
 // Outcome of validating and scoring a proposal.
+//
+// `passed` is NOT stored: it is a pure projection of `reports` and
+// MUST be computed by serializers as `reports.all(|r| r.passed)` if
+// their wire format needs it. Having two sources of truth for pass /
+// fail is a denormalization bug waiting to happen and is refused here.
 message ValidationOutcome {
   double score = 1;
-  bool passed = 2;
-  repeated ValidatorReport reports = 3;
+  repeated ValidatorReport reports = 2;
 }
 
 message ValidatorReport {
-  string validator = 1; // free-form validator id
+  // Free-form, adapter-defined kind (e.g. `"lint"`, `"policy"`,
+  // `"dry-run"`, `"clinical-safety"`, `"fact-check"`).
+  string kind = 1;
   bool passed = 2;
   string summary = 3;
   google.protobuf.Struct details = 4;
@@ -145,14 +165,17 @@ message DeliberationUpdate {
   google.protobuf.Timestamp emitted_at = 20;
 }
 
+// Lifecycle phases of a deliberation. Matches the domain aggregate's
+// 5-state FSM: Proposing → Revising → Validating → Scoring → Completed.
+// There is no separate `CRITIQUING` phase — critique/revise rounds
+// happen internally within `REVISING`.
 enum DeliberationPhase {
   DELIBERATION_PHASE_UNSPECIFIED = 0;
   DELIBERATION_PHASE_PROPOSING = 1;
-  DELIBERATION_PHASE_CRITIQUING = 2;
-  DELIBERATION_PHASE_REVISING = 3;
-  DELIBERATION_PHASE_VALIDATING = 4;
-  DELIBERATION_PHASE_SCORING = 5;
-  DELIBERATION_PHASE_COMPLETED = 6;
+  DELIBERATION_PHASE_REVISING = 2;
+  DELIBERATION_PHASE_VALIDATING = 3;
+  DELIBERATION_PHASE_SCORING = 4;
+  DELIBERATION_PHASE_COMPLETED = 5;
 }
 
 message Critique {
