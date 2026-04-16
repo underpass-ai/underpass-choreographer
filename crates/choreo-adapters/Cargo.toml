@@ -15,9 +15,10 @@ workspace = true
 # particular LLM vendor, transport, or message bus; concrete integrations
 # live behind features so that consumers pick what they need.
 [features]
-default = []
+default = ["grpc"]
 
 # Transports / infra
+grpc = ["dep:prost-types"]
 nats = ["dep:async-nats"]
 
 # Agent providers (LLMs, humans-in-the-loop, rule engines, ...).
@@ -31,6 +32,7 @@ _http = ["dep:reqwest"]
 
 [dependencies]
 choreo-core = { workspace = true }
+choreo-app = { workspace = true }
 choreo-proto = { workspace = true }
 async-trait = { workspace = true }
 thiserror = { workspace = true }
@@ -38,6 +40,8 @@ anyhow = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
 futures = { workspace = true }
+tonic = { workspace = true }
+prost = { workspace = true }
 tracing = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -45,6 +49,7 @@ figment = { workspace = true }
 time = { workspace = true }
 uuid = { workspace = true }
 
+prost-types = { workspace = true, optional = true }
 async-nats = { workspace = true, optional = true }
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false, optional = true }
 
