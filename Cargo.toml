@@ -7,6 +7,7 @@ members = [
     "crates/choreo-proto",
     "crates/choreo",
     "crates/choreo-tests-integration",
+    "crates/choreo-e2e-runner",
 ]
 
 [workspace.package]

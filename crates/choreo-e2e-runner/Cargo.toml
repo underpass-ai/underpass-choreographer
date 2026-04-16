@@ -1,0 +1,25 @@
+[package]
+name = "choreo-e2e-runner"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "End-to-end runner that drives the Choreographer over its public gRPC surface. Not shipped."
+publish = false
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "choreo-e2e-runner"
+path = "src/main.rs"
+
+[dependencies]
+choreo-proto = { workspace = true }
+tokio = { workspace = true }
+tonic = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }

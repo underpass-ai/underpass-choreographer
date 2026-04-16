@@ -1,0 +1,51 @@
+# End-to-end stack for the Choreographer.
+#
+# Brings up:
+#   - nats:2 (trigger bus + outbound event bus)
+#   - choreographer (built from the root Dockerfile, seeded with one
+#     `triage` council + one NoopAgent so the runner can exercise the
+#     gRPC surface without extra wiring)
+#   - e2e-runner  (drives scenarios via the public gRPC contract and
+#     exits 0 on success)
+#
+# `scripts/ci/e2e-compose.sh` uses `--abort-on-container-exit
+# --exit-code-from e2e-runner`, so whatever the runner returns is
+# the job's result.
+
+services:
+  nats:
+    image: nats:2
+    command: ["-js"]
+    healthcheck:
+      test: ["CMD", "sh", "-c", "wget -q -O- http://localhost:8222/varz >/dev/null 2>&1 || nc -z localhost 4222"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+      start_period: 2s
+
+  choreographer:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    environment:
+      CHOREO_GRPC_PORT: "50055"
+      CHOREO_NATS_ENABLED: "true"
+      CHOREO_NATS_URL: "nats://nats:4222"
+      CHOREO_PUBLISH_PREFIX: "choreo"
+      CHOREO_TRIGGER_SUBJECT: "choreo.trigger.>"
+      CHOREO_SEED_SPECIALTIES: "triage"
+      RUST_LOG: "info"
+    depends_on:
+      nats:
+        condition: service_healthy
+
+  e2e-runner:
+    build:
+      context: ../..
+      dockerfile: tests/e2e/runner.Dockerfile
+    environment:
+      CHOREOGRAPHER_ENDPOINT: "http://choreographer:50055"
+      CHOREO_SEED_SPECIALTY: "triage"
+      RUST_LOG: "info"
+    depends_on:
+      - choreographer
