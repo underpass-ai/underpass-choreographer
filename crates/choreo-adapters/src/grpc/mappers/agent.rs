@@ -3,17 +3,20 @@
 //! The domain model does not hold a typed `AgentSummary`; agents are
 //! opaque behind [`AgentPort`]. This adapter composes the proto
 //! summary from an [`AgentId`] plus a `kind` string supplied by the
-//! composition root (e.g. `"vllm"`, `"anthropic"`, `"rule"`).
+//! composition root (e.g. `"noop"`, `"vllm"`, `"anthropic"`,
+//! `"rule"`).
 
 use choreo_core::value_objects::{AgentId, Attributes, Specialty};
 use choreo_proto::v1 as pb;
 
 use super::attributes::attributes_to_struct;
 
-/// Not wired today: `CouncilSummary.agents` stays empty until
-/// `RegisterAgent` / `AgentRegistryPort` land (see service docblock).
-/// Kept on the module surface so future handlers can opt in without
-/// reinventing the projection.
+/// Project domain fields into a proto `AgentSummary`.
+///
+/// Kept on the module surface so list/status handlers can project
+/// agent info when they start resolving live handles; `CouncilSummary`
+/// responses still carry an empty `agents` list today because the
+/// council aggregate stores only ids.
 #[allow(dead_code)]
 #[must_use]
 pub fn agent_summary_from(

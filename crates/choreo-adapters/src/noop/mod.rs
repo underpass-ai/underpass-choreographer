@@ -6,9 +6,11 @@
 //! and are also used extensively in tests.
 
 mod agent;
+mod agent_factory;
 mod executor;
 mod messaging;
 
 pub use agent::NoopAgent;
+pub use agent_factory::{NoopAgentFactory, NOOP_AGENT_KIND};
 pub use executor::NoopExecutor;
 pub use messaging::NoopMessaging;

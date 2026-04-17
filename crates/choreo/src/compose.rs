@@ -9,18 +9,18 @@ use choreo_adapters::memory::{
     InMemoryStatistics,
 };
 use choreo_adapters::nats::{NatsConfig, NatsMessaging, NatsTriggerSubscriber};
-use choreo_adapters::noop::{NoopExecutor, NoopMessaging};
+use choreo_adapters::noop::{NoopAgentFactory, NoopExecutor, NoopMessaging};
 use choreo_adapters::scoring::UniformScoring;
 use choreo_adapters::validators::ContentNonEmptyValidator;
 use choreo_app::services::AutoDispatchService;
 use choreo_app::usecases::{
     CreateCouncilUseCase, DeleteCouncilUseCase, DeliberateUseCase, GetDeliberationUseCase,
-    ListCouncilsUseCase, OrchestrateUseCase,
+    ListCouncilsUseCase, OrchestrateUseCase, RegisterAgentUseCase, UnregisterAgentUseCase,
 };
 use choreo_core::error::DomainError;
 use choreo_core::ports::{
-    ConfigurationPort, ExecutorPort, MessagingPort, ScoringPort, ServiceConfig, StatisticsPort,
-    ValidatorPort,
+    AgentFactoryPort, AgentRegistryPort, ConfigurationPort, ExecutorPort, MessagingPort,
+    ScoringPort, ServiceConfig, StatisticsPort, ValidatorPort,
 };
 use thiserror::Error;
 use tracing::info;
@@ -123,6 +123,14 @@ pub async fn compose() -> Result<Application, ComposeError> {
     let list_councils = Arc::new(ListCouncilsUseCase::new(council_registry.clone()));
     let get_deliberation = Arc::new(GetDeliberationUseCase::new(repository.clone()));
 
+    let agent_factory: Arc<dyn AgentFactoryPort> = Arc::new(NoopAgentFactory::new());
+    let agent_registry_port: Arc<dyn AgentRegistryPort> = agent_registry.clone();
+    let register_agent = Arc::new(RegisterAgentUseCase::new(
+        agent_factory,
+        agent_registry_port.clone(),
+    ));
+    let unregister_agent = Arc::new(UnregisterAgentUseCase::new(agent_registry_port));
+
     let auto_dispatch = Arc::new(AutoDispatchService::new(
         deliberate.clone(),
         "Investigate the incoming trigger event.",
@@ -147,6 +155,8 @@ pub async fn compose() -> Result<Application, ComposeError> {
         .delete_council(delete_council)
         .list_councils(list_councils)
         .get_deliberation(get_deliberation)
+        .register_agent(register_agent)
+        .unregister_agent(unregister_agent)
         .auto_dispatch(auto_dispatch)
         .statistics(statistics.clone())
         .service_version(env!("CARGO_PKG_VERSION"))

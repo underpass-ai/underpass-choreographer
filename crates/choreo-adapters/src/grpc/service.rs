@@ -7,11 +7,12 @@ use async_trait::async_trait;
 use choreo_app::services::AutoDispatchService;
 use choreo_app::usecases::{
     CreateCouncilInput, CreateCouncilUseCase, DeleteCouncilUseCase, DeliberateUseCase,
-    GetDeliberationUseCase, ListCouncilsUseCase, OrchestrateUseCase,
+    GetDeliberationUseCase, ListCouncilsUseCase, OrchestrateUseCase, RegisterAgentUseCase,
+    UnregisterAgentUseCase,
 };
 use choreo_core::error::DomainError;
-use choreo_core::ports::StatisticsPort;
-use choreo_core::value_objects::{AgentId, Specialty, TaskId};
+use choreo_core::ports::{AgentDescriptor, StatisticsPort};
+use choreo_core::value_objects::{AgentId, AgentKind, Specialty, TaskId};
 use choreo_proto::v1 as pb;
 use choreo_proto::v1::choreographer_service_server::{
     ChoreographerService, ChoreographerServiceServer,
@@ -35,6 +36,8 @@ pub struct ChoreographerGrpcService {
     delete_council: Arc<DeleteCouncilUseCase>,
     list_councils: Arc<ListCouncilsUseCase>,
     get_deliberation: Arc<GetDeliberationUseCase>,
+    register_agent: Arc<RegisterAgentUseCase>,
+    unregister_agent: Arc<UnregisterAgentUseCase>,
     auto_dispatch: Arc<AutoDispatchService>,
     statistics: Arc<dyn StatisticsPort>,
     started_at: std::time::Instant,
@@ -70,6 +73,8 @@ pub struct ChoreographerGrpcServiceBuilder {
     delete_council: Option<Arc<DeleteCouncilUseCase>>,
     list_councils: Option<Arc<ListCouncilsUseCase>>,
     get_deliberation: Option<Arc<GetDeliberationUseCase>>,
+    register_agent: Option<Arc<RegisterAgentUseCase>>,
+    unregister_agent: Option<Arc<UnregisterAgentUseCase>>,
     auto_dispatch: Option<Arc<AutoDispatchService>>,
     statistics: Option<Arc<dyn StatisticsPort>>,
     service_version: Option<&'static str>,
@@ -98,6 +103,8 @@ impl ChoreographerGrpcServiceBuilder {
     setter!(delete_council, DeleteCouncilUseCase, delete_council);
     setter!(list_councils, ListCouncilsUseCase, list_councils);
     setter!(get_deliberation, GetDeliberationUseCase, get_deliberation);
+    setter!(register_agent, RegisterAgentUseCase, register_agent);
+    setter!(unregister_agent, UnregisterAgentUseCase, unregister_agent);
     setter!(auto_dispatch, AutoDispatchService, auto_dispatch);
 
     #[must_use]
@@ -136,6 +143,14 @@ impl ChoreographerGrpcServiceBuilder {
                 .get_deliberation
                 .ok_or(DomainError::InvariantViolated {
                     reason: "grpc: get_deliberation use case is required",
+                })?,
+            register_agent: self.register_agent.ok_or(DomainError::InvariantViolated {
+                reason: "grpc: register_agent use case is required",
+            })?,
+            unregister_agent: self
+                .unregister_agent
+                .ok_or(DomainError::InvariantViolated {
+                    reason: "grpc: unregister_agent use case is required",
                 })?,
             auto_dispatch: self.auto_dispatch.ok_or(DomainError::InvariantViolated {
                 reason: "grpc: auto_dispatch service is required",
@@ -311,20 +326,39 @@ impl ChoreographerService for ChoreographerGrpcService {
 
     async fn register_agent(
         &self,
-        _request: Request<pb::RegisterAgentRequest>,
+        request: Request<pb::RegisterAgentRequest>,
     ) -> GrpcResult<pb::RegisterAgentResponse> {
-        Err(Status::unimplemented(
-            "RegisterAgent is not implemented yet; see service docblock",
-        ))
+        let descriptor =
+            descriptor_from_register_request(request.into_inner()).map_err(|err| match err {
+                DescriptorError::MissingAgentSummary => {
+                    Status::invalid_argument("agent summary is required")
+                }
+                DescriptorError::Domain(err) => domain_error_to_status(err),
+            })?;
+        let id = self
+            .register_agent
+            .execute(descriptor)
+            .await
+            .map_err(domain_error_to_status)?;
+        Ok(Response::new(pb::RegisterAgentResponse {
+            agent_id: id.into_inner(),
+        }))
     }
 
     async fn unregister_agent(
         &self,
-        _request: Request<pb::UnregisterAgentRequest>,
+        request: Request<pb::UnregisterAgentRequest>,
     ) -> GrpcResult<pb::UnregisterAgentResponse> {
-        Err(Status::unimplemented(
-            "UnregisterAgent is not implemented yet; see service docblock",
-        ))
+        let id = AgentId::new(request.into_inner().agent_id).map_err(domain_error_to_status)?;
+        match self.unregister_agent.execute(&id).await {
+            Ok(()) => Ok(Response::new(pb::UnregisterAgentResponse {
+                unregistered: true,
+            })),
+            Err(DomainError::NotFound { .. }) => Ok(Response::new(pb::UnregisterAgentResponse {
+                unregistered: false,
+            })),
+            Err(err) => Err(domain_error_to_status(err)),
+        }
     }
 
     async fn process_trigger_event(
@@ -401,6 +435,43 @@ impl ChoreographerService for ChoreographerGrpcService {
     }
 }
 
+/// Errors surfaced while turning a [`pb::RegisterAgentRequest`] into a
+/// domain [`AgentDescriptor`].
+#[derive(Debug)]
+enum DescriptorError {
+    MissingAgentSummary,
+    Domain(DomainError),
+}
+
+impl From<DomainError> for DescriptorError {
+    fn from(err: DomainError) -> Self {
+        Self::Domain(err)
+    }
+}
+
+/// Map the proto request into a domain descriptor.
+///
+/// Precedence on specialty: the dedicated top-level `specialty` field
+/// on the request wins when non-empty; otherwise the nested
+/// `agent.specialty` is used. This keeps the proto backwards-
+/// compatible without encoding two sources of truth downstream.
+fn descriptor_from_register_request(
+    req: pb::RegisterAgentRequest,
+) -> Result<AgentDescriptor, DescriptorError> {
+    let summary = req.agent.ok_or(DescriptorError::MissingAgentSummary)?;
+    let specialty_str = if req.specialty.trim().is_empty() {
+        summary.specialty
+    } else {
+        req.specialty
+    };
+    Ok(AgentDescriptor {
+        id: AgentId::new(summary.agent_id)?,
+        specialty: Specialty::new(specialty_str)?,
+        kind: AgentKind::new(summary.kind)?,
+        attributes: super::mappers::attributes_from_struct(req.agent_config)?,
+    })
+}
+
 /// Map the domain [`choreo_core::entities::Statistics`] into the
 /// protobuf `Statistics` message. Kept here, next to the only call
 /// sites, because it is a pure transport concern.
@@ -464,5 +535,62 @@ mod tests {
         assert_eq!(mapped.total_duration_ms, 0);
         assert!((mapped.average_duration_ms - 0.0).abs() < f64::EPSILON);
         assert!(mapped.per_specialty_counts.is_empty());
+    }
+
+    fn summary(id: &str, specialty: &str, kind: &str) -> pb::AgentSummary {
+        pb::AgentSummary {
+            agent_id: id.to_owned(),
+            specialty: specialty.to_owned(),
+            kind: kind.to_owned(),
+            attributes: None,
+        }
+    }
+
+    #[test]
+    fn descriptor_from_request_uses_top_level_specialty_when_present() {
+        let req = pb::RegisterAgentRequest {
+            specialty: "reviewer".to_owned(),
+            agent: Some(summary("a1", "triage", "noop")),
+            agent_config: None,
+        };
+        let d = descriptor_from_register_request(req).unwrap();
+        assert_eq!(d.id.as_str(), "a1");
+        assert_eq!(d.specialty.as_str(), "reviewer");
+        assert_eq!(d.kind.as_str(), "noop");
+        assert!(d.attributes.is_empty());
+    }
+
+    #[test]
+    fn descriptor_from_request_falls_back_to_nested_specialty_when_empty() {
+        let req = pb::RegisterAgentRequest {
+            specialty: "   ".to_owned(),
+            agent: Some(summary("a1", "triage", "noop")),
+            agent_config: None,
+        };
+        let d = descriptor_from_register_request(req).unwrap();
+        assert_eq!(d.specialty.as_str(), "triage");
+    }
+
+    #[test]
+    fn descriptor_from_request_missing_agent_is_reported() {
+        let req = pb::RegisterAgentRequest {
+            specialty: "triage".to_owned(),
+            agent: None,
+            agent_config: None,
+        };
+        let err = descriptor_from_register_request(req).unwrap_err();
+        assert!(matches!(err, DescriptorError::MissingAgentSummary));
+    }
+
+    #[test]
+    fn descriptor_from_request_domain_validation_propagates() {
+        // Empty kind fails at AgentKind construction.
+        let req = pb::RegisterAgentRequest {
+            specialty: "triage".to_owned(),
+            agent: Some(summary("a1", "triage", "")),
+            agent_config: None,
+        };
+        let err = descriptor_from_register_request(req).unwrap_err();
+        assert!(matches!(err, DescriptorError::Domain(_)));
     }
 }
