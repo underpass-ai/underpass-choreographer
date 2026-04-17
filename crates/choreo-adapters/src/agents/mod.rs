@@ -16,8 +16,5 @@ pub mod anthropic;
 #[cfg(feature = "agent-openai")]
 pub mod openai;
 
-// `agent-vllm` is declared in the crate manifest for forward
-// compatibility but does not ship a module yet. Enabling it today
-// is a no-op on this crate; a future slice adds the real module
-// (likely as a thin reuse of the openai client, since vLLM speaks
-// the same Chat Completions shape).
+#[cfg(feature = "agent-vllm")]
+pub mod vllm;
