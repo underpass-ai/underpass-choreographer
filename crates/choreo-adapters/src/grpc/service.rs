@@ -196,11 +196,50 @@ impl ChoreographerService for ChoreographerGrpcService {
 
     async fn stream_deliberation(
         &self,
-        _request: Request<pb::StreamDeliberationRequest>,
+        request: Request<pb::StreamDeliberationRequest>,
     ) -> GrpcResult<Self::StreamDeliberationStream> {
-        Err(Status::unimplemented(
-            "StreamDeliberation is not implemented yet; see service docblock",
-        ))
+        let task_proto = request
+            .into_inner()
+            .task
+            .ok_or_else(|| Status::invalid_argument("task is required"))?;
+        let task = task_from_proto(task_proto).map_err(domain_error_to_status)?;
+
+        // Bounded channel: backpressure shields the deliberation from
+        // unbounded buffering if the client reads slowly, and the
+        // observer is a no-op on sink-closed so a slow/disconnected
+        // client never deadlocks the use case.
+        let (tx, rx) = tokio::sync::mpsc::channel(16);
+        let observer: Arc<dyn choreo_core::ports::DeliberationObserverPort> =
+            Arc::new(super::stream::ChannelObserver::new(tx.clone()));
+        let usecase = self.deliberate.clone();
+
+        tokio::spawn(async move {
+            match usecase.execute_with_observer(task, observer).await {
+                Ok(out) => {
+                    // Final frame carries the winner projection so
+                    // clients that only wanted the result can read
+                    // exactly one message and close.
+                    let response = deliberate_response_from(&out);
+                    let winner_result = response.results.first().cloned().unwrap_or_default();
+                    let frame = pb::StreamDeliberationResponse {
+                        update: Some(pb::DeliberationUpdate {
+                            task_id: response.task_id,
+                            phase: pb::DeliberationPhase::Completed as i32,
+                            emitted_at: None,
+                            payload: Some(pb::deliberation_update::Payload::Result(winner_result)),
+                        }),
+                    };
+                    let _ = tx.send(Ok(frame)).await;
+                }
+                Err(err) => {
+                    let _ = tx.send(Err(domain_error_to_status(err))).await;
+                }
+            }
+        });
+
+        Ok(Response::new(tokio_stream::wrappers::ReceiverStream::new(
+            rx,
+        )))
     }
 
     async fn get_deliberation_result(

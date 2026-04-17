@@ -28,8 +28,9 @@ use choreo_core::entities::{
 use choreo_core::error::DomainError;
 use choreo_core::events::{DeliberationCompletedEvent, EventEnvelope};
 use choreo_core::ports::{
-    AgentPort, AgentResolverPort, ClockPort, CouncilRegistryPort, DeliberationRepositoryPort,
-    DraftRequest, MessagingPort, ScoringPort, StatisticsPort, ValidatorPort,
+    AgentPort, AgentResolverPort, ClockPort, CouncilRegistryPort, DeliberationObserverPort,
+    DeliberationRepositoryPort, DraftRequest, MessagingPort, NullObserver, ScoringPort,
+    StatisticsPort, ValidatorPort,
 };
 use choreo_core::value_objects::{AgentId, EventId, ProposalId};
 use time::OffsetDateTime;
@@ -92,6 +93,19 @@ impl DeliberateUseCase {
     }
 
     pub async fn execute(&self, task: Task) -> Result<DeliberateOutput, DomainError> {
+        self.execute_with_observer(task, Arc::new(NullObserver))
+            .await
+    }
+
+    /// Run the deliberation and forward phase transitions to
+    /// `observer`. The observer is call-scoped: nothing is retained
+    /// by the use case and the observer sees exactly one sequence of
+    /// phase transitions per invocation.
+    pub async fn execute_with_observer(
+        &self,
+        task: Task,
+        observer: Arc<dyn DeliberationObserverPort>,
+    ) -> Result<DeliberateOutput, DomainError> {
         let started_at = self.clock.now();
 
         let council = self.council_registry.get(task.specialty()).await?;
@@ -108,11 +122,15 @@ impl DeliberateUseCase {
             task.constraints().rounds(),
             started_at,
         );
+        observer
+            .on_phase_changed(deliberation.task_id(), deliberation.phase(), started_at)
+            .await;
 
         let seeded_proposal_ids = self
             .seed_proposals(&mut deliberation, &agents, &task)
             .await?;
-        deliberation.advance()?; // Proposing -> Revising
+        self.advance_with_observer(&mut deliberation, observer.as_ref())
+            .await?; // Proposing -> Revising
         self.run_peer_review_rounds(
             &mut deliberation,
             &agents,
@@ -120,13 +138,18 @@ impl DeliberateUseCase {
             task.constraints(),
         )
         .await?;
-        deliberation.advance()?; // Revising -> Validating
+        self.advance_with_observer(&mut deliberation, observer.as_ref())
+            .await?; // Revising -> Validating
         self.attach_validations(&mut deliberation, task.constraints())
             .await?;
-        deliberation.advance()?; // Validating -> Scoring
+        self.advance_with_observer(&mut deliberation, observer.as_ref())
+            .await?; // Validating -> Scoring
 
         let completed_at = self.clock.now();
         let ranked = deliberation.complete(completed_at)?;
+        observer
+            .on_phase_changed(deliberation.task_id(), deliberation.phase(), completed_at)
+            .await;
         let winner = ranked
             .first()
             .ok_or(DomainError::EmptyCollection {
@@ -167,6 +190,22 @@ impl DeliberateUseCase {
             winner_proposal_id: winner.proposal().id().clone(),
             deliberation,
         })
+    }
+
+    async fn advance_with_observer(
+        &self,
+        deliberation: &mut Deliberation,
+        observer: &dyn DeliberationObserverPort,
+    ) -> Result<(), DomainError> {
+        deliberation.advance()?;
+        observer
+            .on_phase_changed(
+                deliberation.task_id(),
+                deliberation.phase(),
+                self.clock.now(),
+            )
+            .await;
+        Ok(())
     }
 
     async fn resolve_agents(
@@ -890,5 +929,80 @@ mod tests {
         for p in out.deliberation.proposals().values() {
             assert_eq!(p.revision_count(), 1);
         }
+    }
+
+    // ---- Observer tests --------------------------------------------------
+
+    #[derive(Default)]
+    struct RecordingObserver {
+        phases: Mutex<Vec<DeliberationPhase>>,
+    }
+    #[async_trait]
+    impl choreo_core::ports::DeliberationObserverPort for RecordingObserver {
+        async fn on_phase_changed(
+            &self,
+            _task_id: &TaskId,
+            phase: DeliberationPhase,
+            _emitted_at: OffsetDateTime,
+        ) {
+            self.phases.lock().unwrap().push(phase);
+        }
+    }
+
+    #[tokio::test]
+    async fn execute_with_observer_emits_every_phase_transition_in_order() {
+        let council = council_with(&["a1", "a2"]);
+        let sp = specialty();
+        let agents: Vec<Arc<dyn AgentPort>> = vec![
+            StubAgent::new("a1", &sp, "abcdef", vec!["abcdef"]) as Arc<dyn AgentPort>,
+            StubAgent::new("a2", &sp, "ghijkl", vec!["ghijkl"]) as Arc<dyn AgentPort>,
+        ];
+        let (usecase, _repo, _bus) = fixture(agents, council);
+
+        let observer = Arc::new(RecordingObserver::default());
+        let t = task(TaskConstraints::new(
+            Rubric::empty(),
+            Rounds::new(1).unwrap(),
+            None,
+            None,
+        ));
+        usecase
+            .execute_with_observer(t, observer.clone())
+            .await
+            .unwrap();
+
+        let phases = observer.phases.lock().unwrap().clone();
+        assert_eq!(
+            phases,
+            vec![
+                DeliberationPhase::Proposing,
+                DeliberationPhase::Revising,
+                DeliberationPhase::Validating,
+                DeliberationPhase::Scoring,
+                DeliberationPhase::Completed,
+            ],
+            "observer must see every FSM state exactly once and in order"
+        );
+    }
+
+    #[tokio::test]
+    async fn execute_without_observer_still_runs_through_null_observer() {
+        // `execute` is a thin wrapper over `execute_with_observer` with
+        // a `NullObserver`; the end-to-end invariant (winner emitted +
+        // persistence) must hold regardless.
+        let council = council_with(&["a1"]);
+        let sp = specialty();
+        let agents: Vec<Arc<dyn AgentPort>> =
+            vec![StubAgent::new("a1", &sp, "plenty", vec![]) as Arc<dyn AgentPort>];
+        let (usecase, repo, _bus) = fixture(agents, council);
+
+        let t = task(TaskConstraints::new(
+            Rubric::empty(),
+            Rounds::new(0).unwrap(),
+            None,
+            None,
+        ));
+        usecase.execute(t).await.unwrap();
+        assert_eq!(repo.saved.lock().unwrap().len(), 1);
     }
 }
