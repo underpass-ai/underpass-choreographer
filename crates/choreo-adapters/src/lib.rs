@@ -47,13 +47,4 @@ pub mod grpc;
 #[cfg(feature = "nats")]
 pub mod nats;
 
-pub mod agents {
-    #[cfg(feature = "agent-vllm")]
-    pub mod vllm {}
-
-    #[cfg(feature = "agent-anthropic")]
-    pub mod anthropic {}
-
-    #[cfg(feature = "agent-openai")]
-    pub mod openai {}
-}
+pub mod agents;

@@ -77,7 +77,17 @@ jobs:
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5
       - name: Run clippy
-        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+        # Enable every provider / transport feature explicitly so
+        # feature-gated adapters (agent-anthropic, agent-openai,
+        # agent-vllm, grpc, nats) are linted. `container-tests` is
+        # deliberately excluded because the separate `integration`
+        # workflow covers it with a real Docker runtime.
+        run: |
+          cargo clippy --workspace --all-targets --locked \
+            --features choreo-adapters/agent-anthropic \
+            --features choreo-adapters/agent-openai \
+            --features choreo-adapters/agent-vllm \
+            -- -D warnings
 
   test:
     runs-on: ubuntu-24.04
@@ -97,7 +107,14 @@ jobs:
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5
       - name: Run tests
-        run: cargo test --workspace --locked
+        # Same feature set as clippy — exercise every provider /
+        # transport module. `container-tests` stays on the separate
+        # `integration` workflow (real Docker).
+        run: |
+          cargo test --workspace --locked \
+            --features choreo-adapters/agent-anthropic \
+            --features choreo-adapters/agent-openai \
+            --features choreo-adapters/agent-vllm
 
   container-image:
     runs-on: ubuntu-24.04
