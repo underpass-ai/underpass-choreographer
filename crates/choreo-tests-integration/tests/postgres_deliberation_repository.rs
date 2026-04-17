@@ -13,9 +13,7 @@
 
 #![cfg(feature = "container-tests")]
 
-use std::time::Duration;
-
-use choreo_adapters::postgres::{PostgresConfig, PostgresDeliberationRepository, PostgresPool};
+use choreo_adapters::postgres::PostgresDeliberationRepository;
 use choreo_core::entities::{
     Deliberation, DeliberationPhase, Proposal, ValidationOutcome, ValidatorReport,
 };
@@ -24,59 +22,8 @@ use choreo_core::ports::DeliberationRepositoryPort;
 use choreo_core::value_objects::{
     AgentId, Attributes, ProposalId, Rounds, Score, Specialty, TaskId,
 };
-use testcontainers::{
-    core::{IntoContainerPort, WaitFor},
-    runners::AsyncRunner,
-    GenericImage, ImageExt,
-};
+use choreo_tests_integration::postgres_fixture;
 use time::macros::datetime;
-
-const PG_IMAGE: &str = "postgres";
-const PG_TAG: &str = "16-alpine";
-const PG_USER: &str = "choreo";
-const PG_PASSWORD: &str = "choreo";
-const PG_DB: &str = "choreo";
-
-async fn start_postgres() -> (PostgresPool, testcontainers::ContainerAsync<GenericImage>) {
-    let container = GenericImage::new(PG_IMAGE, PG_TAG)
-        .with_exposed_port(5432_u16.tcp())
-        .with_wait_for(WaitFor::message_on_stderr(
-            "database system is ready to accept connections",
-        ))
-        .with_env_var("POSTGRES_USER", PG_USER)
-        .with_env_var("POSTGRES_PASSWORD", PG_PASSWORD)
-        .with_env_var("POSTGRES_DB", PG_DB)
-        .start()
-        .await
-        .expect("postgres container should start");
-    let port = container
-        .get_host_port_ipv4(5432_u16.tcp())
-        .await
-        .expect("host port");
-    let url = format!("postgres://{PG_USER}:{PG_PASSWORD}@127.0.0.1:{port}/{PG_DB}");
-
-    // Dial with retries — even after the readiness log line, the
-    // server can briefly refuse connections while finalising startup.
-    let mut cfg = PostgresConfig::from_url(url);
-    cfg.acquire_timeout = Duration::from_secs(10);
-
-    let mut last_err = None;
-    for _ in 0..20 {
-        match PostgresPool::connect(&cfg).await {
-            Ok(pool) => {
-                pool.run_migrations()
-                    .await
-                    .expect("migrations must apply on a fresh database");
-                return (pool, container);
-            }
-            Err(err) => {
-                last_err = Some(err);
-                tokio::time::sleep(Duration::from_millis(200)).await;
-            }
-        }
-    }
-    panic!("could not connect to postgres after warmup: {last_err:?}");
-}
 
 /// Build a fully-traversed Deliberation so the roundtrip covers
 /// proposals, outcomes, ranking, and the completed phase (the hard
@@ -124,7 +71,7 @@ fn completed_deliberation(task: &str) -> Deliberation {
 
 #[tokio::test]
 async fn postgres_repository_roundtrips_a_completed_deliberation() {
-    let (pool, _container) = start_postgres().await;
+    let (pool, _container) = postgres_fixture::start().await;
     let repo = PostgresDeliberationRepository::new(pool);
 
     let d = completed_deliberation("t-happy");
@@ -147,7 +94,7 @@ async fn postgres_repository_roundtrips_a_completed_deliberation() {
 
 #[tokio::test]
 async fn save_is_upsert_and_preserves_the_latest_body() {
-    let (pool, _container) = start_postgres().await;
+    let (pool, _container) = postgres_fixture::start().await;
     let repo = PostgresDeliberationRepository::new(pool);
 
     // First save — a mid-run deliberation (phase Proposing).
@@ -187,7 +134,7 @@ async fn save_is_upsert_and_preserves_the_latest_body() {
 
 #[tokio::test]
 async fn exists_reflects_presence_and_missing_get_is_not_found() {
-    let (pool, _container) = start_postgres().await;
+    let (pool, _container) = postgres_fixture::start().await;
     let repo = PostgresDeliberationRepository::new(pool);
 
     let id = TaskId::new("t-absent").unwrap();

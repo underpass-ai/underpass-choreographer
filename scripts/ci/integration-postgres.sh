@@ -14,5 +14,7 @@ RUST_TEST_THREADS=1 cargo test \
   -p choreo-tests-integration \
   --features container-tests \
   --test postgres_deliberation_repository \
+  --test postgres_council_registry \
+  --test postgres_agent_registry \
   --locked \
   -- --test-threads=1

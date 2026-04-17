@@ -16,12 +16,17 @@ workspace = true
 # Opt-in: CI enables this feature to actually run the tests. Without
 # the feature the crate compiles but exercises nothing, so `cargo
 # test --workspace` stays fast and network-free.
-container-tests = []
+container-tests = ["dep:testcontainers", "dep:tokio"]
 
 [dependencies]
 choreo-core = { workspace = true }
 choreo-app = { workspace = true }
 choreo-adapters = { workspace = true, features = ["nats", "postgres"] }
+# Shared test fixtures (postgres_fixture) need testcontainers +
+# tokio at library build time; both are optional so `cargo build`
+# without the feature stays minimal.
+testcontainers = { version = "0.23", optional = true }
+tokio = { workspace = true, optional = true }
 
 [dev-dependencies]
 async-nats = { workspace = true }

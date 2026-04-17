@@ -10,11 +10,10 @@
 //! adapter-specific channels (future slices: RegisterAgent RPC,
 //! config-driven factories).
 
-use choreo_adapters::memory::{InMemoryAgentRegistry, InMemoryCouncilRegistry};
 use choreo_adapters::noop::NoopAgent;
 use choreo_core::entities::Council;
 use choreo_core::error::DomainError;
-use choreo_core::ports::{ClockPort, CouncilRegistryPort};
+use choreo_core::ports::{AgentRegistryPort, ClockPort, CouncilRegistryPort};
 use choreo_core::value_objects::{AgentId, CouncilId, Specialty};
 use std::sync::Arc;
 use thiserror::Error;
@@ -32,8 +31,8 @@ pub enum SeedingError {
 /// Read the opt-in env var and apply seeding if present.
 pub async fn apply_env_seeding(
     clock: &dyn ClockPort,
-    agent_registry: &InMemoryAgentRegistry,
-    council_registry: &InMemoryCouncilRegistry,
+    agent_registry: &dyn AgentRegistryPort,
+    council_registry: &dyn CouncilRegistryPort,
 ) -> Result<(), SeedingError> {
     let Ok(raw) = std::env::var(SEED_ENV_VAR) else {
         return Ok(());
@@ -56,8 +55,8 @@ pub async fn apply_env_seeding(
 /// without touching process env.
 pub async fn apply_seeding(
     clock: &dyn ClockPort,
-    agent_registry: &InMemoryAgentRegistry,
-    council_registry: &InMemoryCouncilRegistry,
+    agent_registry: &dyn AgentRegistryPort,
+    council_registry: &dyn CouncilRegistryPort,
     specialties: &[&str],
 ) -> Result<(), SeedingError> {
     for label in specialties {
@@ -66,7 +65,7 @@ pub async fn apply_seeding(
         let agent = Arc::new(NoopAgent::new(agent_id.clone(), specialty.clone()));
         // If the agent is already registered (re-seeding) swallow the
         // AlreadyExists error so restarts stay idempotent.
-        match agent_registry.insert(agent).await {
+        match agent_registry.register(agent).await {
             Ok(()) | Err(DomainError::AlreadyExists { .. }) => {}
             Err(err) => return Err(err.into()),
         }
@@ -84,6 +83,7 @@ pub async fn apply_seeding(
 mod tests {
     use super::*;
     use choreo_adapters::clock::SystemClock;
+    use choreo_adapters::memory::{InMemoryAgentRegistry, InMemoryCouncilRegistry};
     use choreo_core::ports::{AgentResolverPort, CouncilRegistryPort};
 
     #[tokio::test]
