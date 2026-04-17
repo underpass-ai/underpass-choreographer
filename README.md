@@ -118,5 +118,14 @@ gate in this repository):
   slice.
 - `StreamDeliberation` streams phase transitions only; per-proposal,
   per-critique, and per-revision streaming arrives in a later slice.
+- Distributed tracing: the core use cases, gRPC handlers, NATS
+  inbound subscriber, and `AutoDispatchService` emit `#[tracing::
+  instrument]` spans with domain fields (`task_id`, `specialty`,
+  `event_id`, `agent_id`, `kind`). A regression test pins the
+  `deliberate` span name and fields. **OTLP export** and **W3C
+  tracecontext propagation** across NATS / gRPC boundaries land in
+  a follow-up slice; today spans are observable in-process via the
+  binary's structured JSON subscriber and whatever collector is
+  pointed at stdout.
 
 See `docs/experiments/` for anything beyond these bullet points.

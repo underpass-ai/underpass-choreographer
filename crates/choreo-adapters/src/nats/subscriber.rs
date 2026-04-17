@@ -83,6 +83,7 @@ impl NatsTriggerSubscriber {
     }
 }
 
+#[tracing::instrument(name = "nats.trigger.inbound", skip_all)]
 async fn handle_message(dispatch: &AutoDispatchService, payload: &[u8]) {
     let trigger: TriggerEvent = match serde_json::from_slice(payload) {
         Ok(t) => t,

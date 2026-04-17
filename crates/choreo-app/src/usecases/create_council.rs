@@ -46,6 +46,15 @@ impl CreateCouncilUseCase {
         }
     }
 
+    #[tracing::instrument(
+        name = "create_council",
+        skip_all,
+        fields(
+            specialty = %input.specialty,
+            council_id = %input.council_id,
+            size = input.agents.len(),
+        )
+    )]
     pub async fn execute(&self, input: CreateCouncilInput) -> Result<Council, DomainError> {
         // Eagerly check that every agent is resolvable. This fails fast
         // before inserting a council that cannot deliberate.

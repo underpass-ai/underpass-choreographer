@@ -30,6 +30,11 @@ impl UnregisterAgentUseCase {
         Self { registry }
     }
 
+    #[tracing::instrument(
+        name = "unregister_agent",
+        skip_all,
+        fields(agent_id = %id)
+    )]
     pub async fn execute(&self, id: &AgentId) -> Result<(), DomainError> {
         self.registry.unregister(id).await?;
         info!(agent_id = id.as_str(), "agent unregistered");

@@ -172,6 +172,7 @@ impl ChoreographerService for ChoreographerGrpcService {
         std::result::Result<pb::StreamDeliberationResponse, Status>,
     >;
 
+    #[tracing::instrument(name = "rpc.deliberate", skip_all)]
     async fn deliberate(
         &self,
         request: Request<pb::DeliberateRequest>,
@@ -194,6 +195,7 @@ impl ChoreographerService for ChoreographerGrpcService {
         Ok(Response::new(deliberate_response_from(&out)))
     }
 
+    #[tracing::instrument(name = "rpc.stream_deliberation", skip_all)]
     async fn stream_deliberation(
         &self,
         request: Request<pb::StreamDeliberationRequest>,
@@ -242,6 +244,7 @@ impl ChoreographerService for ChoreographerGrpcService {
         )))
     }
 
+    #[tracing::instrument(name = "rpc.get_deliberation_result", skip_all)]
     async fn get_deliberation_result(
         &self,
         request: Request<pb::GetDeliberationResultRequest>,
@@ -272,6 +275,7 @@ impl ChoreographerService for ChoreographerGrpcService {
         }
     }
 
+    #[tracing::instrument(name = "rpc.orchestrate", skip_all)]
     async fn orchestrate(
         &self,
         request: Request<pb::OrchestrateRequest>,
@@ -292,6 +296,7 @@ impl ChoreographerService for ChoreographerGrpcService {
         Ok(Response::new(orchestrate_response_from(&out)))
     }
 
+    #[tracing::instrument(name = "rpc.create_council", skip_all)]
     async fn create_council(
         &self,
         request: Request<pb::CreateCouncilRequest>,
@@ -330,6 +335,7 @@ impl ChoreographerService for ChoreographerGrpcService {
         }))
     }
 
+    #[tracing::instrument(name = "rpc.list_councils", skip_all)]
     async fn list_councils(
         &self,
         _request: Request<pb::ListCouncilsRequest>,
@@ -348,6 +354,7 @@ impl ChoreographerService for ChoreographerGrpcService {
         }))
     }
 
+    #[tracing::instrument(name = "rpc.delete_council", skip_all)]
     async fn delete_council(
         &self,
         request: Request<pb::DeleteCouncilRequest>,
@@ -363,6 +370,7 @@ impl ChoreographerService for ChoreographerGrpcService {
         }
     }
 
+    #[tracing::instrument(name = "rpc.register_agent", skip_all)]
     async fn register_agent(
         &self,
         request: Request<pb::RegisterAgentRequest>,
@@ -384,6 +392,7 @@ impl ChoreographerService for ChoreographerGrpcService {
         }))
     }
 
+    #[tracing::instrument(name = "rpc.unregister_agent", skip_all)]
     async fn unregister_agent(
         &self,
         request: Request<pb::UnregisterAgentRequest>,
@@ -400,6 +409,7 @@ impl ChoreographerService for ChoreographerGrpcService {
         }
     }
 
+    #[tracing::instrument(name = "rpc.process_trigger_event", skip_all)]
     async fn process_trigger_event(
         &self,
         request: Request<pb::ProcessTriggerEventRequest>,
@@ -435,6 +445,7 @@ impl ChoreographerService for ChoreographerGrpcService {
         }))
     }
 
+    #[tracing::instrument(name = "rpc.get_status", skip_all)]
     async fn get_status(
         &self,
         request: Request<pb::GetStatusRequest>,
@@ -459,6 +470,7 @@ impl ChoreographerService for ChoreographerGrpcService {
         }))
     }
 
+    #[tracing::instrument(name = "rpc.get_metrics", skip_all)]
     async fn get_metrics(
         &self,
         _request: Request<pb::GetMetricsRequest>,

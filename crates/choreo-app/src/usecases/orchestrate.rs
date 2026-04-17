@@ -64,6 +64,14 @@ impl OrchestrateUseCase {
         }
     }
 
+    #[tracing::instrument(
+        name = "orchestrate",
+        skip_all,
+        fields(
+            task_id = %task.id(),
+            specialty = %task.specialty(),
+        )
+    )]
     pub async fn execute(
         &self,
         task: Task,

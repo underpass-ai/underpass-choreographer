@@ -101,6 +101,15 @@ impl DeliberateUseCase {
     /// `observer`. The observer is call-scoped: nothing is retained
     /// by the use case and the observer sees exactly one sequence of
     /// phase transitions per invocation.
+    #[tracing::instrument(
+        name = "deliberate",
+        skip_all,
+        fields(
+            task_id = %task.id(),
+            specialty = %task.specialty(),
+            rounds = task.constraints().rounds().get(),
+        )
+    )]
     pub async fn execute_with_observer(
         &self,
         task: Task,
