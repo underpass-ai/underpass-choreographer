@@ -16,5 +16,10 @@ spec:
       targetPort: grpc
       protocol: TCP
       appProtocol: grpc
+    - name: http
+      port: {{ .Values.service.httpPort }}
+      targetPort: http
+      protocol: TCP
+      appProtocol: http
   selector:
     {{- include "choreographer.selectorLabels" . | nindent 4 }}

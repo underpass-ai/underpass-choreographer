@@ -40,6 +40,7 @@ impl EnvConfiguration {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Defaults {
     grpc_port: u16,
+    http_port: u16,
     nats_enabled: bool,
     nats_url: String,
     trigger_subject: String,
@@ -50,6 +51,7 @@ impl Default for Defaults {
     fn default() -> Self {
         Self {
             grpc_port: 50055,
+            http_port: 8080,
             nats_enabled: true,
             nats_url: "nats://nats:4222".to_owned(),
             trigger_subject: "choreo.trigger.>".to_owned(),
@@ -73,6 +75,7 @@ impl ConfigurationPort for EnvConfiguration {
 
         Ok(ServiceConfig {
             grpc_port: loaded.grpc_port,
+            http_port: loaded.http_port,
             nats_enabled: loaded.nats_enabled,
             nats_url: loaded.nats_url,
             trigger_subject: loaded.trigger_subject,
@@ -106,6 +109,7 @@ mod tests {
 
         let cfg = EnvConfiguration::new().load().await.unwrap();
         assert_eq!(cfg.grpc_port, 50055);
+        assert_eq!(cfg.http_port, 8080);
         assert!(cfg.nats_enabled);
         assert_eq!(cfg.nats_url, "nats://nats:4222");
         assert_eq!(cfg.trigger_subject, "choreo.trigger.>");

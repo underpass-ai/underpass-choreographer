@@ -12,6 +12,7 @@ use crate::error::DomainError;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ServiceConfig {
     pub grpc_port: u16,
+    pub http_port: u16,
     pub nats_enabled: bool,
     pub nats_url: String,
     pub trigger_subject: String,
