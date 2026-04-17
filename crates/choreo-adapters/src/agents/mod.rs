@@ -10,6 +10,23 @@
 //! `Debug` impls. Each provider adapter is expected to wrap its
 //! credentials in an opaque type that masks the value on formatting.
 
+// Shared infrastructure for provider adapters. `prompts` is reused
+// by every provider that speaks natural language (so all current
+// adapters); `openai_compat` is reused only by adapters that speak
+// the Chat Completions wire shape (OpenAI + vLLM, not Anthropic).
+//
+// Both are `pub(super)` (i.e. visible only within `agents::*`).
+
+#[cfg(any(
+    feature = "agent-anthropic",
+    feature = "agent-openai",
+    feature = "agent-vllm"
+))]
+mod prompts;
+
+#[cfg(any(feature = "agent-openai", feature = "agent-vllm"))]
+mod openai_compat;
+
 #[cfg(feature = "agent-anthropic")]
 pub mod anthropic;
 

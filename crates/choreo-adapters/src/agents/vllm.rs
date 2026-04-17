@@ -28,9 +28,23 @@ use choreo_core::entities::TaskConstraints;
 use choreo_core::error::DomainError;
 use choreo_core::ports::{AgentPort, Critique, DraftRequest, Revision};
 use choreo_core::value_objects::{AgentId, Specialty};
-use reqwest::{Client, RequestBuilder, StatusCode};
-use serde::{Deserialize, Serialize};
+use reqwest::{Client, RequestBuilder};
 use tracing::{debug, warn};
+
+use super::openai_compat::{self as wire, ChatMessage, ChatRequest, ChatResponse, ErrorStrings};
+use super::prompts;
+
+/// Static error reasons for the vLLM provider.
+const VLLM_ERRORS: ErrorStrings = ErrorStrings {
+    unauthorized: "vllm: unauthorized",
+    rate_limited: "vllm: rate-limited",
+    bad_request: "vllm: bad request",
+    upstream_error: "vllm: upstream error",
+    malformed_body: "vllm: malformed response body",
+    no_choices: "vllm: no choices in response",
+    missing_content: "vllm: choice has no message.content",
+    empty_content: "vllm: empty text content",
+};
 
 const DEFAULT_ENDPOINT: &str = "http://vllm-server:8000";
 const DEFAULT_MAX_TOKENS: u32 = 1024;
@@ -232,7 +246,7 @@ impl VllmAgent {
                 body = %body_text,
                 "vllm: upstream returned non-success"
             );
-            return Err(classify_error(status));
+            return Err(wire::classify_error(status, &VLLM_ERRORS));
         }
 
         let parsed: ChatResponse = response.json().await.map_err(|err| {
@@ -243,11 +257,11 @@ impl VllmAgent {
                 "vllm: malformed response body"
             );
             DomainError::InvariantViolated {
-                reason: "vllm: malformed response body",
+                reason: VLLM_ERRORS.malformed_body,
             }
         })?;
 
-        extract_text(parsed).inspect_err(|_| {
+        wire::extract_text(parsed, &VLLM_ERRORS).inspect_err(|_| {
             warn!(op, agent_id = self.id.as_str(), "vllm: empty text content");
         })
     }
@@ -264,8 +278,8 @@ impl AgentPort for VllmAgent {
     }
 
     async fn generate(&self, request: DraftRequest) -> Result<Revision, DomainError> {
-        let system = system_prompt_generate(self.id.as_str(), self.specialty.as_str());
-        let user = user_prompt_generate(&request);
+        let system = prompts::system_prompt_generate(self.id.as_str(), self.specialty.as_str());
+        let user = prompts::user_prompt_generate(&request);
         let content = self.complete(system, user, "generate").await?;
         Ok(Revision { content })
     }
@@ -275,8 +289,8 @@ impl AgentPort for VllmAgent {
         peer_content: &str,
         constraints: &TaskConstraints,
     ) -> Result<Critique, DomainError> {
-        let system = system_prompt_critique(self.id.as_str(), self.specialty.as_str());
-        let user = user_prompt_critique(peer_content, constraints);
+        let system = prompts::system_prompt_critique(self.id.as_str(), self.specialty.as_str());
+        let user = prompts::user_prompt_critique(peer_content, constraints);
         let feedback = self.complete(system, user, "critique").await?;
         Ok(Critique { feedback })
     }
@@ -286,183 +300,16 @@ impl AgentPort for VllmAgent {
         own_content: &str,
         critique: &Critique,
     ) -> Result<Revision, DomainError> {
-        let system = system_prompt_revise(self.id.as_str(), self.specialty.as_str());
-        let user = user_prompt_revise(own_content, critique);
+        let system = prompts::system_prompt_revise(self.id.as_str(), self.specialty.as_str());
+        let user = prompts::user_prompt_revise(own_content, critique);
         let content = self.complete(system, user, "revise").await?;
         Ok(Revision { content })
     }
 }
 
-// ---------------------------------------------------------------------------
-// Prompts (domain-agnostic, identical in shape to openai / anthropic)
-//
-// Deliberately duplicated across the three providers today. A follow-up
-// refactor slice extracts them into `agents::prompts` once the
-// divergence pressure proves stable to zero — keeping them local keeps
-// each provider PR reviewable in isolation.
-// ---------------------------------------------------------------------------
-
-fn system_prompt_generate(id: &str, specialty: &str) -> String {
-    format!(
-        "You are a specialist agent in the Underpass Choreographer.\n\
-         Your agent id is \"{id}\". Your specialty is \"{specialty}\".\n\
-         \n\
-         Role:\n\
-         - Propose a solution to the task, within your specialty.\n\
-         - Keep the proposal concrete, concise, and self-contained.\n\
-         - Do not claim capabilities you lack, do not invent facts.\n\
-         \n\
-         Output contract:\n\
-         - Answer only with the proposal body. No preamble, no signature."
-    )
-}
-
-fn system_prompt_critique(id: &str, specialty: &str) -> String {
-    format!(
-        "You are a specialist agent in the Underpass Choreographer.\n\
-         Your agent id is \"{id}\". Your specialty is \"{specialty}\".\n\
-         \n\
-         Role:\n\
-         - Critique a peer's proposal for this task.\n\
-         - Flag concrete weaknesses; do not restate the proposal.\n\
-         - Prioritise critique that the peer can act on in a revision.\n\
-         \n\
-         Output contract:\n\
-         - Answer only with the critique body. No preamble."
-    )
-}
-
-fn system_prompt_revise(id: &str, specialty: &str) -> String {
-    format!(
-        "You are a specialist agent in the Underpass Choreographer.\n\
-         Your agent id is \"{id}\". Your specialty is \"{specialty}\".\n\
-         \n\
-         Role:\n\
-         - Revise your own proposal in response to the supplied critique.\n\
-         - Address the concrete points raised; keep what already works.\n\
-         \n\
-         Output contract:\n\
-         - Answer only with the revised proposal body. No preamble."
-    )
-}
-
-fn user_prompt_generate(request: &DraftRequest) -> String {
-    let rubric = serialize_rubric(&request.constraints);
-    let diverse_note = if request.diverse {
-        "You are one of several peers; propose a distinctive angle rather than a safest-seeming default."
-    } else {
-        "Propose the option you judge best on the merits."
-    };
-    format!(
-        "Task:\n{task}\n\n\
-         Rubric (opaque constraints to apply):\n{rubric}\n\n\
-         {diverse_note}\n\n\
-         Produce your proposal now.",
-        task = request.task.as_str(),
-    )
-}
-
-fn user_prompt_critique(peer_content: &str, constraints: &TaskConstraints) -> String {
-    let rubric = serialize_rubric(constraints);
-    format!(
-        "Peer proposal to critique:\n---\n{peer_content}\n---\n\n\
-         Rubric (opaque constraints to apply):\n{rubric}\n\n\
-         Critique it now."
-    )
-}
-
-fn user_prompt_revise(own_content: &str, critique: &Critique) -> String {
-    format!(
-        "Your previous proposal:\n---\n{own_content}\n---\n\n\
-         Critique to address:\n---\n{feedback}\n---\n\n\
-         Produce the revised proposal now.",
-        feedback = critique.feedback,
-    )
-}
-
-fn serialize_rubric(constraints: &TaskConstraints) -> String {
-    let rubric = constraints.rubric();
-    if rubric.is_empty() {
-        "(empty)".to_owned()
-    } else {
-        serde_json::to_string_pretty(rubric.as_map())
-            .unwrap_or_else(|_| "(unrepresentable)".to_owned())
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Wire types (identical to openai::ChatRequest / ChatResponse)
-// ---------------------------------------------------------------------------
-
-#[derive(Serialize)]
-struct ChatRequest<'a> {
-    model: &'a str,
-    max_tokens: u32,
-    messages: Vec<ChatMessage<'a>>,
-}
-
-#[derive(Serialize)]
-struct ChatMessage<'a> {
-    role: &'a str,
-    content: String,
-}
-
-#[derive(Deserialize)]
-struct ChatResponse {
-    #[serde(default)]
-    choices: Vec<ChatChoice>,
-}
-
-#[derive(Deserialize)]
-struct ChatChoice {
-    #[serde(default)]
-    message: Option<ChatResponseMessage>,
-}
-
-#[derive(Deserialize)]
-struct ChatResponseMessage {
-    #[serde(default)]
-    content: Option<String>,
-}
-
-fn extract_text(resp: ChatResponse) -> Result<String, DomainError> {
-    let first = resp
-        .choices
-        .into_iter()
-        .next()
-        .ok_or(DomainError::InvariantViolated {
-            reason: "vllm: no choices in response",
-        })?;
-    let content = first
-        .message
-        .and_then(|m| m.content)
-        .ok_or(DomainError::InvariantViolated {
-            reason: "vllm: choice has no message.content",
-        })?;
-    if content.trim().is_empty() {
-        return Err(DomainError::InvariantViolated {
-            reason: "vllm: empty text content",
-        });
-    }
-    Ok(content)
-}
-
-fn classify_error(status: StatusCode) -> DomainError {
-    match status.as_u16() {
-        401 | 403 => DomainError::InvariantViolated {
-            reason: "vllm: unauthorized",
-        },
-        429 => DomainError::InvariantViolated {
-            reason: "vllm: rate-limited",
-        },
-        400..=499 => DomainError::InvariantViolated {
-            reason: "vllm: bad request",
-        },
-        _ => DomainError::InvariantViolated {
-            reason: "vllm: upstream error",
-        },
-    }
-}
+// Prompts live in `super::prompts`; wire types / extract_text /
+// classify_error live in `super::openai_compat`. This adapter only
+// carries its own config + optional-auth policy + error labels.
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -818,18 +665,6 @@ mod tests {
         ));
     }
 
-    // --- prompt assembly -----------------------------------------------
-
-    #[test]
-    fn system_prompt_is_domain_agnostic() {
-        let s = system_prompt_generate("a1", "triage");
-        assert!(s.contains("a1"));
-        assert!(s.contains("triage"));
-        for forbidden in ["story", "backlog", "sprint", "pull request"] {
-            assert!(
-                !s.to_lowercase().contains(forbidden),
-                "domain vocabulary leak: {forbidden}"
-            );
-        }
-    }
+    // Prompt / rubric tests live in `super::prompts` — covered once,
+    // owned by the module that holds the shared helpers.
 }
