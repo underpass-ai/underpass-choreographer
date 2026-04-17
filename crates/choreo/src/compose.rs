@@ -152,11 +152,8 @@ pub async fn compose() -> Result<Application, ComposeError> {
         .service_version(env!("CARGO_PKG_VERSION"))
         .build()?;
 
-    let health_state = crate::health::HealthState::new(
-        nats_client,
-        statistics.clone(),
-        env!("CARGO_PKG_VERSION"),
-    );
+    let health_state =
+        crate::health::HealthState::new(nats_client, statistics.clone(), env!("CARGO_PKG_VERSION"));
 
     info!(
         grpc_port = service_config.grpc_port,

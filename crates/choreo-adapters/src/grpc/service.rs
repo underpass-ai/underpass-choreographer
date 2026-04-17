@@ -428,9 +428,18 @@ mod tests {
     #[test]
     fn statistics_to_proto_maps_every_field() {
         let mut stats = Statistics::new();
-        stats.record_deliberation(&Specialty::new("triage").unwrap(), DurationMs::from_millis(100));
-        stats.record_deliberation(&Specialty::new("triage").unwrap(), DurationMs::from_millis(50));
-        stats.record_deliberation(&Specialty::new("reviewer").unwrap(), DurationMs::from_millis(200));
+        stats.record_deliberation(
+            &Specialty::new("triage").unwrap(),
+            DurationMs::from_millis(100),
+        );
+        stats.record_deliberation(
+            &Specialty::new("triage").unwrap(),
+            DurationMs::from_millis(50),
+        );
+        stats.record_deliberation(
+            &Specialty::new("reviewer").unwrap(),
+            DurationMs::from_millis(200),
+        );
         stats.record_orchestration(DurationMs::from_millis(400));
 
         let mapped = statistics_to_proto(&stats);
