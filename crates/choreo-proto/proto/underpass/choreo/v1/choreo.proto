@@ -39,12 +39,12 @@ import "google/protobuf/timestamp.proto";
 //
 //   Deliberate, Orchestrate, GetDeliberationResult,
 //   CreateCouncil, ListCouncils, DeleteCouncil,
-//   ProcessTriggerEvent
+//   ProcessTriggerEvent, GetStatus, GetMetrics
 //     -> backed by a use case in `choreo-app/src/usecases/` (or
-//        `services/auto_dispatch.rs` for ProcessTriggerEvent).
+//        `services/auto_dispatch.rs` for ProcessTriggerEvent;
+//        `StatisticsPort::snapshot` for GetStatus / GetMetrics).
 //
-//   StreamDeliberation, RegisterAgent, UnregisterAgent,
-//   GetStatus, GetMetrics
+//   StreamDeliberation, RegisterAgent, UnregisterAgent
 //     -> declared here because they belong to the contract, but the
 //        server returns `UNIMPLEMENTED` until their backing use cases
 //        land. Enumerate what is real (not what is planned) per the

@@ -21,6 +21,7 @@ use std::time::Duration;
 use choreo_adapters::clock::SystemClock;
 use choreo_adapters::memory::{
     InMemoryAgentRegistry, InMemoryCouncilRegistry, InMemoryDeliberationRepository,
+    InMemoryStatistics,
 };
 use choreo_adapters::nats::{NatsMessaging, NatsSubjects, NatsTriggerSubscriber};
 use choreo_adapters::noop::NoopAgent;
@@ -31,7 +32,7 @@ use choreo_app::usecases::DeliberateUseCase;
 use choreo_core::entities::{Council, DeliberationPhase};
 use choreo_core::ports::{
     AgentPort, ClockPort, CouncilRegistryPort, DeliberationRepositoryPort, MessagingPort,
-    ScoringPort, ValidatorPort,
+    ScoringPort, StatisticsPort, ValidatorPort,
 };
 use choreo_core::value_objects::{AgentId, CouncilId, Specialty, TaskId};
 use futures::StreamExt;
@@ -107,6 +108,7 @@ async fn trigger_event_over_nats_drives_full_pipeline() {
     let scoring: Arc<dyn ScoringPort> = Arc::new(UniformScoring::new());
     let messaging: Arc<dyn MessagingPort> =
         Arc::new(NatsMessaging::new(client.clone(), subjects.clone()));
+    let statistics: Arc<dyn StatisticsPort> = Arc::new(InMemoryStatistics::new());
 
     let deliberate = Arc::new(DeliberateUseCase::new(
         clock.clone(),
@@ -116,6 +118,7 @@ async fn trigger_event_over_nats_drives_full_pipeline() {
         scoring,
         repo.clone(),
         messaging.clone(),
+        statistics,
         "integration-test",
     ));
 

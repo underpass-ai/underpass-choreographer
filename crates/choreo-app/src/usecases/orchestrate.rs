@@ -32,6 +32,7 @@ pub struct OrchestrateUseCase {
     executor: Arc<dyn ExecutorPort>,
     messaging: Arc<dyn MessagingPort>,
     clock: Arc<dyn ClockPort>,
+    statistics: Arc<dyn choreo_core::ports::StatisticsPort>,
     source: String,
 }
 
@@ -50,6 +51,7 @@ impl OrchestrateUseCase {
         executor: Arc<dyn ExecutorPort>,
         messaging: Arc<dyn MessagingPort>,
         clock: Arc<dyn ClockPort>,
+        statistics: Arc<dyn choreo_core::ports::StatisticsPort>,
         source: impl Into<String>,
     ) -> Self {
         Self {
@@ -57,6 +59,7 @@ impl OrchestrateUseCase {
             executor,
             messaging,
             clock,
+            statistics,
             source: source.into(),
         }
     }
@@ -90,6 +93,15 @@ impl OrchestrateUseCase {
 
         match self.executor.execute(&winner, &execution_options).await {
             Ok(execution) => {
+                // The deliberation's own duration already went into
+                // the stats through `DeliberateUseCase`; here we
+                // record the orchestration end-to-end duration,
+                // which for the noop executor is just the executor
+                // call's reported duration.
+                self.statistics
+                    .record_orchestration(execution.duration)
+                    .await?;
+
                 self.messaging
                     .publish_task_completed(&TaskCompletedEvent::new(
                         self.envelope(self.clock.now())?,

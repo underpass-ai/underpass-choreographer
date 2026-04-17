@@ -21,22 +21,24 @@ use std::sync::Arc;
 use async_nats::connection::State as NatsConnectionState;
 use axum::{
     extract::State,
-    http::StatusCode,
+    http::{header, StatusCode},
     response::{IntoResponse, Response},
     routing::get,
     Json, Router,
 };
+use choreo_core::ports::StatisticsPort;
 use serde::Serialize;
 
 /// Read-only handles the health endpoints need. Cloning a
 /// `HealthState` is cheap — every inner handle is already an `Arc`
 /// or a lightweight client.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct HealthState {
     /// `Some` when NATS messaging was wired at composition time.
     /// `None` when the service is running with `NoopMessaging`; in
     /// that case readiness never fails on NATS.
     nats: Option<async_nats::Client>,
+    statistics: Arc<dyn StatisticsPort>,
     service_version: Arc<str>,
 }
 
@@ -51,9 +53,14 @@ impl std::fmt::Debug for HealthState {
 
 impl HealthState {
     #[must_use]
-    pub fn new(nats: Option<async_nats::Client>, service_version: impl Into<String>) -> Self {
+    pub fn new(
+        nats: Option<async_nats::Client>,
+        statistics: Arc<dyn StatisticsPort>,
+        service_version: impl Into<String>,
+    ) -> Self {
         Self {
             nats,
+            statistics,
             service_version: Arc::from(service_version.into().into_boxed_str()),
         }
     }
@@ -65,6 +72,7 @@ pub fn router(state: HealthState) -> Router {
     Router::new()
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
+        .route("/metrics", get(metrics))
         .with_state(state)
 }
 
@@ -130,6 +138,104 @@ async fn readyz(State(state): State<HealthState>) -> Response {
     (code, Json(body)).into_response()
 }
 
+/// Prometheus text format exposition.
+///
+/// Hand-rolled (no client library) to avoid another dependency for
+/// five counters and a gauge. The format is specified at
+/// <https://prometheus.io/docs/instrumenting/exposition_formats/>.
+/// One metric family per `# HELP` / `# TYPE` pair; samples follow.
+async fn metrics(State(state): State<HealthState>) -> Response {
+    use std::fmt::Write as _;
+
+    let snap = match state.statistics.snapshot().await {
+        Ok(s) => s,
+        Err(err) => {
+            tracing::error!(error = %err, "metrics snapshot failed");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "statistics snapshot failed\n",
+            )
+                .into_response();
+        }
+    };
+
+    let ready_gauge = match &state.nats {
+        Some(client) if client.connection_state() != NatsConnectionState::Connected => 0,
+        _ => 1,
+    };
+
+    let total_ops = snap
+        .total_deliberations()
+        .saturating_add(snap.total_orchestrations());
+    let total_deliberations = snap.total_deliberations();
+    let total_orchestrations = snap.total_orchestrations();
+    let total_duration_ms = snap.total_duration().get();
+
+    // `write!` into String is infallible; unwrap is safe here.
+    let mut body = String::new();
+    body.push_str("# HELP choreo_deliberations_total Count of deliberations completed.\n");
+    body.push_str("# TYPE choreo_deliberations_total counter\n");
+    writeln!(body, "choreo_deliberations_total {total_deliberations}").unwrap();
+
+    body.push_str("# HELP choreo_orchestrations_total Count of orchestrations completed.\n");
+    body.push_str("# TYPE choreo_orchestrations_total counter\n");
+    writeln!(body, "choreo_orchestrations_total {total_orchestrations}").unwrap();
+
+    body.push_str(
+        "# HELP choreo_deliberations_specialty_total Count of deliberations per specialty.\n",
+    );
+    body.push_str("# TYPE choreo_deliberations_specialty_total counter\n");
+    for (specialty, count) in snap.per_specialty() {
+        let label = escape_label_value(specialty.as_str());
+        writeln!(
+            body,
+            "choreo_deliberations_specialty_total{{specialty=\"{label}\"}} {count}"
+        )
+        .unwrap();
+    }
+
+    body.push_str(
+        "# HELP choreo_operation_duration_milliseconds Summed duration across deliberations and orchestrations.\n",
+    );
+    body.push_str("# TYPE choreo_operation_duration_milliseconds summary\n");
+    writeln!(
+        body,
+        "choreo_operation_duration_milliseconds_sum {total_duration_ms}"
+    )
+    .unwrap();
+    writeln!(
+        body,
+        "choreo_operation_duration_milliseconds_count {total_ops}"
+    )
+    .unwrap();
+
+    body.push_str("# HELP choreo_service_ready 1 when every wired dependency is reachable.\n");
+    body.push_str("# TYPE choreo_service_ready gauge\n");
+    writeln!(body, "choreo_service_ready {ready_gauge}").unwrap();
+
+    (
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "text/plain; version=0.0.4")],
+        body,
+    )
+        .into_response()
+}
+
+/// Escape a Prometheus label value per the exposition format:
+/// backslash, double-quote, and newline must be escaped.
+fn escape_label_value(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for ch in value.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            other => out.push(other),
+        }
+    }
+    out
+}
+
 fn check_nats(client: &async_nats::Client) -> CheckResult {
     match client.connection_state() {
         NatsConnectionState::Connected => CheckResult {
@@ -159,8 +265,14 @@ mod tests {
     use super::*;
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
+    use choreo_adapters::memory::InMemoryStatistics;
+    use choreo_core::value_objects::{DurationMs, Specialty};
     use serde_json::Value;
     use tower::ServiceExt; // for `oneshot`
+
+    fn stats() -> Arc<dyn StatisticsPort> {
+        Arc::new(InMemoryStatistics::new())
+    }
 
     async fn body_json(resp: Response) -> Value {
         let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
@@ -169,9 +281,16 @@ mod tests {
         serde_json::from_slice(&bytes).expect("valid json")
     }
 
+    async fn body_text(resp: Response) -> String {
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("body bytes");
+        String::from_utf8(bytes.to_vec()).expect("utf8")
+    }
+
     #[tokio::test]
     async fn healthz_returns_200_with_alive_status() {
-        let app = router(HealthState::new(None, "0.1.0"));
+        let app = router(HealthState::new(None, stats(), "0.1.0"));
         let resp = app
             .oneshot(
                 Request::builder()
@@ -190,7 +309,7 @@ mod tests {
 
     #[tokio::test]
     async fn readyz_without_nats_returns_200_and_reports_not_wired() {
-        let app = router(HealthState::new(None, "0.1.0"));
+        let app = router(HealthState::new(None, stats(), "0.1.0"));
         let resp = app
             .oneshot(
                 Request::builder()
@@ -219,7 +338,7 @@ mod tests {
         // hitting /healthz with `None` and asserting response shape.
         // The structural invariant is enforced by the implementation
         // of `healthz` never touching `state.nats`.
-        let app = router(HealthState::new(None, "9.9.9"));
+        let app = router(HealthState::new(None, stats(), "9.9.9"));
         let resp = app
             .oneshot(
                 Request::builder()
@@ -236,7 +355,7 @@ mod tests {
 
     #[tokio::test]
     async fn unknown_route_is_404() {
-        let app = router(HealthState::new(None, "0.1.0"));
+        let app = router(HealthState::new(None, stats(), "0.1.0"));
         let resp = app
             .oneshot(
                 Request::builder()
@@ -251,7 +370,7 @@ mod tests {
 
     #[tokio::test]
     async fn post_to_healthz_is_method_not_allowed() {
-        let app = router(HealthState::new(None, "0.1.0"));
+        let app = router(HealthState::new(None, stats(), "0.1.0"));
         let resp = app
             .oneshot(
                 Request::builder()
@@ -270,12 +389,97 @@ mod tests {
         // Paranoia: make sure nothing sensitive sneaks into the
         // Debug output. Right now there are no secrets here, but
         // this test locks the invariant as the state grows.
-        let state = HealthState::new(None, "0.1.0");
+        let state = HealthState::new(None, stats(), "0.1.0");
         let shown = format!("{state:?}");
         assert!(shown.contains("HealthState"));
         assert!(shown.contains("nats_wired"));
         assert!(!shown.to_lowercase().contains("secret"));
         assert!(!shown.to_lowercase().contains("token"));
         assert!(!shown.to_lowercase().contains("api_key"));
+    }
+
+    #[tokio::test]
+    async fn metrics_emits_prometheus_text_with_zero_counters_on_fresh_boot() {
+        let app = router(HealthState::new(None, stats(), "0.1.0"));
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/metrics")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(
+            resp.headers()
+                .get(header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok()),
+            Some("text/plain; version=0.0.4")
+        );
+        let text = body_text(resp).await;
+        assert!(text.contains("# TYPE choreo_deliberations_total counter"));
+        assert!(text.contains("choreo_deliberations_total 0"));
+        assert!(text.contains("choreo_orchestrations_total 0"));
+        assert!(text.contains("choreo_operation_duration_milliseconds_sum 0"));
+        assert!(text.contains("choreo_operation_duration_milliseconds_count 0"));
+        assert!(text.contains("choreo_service_ready 1"));
+    }
+
+    #[tokio::test]
+    async fn metrics_reflects_recorded_operations_and_specialty_labels() {
+        let stats_adapter = Arc::new(InMemoryStatistics::new());
+        stats_adapter
+            .record_deliberation(
+                &Specialty::new("triage").unwrap(),
+                DurationMs::from_millis(150),
+            )
+            .await
+            .unwrap();
+        stats_adapter
+            .record_deliberation(
+                &Specialty::new("reviewer").unwrap(),
+                DurationMs::from_millis(200),
+            )
+            .await
+            .unwrap();
+        stats_adapter
+            .record_orchestration(DurationMs::from_millis(400))
+            .await
+            .unwrap();
+
+        let state = HealthState::new(None, stats_adapter.clone(), "0.1.0");
+        let app = router(state);
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/metrics")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let text = body_text(resp).await;
+        assert!(text.contains("choreo_deliberations_total 2"));
+        assert!(text.contains("choreo_orchestrations_total 1"));
+        assert!(
+            text.contains("choreo_deliberations_specialty_total{specialty=\"triage\"} 1"),
+            "missing triage label:\n{text}"
+        );
+        assert!(
+            text.contains("choreo_deliberations_specialty_total{specialty=\"reviewer\"} 1"),
+            "missing reviewer label:\n{text}"
+        );
+        assert!(text.contains("choreo_operation_duration_milliseconds_sum 750"));
+        assert!(text.contains("choreo_operation_duration_milliseconds_count 3"));
+    }
+
+    #[test]
+    fn label_value_escaping_handles_backslash_quote_and_newline() {
+        assert_eq!(escape_label_value("plain"), "plain");
+        assert_eq!(escape_label_value("a\\b"), "a\\\\b");
+        assert_eq!(escape_label_value("a\"b"), "a\\\"b");
+        assert_eq!(escape_label_value("a\nb"), "a\\nb");
     }
 }

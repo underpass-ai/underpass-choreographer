@@ -29,7 +29,7 @@ use choreo_core::error::DomainError;
 use choreo_core::events::{DeliberationCompletedEvent, EventEnvelope};
 use choreo_core::ports::{
     AgentPort, AgentResolverPort, ClockPort, CouncilRegistryPort, DeliberationRepositoryPort,
-    DraftRequest, MessagingPort, ScoringPort, ValidatorPort,
+    DraftRequest, MessagingPort, ScoringPort, StatisticsPort, ValidatorPort,
 };
 use choreo_core::value_objects::{AgentId, EventId, ProposalId};
 use time::OffsetDateTime;
@@ -52,6 +52,7 @@ pub struct DeliberateUseCase {
     scoring: Arc<dyn ScoringPort>,
     repository: Arc<dyn DeliberationRepositoryPort>,
     messaging: Arc<dyn MessagingPort>,
+    statistics: Arc<dyn StatisticsPort>,
     source: String,
 }
 
@@ -74,6 +75,7 @@ impl DeliberateUseCase {
         scoring: Arc<dyn ScoringPort>,
         repository: Arc<dyn DeliberationRepositoryPort>,
         messaging: Arc<dyn MessagingPort>,
+        statistics: Arc<dyn StatisticsPort>,
         source: impl Into<String>,
     ) -> Self {
         Self {
@@ -84,6 +86,7 @@ impl DeliberateUseCase {
             scoring,
             repository,
             messaging,
+            statistics,
             source: source.into(),
         }
     }
@@ -134,6 +137,11 @@ impl DeliberateUseCase {
         self.repository.save(&deliberation).await?;
 
         let duration = deliberation.duration().unwrap_or_default();
+
+        self.statistics
+            .record_deliberation(deliberation.specialty(), duration)
+            .await?;
+
         let completion_event = DeliberationCompletedEvent::new(
             self.envelope(completed_at)?,
             deliberation.task_id().clone(),
@@ -551,6 +559,28 @@ mod tests {
         }
     }
 
+    #[derive(Default)]
+    struct NullStats;
+    #[async_trait]
+    impl choreo_core::ports::StatisticsPort for NullStats {
+        async fn record_deliberation(
+            &self,
+            _specialty: &Specialty,
+            _duration: choreo_core::value_objects::DurationMs,
+        ) -> Result<(), DomainError> {
+            Ok(())
+        }
+        async fn record_orchestration(
+            &self,
+            _duration: choreo_core::value_objects::DurationMs,
+        ) -> Result<(), DomainError> {
+            Ok(())
+        }
+        async fn snapshot(&self) -> Result<choreo_core::entities::Statistics, DomainError> {
+            Ok(choreo_core::entities::Statistics::default())
+        }
+    }
+
     // --- Fixture helpers --------------------------------------------------
 
     fn specialty() -> Specialty {
@@ -595,6 +625,7 @@ mod tests {
         let repo = Arc::new(InMemoryRepo::default());
         let bus = Arc::new(NullBus::default());
 
+        let stats: Arc<dyn choreo_core::ports::StatisticsPort> = Arc::new(NullStats);
         let usecase = DeliberateUseCase::new(
             clock,
             registry,
@@ -603,6 +634,7 @@ mod tests {
             scoring,
             repo.clone(),
             bus.clone(),
+            stats,
             "choreographer",
         );
         (usecase, repo, bus)
