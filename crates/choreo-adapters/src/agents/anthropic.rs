@@ -30,6 +30,8 @@ use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, warn};
 
+use super::prompts;
+
 const ANTHROPIC_VERSION_HEADER: &str = "2023-06-01";
 const DEFAULT_ENDPOINT: &str = "https://api.anthropic.com";
 const DEFAULT_MODEL: &str = "claude-haiku-4-5-20251001";
@@ -273,8 +275,8 @@ impl AgentPort for AnthropicAgent {
     }
 
     async fn generate(&self, request: DraftRequest) -> Result<Revision, DomainError> {
-        let system = system_prompt_generate(self.id.as_str(), self.specialty.as_str());
-        let user = user_prompt_generate(&request);
+        let system = prompts::system_prompt_generate(self.id.as_str(), self.specialty.as_str());
+        let user = prompts::user_prompt_generate(&request);
         let content = self.complete(system, user, "generate").await?;
         Ok(Revision { content })
     }
@@ -284,8 +286,8 @@ impl AgentPort for AnthropicAgent {
         peer_content: &str,
         constraints: &TaskConstraints,
     ) -> Result<Critique, DomainError> {
-        let system = system_prompt_critique(self.id.as_str(), self.specialty.as_str());
-        let user = user_prompt_critique(peer_content, constraints);
+        let system = prompts::system_prompt_critique(self.id.as_str(), self.specialty.as_str());
+        let user = prompts::user_prompt_critique(peer_content, constraints);
         let feedback = self.complete(system, user, "critique").await?;
         Ok(Critique { feedback })
     }
@@ -295,102 +297,10 @@ impl AgentPort for AnthropicAgent {
         own_content: &str,
         critique: &Critique,
     ) -> Result<Revision, DomainError> {
-        let system = system_prompt_revise(self.id.as_str(), self.specialty.as_str());
-        let user = user_prompt_revise(own_content, critique);
+        let system = prompts::system_prompt_revise(self.id.as_str(), self.specialty.as_str());
+        let user = prompts::user_prompt_revise(own_content, critique);
         let content = self.complete(system, user, "revise").await?;
         Ok(Revision { content })
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Prompts
-// ---------------------------------------------------------------------------
-
-fn system_prompt_generate(id: &str, specialty: &str) -> String {
-    format!(
-        "You are a specialist agent in the Underpass Choreographer.\n\
-         Your agent id is \"{id}\". Your specialty is \"{specialty}\".\n\
-         \n\
-         Role:\n\
-         - Propose a solution to the task, within your specialty.\n\
-         - Keep the proposal concrete, concise, and self-contained.\n\
-         - Do not claim capabilities you lack, do not invent facts.\n\
-         \n\
-         Output contract:\n\
-         - Answer only with the proposal body. No preamble, no signature."
-    )
-}
-
-fn system_prompt_critique(id: &str, specialty: &str) -> String {
-    format!(
-        "You are a specialist agent in the Underpass Choreographer.\n\
-         Your agent id is \"{id}\". Your specialty is \"{specialty}\".\n\
-         \n\
-         Role:\n\
-         - Critique a peer's proposal for this task.\n\
-         - Flag concrete weaknesses; do not restate the proposal.\n\
-         - Prioritise critique that the peer can act on in a revision.\n\
-         \n\
-         Output contract:\n\
-         - Answer only with the critique body. No preamble."
-    )
-}
-
-fn system_prompt_revise(id: &str, specialty: &str) -> String {
-    format!(
-        "You are a specialist agent in the Underpass Choreographer.\n\
-         Your agent id is \"{id}\". Your specialty is \"{specialty}\".\n\
-         \n\
-         Role:\n\
-         - Revise your own proposal in response to the supplied critique.\n\
-         - Address the concrete points raised; keep what already works.\n\
-         \n\
-         Output contract:\n\
-         - Answer only with the revised proposal body. No preamble."
-    )
-}
-
-fn user_prompt_generate(request: &DraftRequest) -> String {
-    let rubric = serialize_rubric(&request.constraints);
-    let diverse_note = if request.diverse {
-        "You are one of several peers; propose a distinctive angle rather than a safest-seeming default."
-    } else {
-        "Propose the option you judge best on the merits."
-    };
-    format!(
-        "Task:\n{task}\n\n\
-         Rubric (opaque constraints to apply):\n{rubric}\n\n\
-         {diverse_note}\n\n\
-         Produce your proposal now.",
-        task = request.task.as_str(),
-    )
-}
-
-fn user_prompt_critique(peer_content: &str, constraints: &TaskConstraints) -> String {
-    let rubric = serialize_rubric(constraints);
-    format!(
-        "Peer proposal to critique:\n---\n{peer_content}\n---\n\n\
-         Rubric (opaque constraints to apply):\n{rubric}\n\n\
-         Critique it now."
-    )
-}
-
-fn user_prompt_revise(own_content: &str, critique: &Critique) -> String {
-    format!(
-        "Your previous proposal:\n---\n{own_content}\n---\n\n\
-         Critique to address:\n---\n{feedback}\n---\n\n\
-         Produce the revised proposal now.",
-        feedback = critique.feedback,
-    )
-}
-
-fn serialize_rubric(constraints: &TaskConstraints) -> String {
-    let rubric = constraints.rubric();
-    if rubric.is_empty() {
-        "(empty)".to_owned()
-    } else {
-        serde_json::to_string_pretty(rubric.as_map())
-            .unwrap_or_else(|_| "(unrepresentable)".to_owned())
     }
 }
 
@@ -486,7 +396,7 @@ fn classify_error(status: StatusCode) -> DomainError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use choreo_core::value_objects::{Attributes, Rounds, Rubric, TaskDescription};
+    use choreo_core::value_objects::{Rounds, Rubric, TaskDescription};
     use serde_json::json;
     use wiremock::matchers::{header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -809,33 +719,6 @@ mod tests {
         assert_eq!(out.content, "the actual proposal");
     }
 
-    // --- prompt assembly (pure, no HTTP) --------------------------------
-
-    #[test]
-    fn system_prompt_is_domain_agnostic() {
-        let s = system_prompt_generate("a1", "triage");
-        assert!(s.contains("a1"));
-        assert!(s.contains("triage"));
-        // No SWE leakage.
-        for forbidden in ["story", "backlog", "sprint", "pull request"] {
-            assert!(
-                !s.to_lowercase().contains(forbidden),
-                "domain vocabulary leak: {forbidden}"
-            );
-        }
-    }
-
-    #[test]
-    fn rubric_serialization_handles_empty() {
-        let c = TaskConstraints::default();
-        assert_eq!(serialize_rubric(&c), "(empty)");
-    }
-
-    #[test]
-    fn attributes_import_is_visible() {
-        // Anchor for the `Attributes` import so cargo doesn't flag it
-        // as unused in this test module — it backs the proposal
-        // metadata flow in integration scenarios.
-        let _ = Attributes::empty();
-    }
+    // Prompt / rubric tests live in `super::prompts` — covered once,
+    // owned by the module that holds the shared helpers.
 }
