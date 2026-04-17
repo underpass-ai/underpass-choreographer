@@ -97,6 +97,20 @@ messaging:
     # Wildcard of inbound trigger subjects consumed by the service.
     triggerSubject: choreo.trigger.>
 
+# Persistent storage for deliberations.
+# When `enabled: true`, the binary wires the Postgres repository
+# (migrations apply on startup). Otherwise the in-memory repository
+# is used. Only deliberations persist at this phase; councils,
+# agent registry, and statistics remain in-memory.
+persistence:
+  postgres:
+    enabled: false
+    # Plain URL form. Real deployments should source this from a
+    # Secret-mounted file and set `urlFromSecret.name/key` instead of
+    # hard-coding here; those fields arrive with the chart-hardening
+    # slice.
+    url: ""
+
 tls:
   # Transport security mode for the gRPC service.
   # One of: "none" | "server" | "mutual".

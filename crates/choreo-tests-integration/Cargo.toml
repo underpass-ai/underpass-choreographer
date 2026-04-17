@@ -21,7 +21,7 @@ container-tests = []
 [dependencies]
 choreo-core = { workspace = true }
 choreo-app = { workspace = true }
-choreo-adapters = { workspace = true, features = ["nats"] }
+choreo-adapters = { workspace = true, features = ["nats", "postgres"] }
 
 [dev-dependencies]
 async-nats = { workspace = true }

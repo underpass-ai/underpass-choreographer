@@ -25,6 +25,7 @@
 //! | Feature            | Integration                                 |
 //! |--------------------|---------------------------------------------|
 //! | `nats`             | NATS JetStream messaging adapter            |
+//! | `postgres`         | Postgres deliberation repository (sqlx)     |
 //! | `agent-vllm`       | vLLM / OpenAI-compatible local inference    |
 //! | `agent-anthropic`  | Anthropic Messages API                      |
 //! | `agent-openai`     | OpenAI Chat Completions / Responses API     |
@@ -46,5 +47,8 @@ pub mod grpc;
 
 #[cfg(feature = "nats")]
 pub mod nats;
+
+#[cfg(feature = "postgres")]
+pub mod postgres;
 
 pub mod agents;

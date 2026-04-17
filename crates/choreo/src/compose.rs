@@ -10,6 +10,9 @@ use choreo_adapters::memory::{
 };
 use choreo_adapters::nats::{NatsConfig, NatsMessaging, NatsTriggerSubscriber};
 use choreo_adapters::noop::{NoopAgentFactory, NoopExecutor, NoopMessaging};
+use choreo_adapters::postgres::{
+    PostgresConfig, PostgresDeliberationRepository, PostgresPool, PostgresPoolError,
+};
 use choreo_adapters::scoring::UniformScoring;
 use choreo_adapters::validators::ContentNonEmptyValidator;
 use choreo_app::services::AutoDispatchService;
@@ -19,8 +22,8 @@ use choreo_app::usecases::{
 };
 use choreo_core::error::DomainError;
 use choreo_core::ports::{
-    AgentFactoryPort, AgentRegistryPort, ConfigurationPort, ExecutorPort, MessagingPort,
-    ScoringPort, ServiceConfig, StatisticsPort, ValidatorPort,
+    AgentFactoryPort, AgentRegistryPort, ConfigurationPort, DeliberationRepositoryPort,
+    ExecutorPort, MessagingPort, ScoringPort, ServiceConfig, StatisticsPort, ValidatorPort,
 };
 use thiserror::Error;
 use tracing::info;
@@ -32,7 +35,7 @@ pub struct Application {
     pub service_config: ServiceConfig,
     pub agent_registry: Arc<InMemoryAgentRegistry>,
     pub council_registry: Arc<InMemoryCouncilRegistry>,
-    pub repository: Arc<InMemoryDeliberationRepository>,
+    pub repository: Arc<dyn DeliberationRepositoryPort>,
     pub grpc_service: choreo_adapters::grpc::ChoreographerGrpcService,
     pub nats_subscriber: Option<NatsTriggerSubscriber>,
     pub health_state: crate::health::HealthState,
@@ -55,6 +58,9 @@ pub enum ComposeError {
 
     #[error("nats connection failed: {0}")]
     NatsConnect(#[source] async_nats::ConnectError),
+
+    #[error("postgres setup failed: {0}")]
+    Postgres(#[from] PostgresPoolError),
 
     #[error("seeding failed: {0}")]
     Seeding(#[from] SeedingError),
@@ -79,7 +85,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
     let clock = Arc::new(SystemClock::new());
     let agent_registry = Arc::new(InMemoryAgentRegistry::new());
     let council_registry = Arc::new(InMemoryCouncilRegistry::new());
-    let repository = Arc::new(InMemoryDeliberationRepository::new());
+    let repository = wire_repository(&service_config).await?;
 
     let validators: Vec<Arc<dyn ValidatorPort>> = vec![Arc::new(ContentNonEmptyValidator::new())];
     let scoring: Arc<dyn ScoringPort> = Arc::new(UniformScoring::new());
@@ -258,6 +264,25 @@ async fn wire_messaging(cfg: &ServiceConfig) -> Result<MessagingWiring, ComposeE
         subscriber_factory: Some(subscriber_factory),
         nats_client: Some(client),
     })
+}
+
+/// Pick a [`DeliberationRepositoryPort`] implementation based on the
+/// environment: Postgres when `CHOREO_POSTGRES_URL` is set (migrations
+/// apply on startup so a fresh cluster is exercisable), in-memory
+/// otherwise.
+async fn wire_repository(
+    cfg: &ServiceConfig,
+) -> Result<Arc<dyn DeliberationRepositoryPort>, ComposeError> {
+    if let Some(url) = cfg.postgres_url.as_deref() {
+        let pg_cfg = PostgresConfig::from_url(url);
+        let pool = PostgresPool::connect(&pg_cfg).await?;
+        pool.run_migrations().await?;
+        info!("postgres deliberation repository wired");
+        Ok(Arc::new(PostgresDeliberationRepository::new(pool)))
+    } else {
+        info!("postgres disabled; using in-memory deliberation repository");
+        Ok(Arc::new(InMemoryDeliberationRepository::new()))
+    }
 }
 
 #[cfg(test)]
