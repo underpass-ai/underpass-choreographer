@@ -4,9 +4,10 @@ use choreo_core::entities::Council;
 use choreo_core::error::DomainError;
 use choreo_core::value_objects::{AgentId, CouncilId, Specialty};
 use choreo_proto::v1 as pb;
-use prost_types::Timestamp;
 use time::OffsetDateTime;
 use uuid::Uuid;
+
+use super::timestamp::offset_to_timestamp;
 
 /// Build a [`Council`] from a `CreateCouncilRequest`.
 ///
@@ -43,18 +44,6 @@ pub fn council_summary_from(
         num_agents: u32::try_from(council.size()).unwrap_or(u32::MAX),
         agents,
         created_at: Some(offset_to_timestamp(council.created_at())),
-    }
-}
-
-fn offset_to_timestamp(dt: OffsetDateTime) -> Timestamp {
-    let nanos = dt.unix_timestamp_nanos();
-    // Proto Timestamp has seconds:i64 + nanos:i32 (0..=999_999_999).
-    // Splitting manually keeps the conversion explicit and overflow-safe.
-    let seconds = i64::try_from(nanos.div_euclid(1_000_000_000)).unwrap_or(i64::MAX);
-    let sub_nanos = i32::try_from(nanos.rem_euclid(1_000_000_000)).unwrap_or(0);
-    Timestamp {
-        seconds,
-        nanos: sub_nanos,
     }
 }
 

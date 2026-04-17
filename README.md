@@ -71,14 +71,17 @@ gate in this repository):
 
 - `choreo` binary starts, reads config from `CHOREO_*` env vars, and
   serves the full `underpass.choreo.v1` gRPC contract.
-- Implemented RPCs: `Deliberate`, `Orchestrate`, `CreateCouncil`,
-  `ListCouncils`, `DeleteCouncil`, `GetDeliberationResult`,
-  `ProcessTriggerEvent`, `GetStatus`, `GetMetrics`, `RegisterAgent`,
-  `UnregisterAgent`. `RegisterAgent` currently materializes agents
-  with `kind == "noop"`; provider-backed kinds land through richer
-  `AgentFactoryPort` wirings in their respective feature slices.
-- Honestly `UNIMPLEMENTED` RPCs: `StreamDeliberation`. It returns
-  `UNIMPLEMENTED` so clients cannot mistake it for working.
+- Implemented RPCs: every RPC in the `underpass.choreo.v1` contract
+  is backed by a use case — `Deliberate`, `StreamDeliberation`,
+  `Orchestrate`, `CreateCouncil`, `ListCouncils`, `DeleteCouncil`,
+  `GetDeliberationResult`, `ProcessTriggerEvent`, `GetStatus`,
+  `GetMetrics`, `RegisterAgent`, `UnregisterAgent`. No RPC returns
+  `UNIMPLEMENTED`. Caveats: (a) `RegisterAgent` currently materializes
+  agents with `kind == "noop"`; provider-backed kinds land through
+  richer `AgentFactoryPort` wirings in their respective feature
+  slices. (b) `StreamDeliberation` emits phase transitions + a final
+  `DeliberationResult` frame, not per-proposal/critique/revision
+  events.
 - Optional NATS messaging: when `CHOREO_NATS_ENABLED=true`, the service
   publishes all 5 outbound events (`choreo.task.*`,
   `choreo.deliberation.completed`, `choreo.phase.changed`) and
@@ -95,8 +98,8 @@ gate in this repository):
   standalone adapters behind their Cargo features but are not yet
   composed into the binary's factory dispatch — that lands in a later
   slice.
-- Deliberation streaming (`StreamDeliberation` RPC returns
-  `UNIMPLEMENTED`).
+- `StreamDeliberation` streams phase transitions only; per-proposal,
+  per-critique, and per-revision streaming arrives in a later slice.
 - Persistence beyond in-process memory.
 
 See `docs/experiments/` for anything beyond these bullet points.

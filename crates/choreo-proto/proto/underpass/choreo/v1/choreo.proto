@@ -37,24 +37,25 @@ import "google/protobuf/timestamp.proto";
 
 // Implementation status (server side) at v0.1:
 //
-//   Deliberate, Orchestrate, GetDeliberationResult,
-//   CreateCouncil, ListCouncils, DeleteCouncil,
-//   ProcessTriggerEvent, GetStatus, GetMetrics,
-//   RegisterAgent, UnregisterAgent
-//     -> backed by a use case in `choreo-app/src/usecases/` (or
-//        `services/auto_dispatch.rs` for ProcessTriggerEvent;
-//        `StatisticsPort::snapshot` for GetStatus / GetMetrics;
-//        `AgentFactoryPort` + `AgentRegistryPort` for RegisterAgent /
-//        UnregisterAgent). RegisterAgent currently materializes only
-//        `kind == "noop"` — provider-backed kinds (vLLM, Anthropic,
-//        OpenAI, …) are wired in their respective feature slices by
-//        composing a richer AgentFactoryPort in the binary.
+// Every RPC is backed by a use case in `choreo-app/src/usecases/`
+// (or `services/auto_dispatch.rs` for ProcessTriggerEvent;
+// `StatisticsPort::snapshot` for GetStatus / GetMetrics;
+// `AgentFactoryPort` + `AgentRegistryPort` for RegisterAgent /
+// UnregisterAgent; `DeliberationObserverPort` bridged to an mpsc
+// channel for StreamDeliberation).
 //
-//   StreamDeliberation
-//     -> declared here because it belongs to the contract, but the
-//        server returns `UNIMPLEMENTED` until a streaming backing
-//        lands. Enumerate what is real (not what is planned) per the
-//        project's honesty principles.
+// Caveats the project's honesty principles require to surface:
+//
+//   RegisterAgent currently materializes only `kind == "noop"` —
+//   provider-backed kinds (vLLM, Anthropic, OpenAI, …) are wired in
+//   their respective feature slices by composing a richer
+//   AgentFactoryPort in the binary.
+//
+//   StreamDeliberation emits one `DeliberationUpdate` per phase
+//   transition (Proposing → Revising → Validating → Scoring →
+//   Completed) and a final frame carrying the winner
+//   `DeliberationResult`. It does not yet emit per-proposal /
+//   per-critique / per-revision frames.
 service ChoreographerService {
   // ---- Deliberation ----------------------------------------------------
 

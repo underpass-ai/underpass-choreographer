@@ -7,11 +7,10 @@
 use choreo_core::entities::DeliberationPhase;
 use choreo_proto::v1 as pb;
 
-/// Not wired today: the non-streaming handlers do not emit
-/// `DeliberationPhase` on the wire. `StreamDeliberation` (future) and
-/// diagnostics (future) will call this. Marked `allow(dead_code)` so
-/// the mapping stays centralised until then.
-#[allow(dead_code)]
+/// Project the domain [`DeliberationPhase`] onto the proto enum.
+///
+/// Used by the `StreamDeliberation` handler to emit phase transitions
+/// on the response stream.
 #[must_use]
 pub fn proto_phase_from_domain(phase: DeliberationPhase) -> pb::DeliberationPhase {
     match phase {
