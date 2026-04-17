@@ -29,6 +29,27 @@ impl Statistics {
         Self::default()
     }
 
+    /// Rehydrate a [`Statistics`] from already-aggregated counters.
+    ///
+    /// Used by persistent adapters whose storage shape keeps running
+    /// sums rather than the stream of individual records. The entity's
+    /// mutators stay the single source of truth for increments; this
+    /// is the matching read path.
+    #[must_use]
+    pub fn from_counters(
+        total_deliberations: u64,
+        total_orchestrations: u64,
+        total_duration: DurationMs,
+        per_specialty: BTreeMap<Specialty, u64>,
+    ) -> Self {
+        Self {
+            total_deliberations,
+            total_orchestrations,
+            total_duration,
+            per_specialty,
+        }
+    }
+
     /// Record that a deliberation for `specialty` completed in `duration`.
     pub fn record_deliberation(&mut self, specialty: &Specialty, duration: DurationMs) {
         self.total_deliberations = self.total_deliberations.saturating_add(1);
