@@ -22,6 +22,7 @@ impl ListCouncilsUseCase {
         Self { registry }
     }
 
+    #[tracing::instrument(name = "list_councils", skip_all)]
     pub async fn execute(&self) -> Result<Vec<Council>, DomainError> {
         self.registry.list().await
     }

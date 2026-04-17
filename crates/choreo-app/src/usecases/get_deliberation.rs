@@ -23,6 +23,11 @@ impl GetDeliberationUseCase {
         Self { repository }
     }
 
+    #[tracing::instrument(
+        name = "get_deliberation",
+        skip_all,
+        fields(task_id = %task_id)
+    )]
     pub async fn execute(&self, task_id: &TaskId) -> Result<Deliberation, DomainError> {
         self.repository.get(task_id).await
     }

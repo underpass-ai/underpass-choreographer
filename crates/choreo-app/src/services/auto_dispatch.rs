@@ -75,6 +75,15 @@ impl AutoDispatchService {
         })
     }
 
+    #[tracing::instrument(
+        name = "auto_dispatch",
+        skip_all,
+        fields(
+            event_id = %event.envelope().event_id(),
+            kind = event.kind(),
+            source = event.envelope().source(),
+        )
+    )]
     pub async fn dispatch(&self, event: &TriggerEvent) -> Result<AutoDispatchOutcome, DomainError> {
         let mut outcome = AutoDispatchOutcome::default();
 

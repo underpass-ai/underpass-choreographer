@@ -23,6 +23,11 @@ impl DeleteCouncilUseCase {
         Self { registry }
     }
 
+    #[tracing::instrument(
+        name = "delete_council",
+        skip_all,
+        fields(specialty = %specialty)
+    )]
     pub async fn execute(&self, specialty: &Specialty) -> Result<(), DomainError> {
         self.registry.delete(specialty).await?;
         info!(specialty = specialty.as_str(), "council removed");

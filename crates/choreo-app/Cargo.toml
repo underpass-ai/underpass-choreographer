@@ -24,3 +24,4 @@ serde = { workspace = true }
 [dev-dependencies]
 mockall = { workspace = true }
 tokio-test = { workspace = true }
+tracing-subscriber = { workspace = true }

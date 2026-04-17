@@ -35,6 +35,15 @@ impl RegisterAgentUseCase {
         Self { factory, registry }
     }
 
+    #[tracing::instrument(
+        name = "register_agent",
+        skip_all,
+        fields(
+            agent_id = %descriptor.id,
+            specialty = %descriptor.specialty,
+            kind = %descriptor.kind,
+        )
+    )]
     pub async fn execute(&self, descriptor: AgentDescriptor) -> Result<AgentId, DomainError> {
         let id = descriptor.id.clone();
         let kind = descriptor.kind.clone();
