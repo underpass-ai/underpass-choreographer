@@ -91,6 +91,16 @@ gate in this repository):
   registers one `NoopAgent` and one single-agent council per specialty
   so a fresh deployment is immediately exercisable end-to-end.
 
+**Persistence**:
+
+- Deliberations persist to Postgres when `CHOREO_POSTGRES_URL` is
+  set (the binary is built with the `postgres` feature); otherwise
+  the in-memory repository is wired. Migrations apply on startup —
+  a fresh cluster is immediately exercisable. Schema lives under
+  `crates/choreo-adapters/migrations/postgres/`.
+- Councils, agent registry, and statistics still run in memory;
+  they get their own persistent backings in later slices.
+
 **What is *not* wired yet**:
 
 - The wired `AgentFactoryPort` today only recognises `kind == "noop"`.
@@ -100,6 +110,7 @@ gate in this repository):
   slice.
 - `StreamDeliberation` streams phase transitions only; per-proposal,
   per-critique, and per-revision streaming arrives in a later slice.
-- Persistence beyond in-process memory.
+- Multi-replica persistence for councils, agent registry, and
+  statistics (they are still in-memory).
 
 See `docs/experiments/` for anything beyond these bullet points.

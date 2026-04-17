@@ -21,6 +21,12 @@ default = ["grpc", "nats"]
 grpc = ["dep:prost-types"]
 nats = ["dep:async-nats"]
 
+# Persistence. Postgres adapter for DeliberationRepositoryPort.
+# Other registries (councils, agents, statistics) remain in-memory
+# in this slice; they will grow their own persistent backings in
+# later slices.
+postgres = ["dep:sqlx"]
+
 # Agent providers (LLMs, humans-in-the-loop, rule engines, ...).
 # Each is a peer adapter behind its own feature flag — none is privileged.
 agent-vllm = ["_http"]
@@ -52,6 +58,7 @@ uuid = { workspace = true }
 prost-types = { workspace = true, optional = true }
 async-nats = { workspace = true, optional = true }
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false, optional = true }
+sqlx = { workspace = true, optional = true }
 
 [dev-dependencies]
 mockall = { workspace = true }

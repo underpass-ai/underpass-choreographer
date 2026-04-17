@@ -17,6 +17,10 @@ pub struct ServiceConfig {
     pub nats_url: String,
     pub trigger_subject: String,
     pub publish_prefix: String,
+    /// When set, deliberations persist to Postgres; otherwise the
+    /// in-memory repository is wired. Empty-string is treated as
+    /// unset so the chart can carry a placeholder default.
+    pub postgres_url: Option<String>,
 }
 
 #[async_trait]

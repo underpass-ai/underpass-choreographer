@@ -65,6 +65,10 @@ spec:
             - name: CHOREO_SEED_SPECIALTIES
               value: {{ .Values.config.seedSpecialties | quote }}
             {{- end }}
+            {{- if and .Values.persistence .Values.persistence.postgres .Values.persistence.postgres.enabled .Values.persistence.postgres.url }}
+            - name: CHOREO_POSTGRES_URL
+              value: {{ .Values.persistence.postgres.url | quote }}
+            {{- end }}
           {{- if .Values.probes.liveness.enabled }}
           livenessProbe:
             httpGet:

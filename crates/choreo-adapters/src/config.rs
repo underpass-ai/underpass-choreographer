@@ -24,6 +24,7 @@ use tracing::debug;
 /// | `CHOREO_NATS_URL`          | `nats://nats:4222`    |
 /// | `CHOREO_TRIGGER_SUBJECT`   | `choreo.trigger.>`    |
 /// | `CHOREO_PUBLISH_PREFIX`    | `choreo`              |
+/// | `CHOREO_POSTGRES_URL`      | (unset)               |
 ///
 /// The adapter performs no IO at construction; `load` returns a
 /// snapshot of the current environment.
@@ -45,6 +46,7 @@ struct Defaults {
     nats_url: String,
     trigger_subject: String,
     publish_prefix: String,
+    postgres_url: String,
 }
 
 impl Default for Defaults {
@@ -56,6 +58,7 @@ impl Default for Defaults {
             nats_url: "nats://nats:4222".to_owned(),
             trigger_subject: "choreo.trigger.>".to_owned(),
             publish_prefix: "choreo".to_owned(),
+            postgres_url: String::new(),
         }
     }
 }
@@ -73,6 +76,12 @@ impl ConfigurationPort for EnvConfiguration {
             }
         })?;
 
+        let postgres_url = if loaded.postgres_url.trim().is_empty() {
+            None
+        } else {
+            Some(loaded.postgres_url)
+        };
+
         Ok(ServiceConfig {
             grpc_port: loaded.grpc_port,
             http_port: loaded.http_port,
@@ -80,6 +89,7 @@ impl ConfigurationPort for EnvConfiguration {
             nats_url: loaded.nats_url,
             trigger_subject: loaded.trigger_subject,
             publish_prefix: loaded.publish_prefix,
+            postgres_url,
         })
     }
 }
@@ -128,6 +138,28 @@ mod tests {
         assert_eq!(cfg.grpc_port, 50099);
         assert!(!cfg.nats_enabled);
         assert_eq!(cfg.publish_prefix, "choreo.prod");
+
+        clear_env();
+    }
+
+    #[tokio::test]
+    async fn postgres_url_defaults_to_none_and_trims_empty() {
+        let _guard = ENV_LOCK.lock().await;
+        clear_env();
+
+        let cfg = EnvConfiguration::new().load().await.unwrap();
+        assert!(cfg.postgres_url.is_none());
+
+        std::env::set_var("CHOREO_POSTGRES_URL", "   ");
+        let cfg = EnvConfiguration::new().load().await.unwrap();
+        assert!(
+            cfg.postgres_url.is_none(),
+            "whitespace-only must be treated as unset"
+        );
+
+        std::env::set_var("CHOREO_POSTGRES_URL", "postgres://x/y");
+        let cfg = EnvConfiguration::new().load().await.unwrap();
+        assert_eq!(cfg.postgres_url.as_deref(), Some("postgres://x/y"));
 
         clear_env();
     }
