@@ -10,6 +10,7 @@ use choreo_app::usecases::{
     GetDeliberationUseCase, ListCouncilsUseCase, OrchestrateUseCase,
 };
 use choreo_core::error::DomainError;
+use choreo_core::ports::StatisticsPort;
 use choreo_core::value_objects::{AgentId, Specialty, TaskId};
 use choreo_proto::v1 as pb;
 use choreo_proto::v1::choreographer_service_server::{
@@ -35,6 +36,9 @@ pub struct ChoreographerGrpcService {
     list_councils: Arc<ListCouncilsUseCase>,
     get_deliberation: Arc<GetDeliberationUseCase>,
     auto_dispatch: Arc<AutoDispatchService>,
+    statistics: Arc<dyn StatisticsPort>,
+    started_at: std::time::Instant,
+    service_version: &'static str,
 }
 
 impl std::fmt::Debug for ChoreographerGrpcService {
@@ -67,6 +71,8 @@ pub struct ChoreographerGrpcServiceBuilder {
     list_councils: Option<Arc<ListCouncilsUseCase>>,
     get_deliberation: Option<Arc<GetDeliberationUseCase>>,
     auto_dispatch: Option<Arc<AutoDispatchService>>,
+    statistics: Option<Arc<dyn StatisticsPort>>,
+    service_version: Option<&'static str>,
 }
 
 impl std::fmt::Debug for ChoreographerGrpcServiceBuilder {
@@ -93,6 +99,18 @@ impl ChoreographerGrpcServiceBuilder {
     setter!(list_councils, ListCouncilsUseCase, list_councils);
     setter!(get_deliberation, GetDeliberationUseCase, get_deliberation);
     setter!(auto_dispatch, AutoDispatchService, auto_dispatch);
+
+    #[must_use]
+    pub fn statistics(mut self, value: Arc<dyn StatisticsPort>) -> Self {
+        self.statistics = Some(value);
+        self
+    }
+
+    #[must_use]
+    pub fn service_version(mut self, value: &'static str) -> Self {
+        self.service_version = Some(value);
+        self
+    }
 
     /// Consume the builder. Missing dependencies are reported via
     /// [`DomainError::InvariantViolated`] so wiring errors surface
@@ -122,6 +140,11 @@ impl ChoreographerGrpcServiceBuilder {
             auto_dispatch: self.auto_dispatch.ok_or(DomainError::InvariantViolated {
                 reason: "grpc: auto_dispatch service is required",
             })?,
+            statistics: self.statistics.ok_or(DomainError::InvariantViolated {
+                reason: "grpc: statistics port is required",
+            })?,
+            started_at: std::time::Instant::now(),
+            service_version: self.service_version.unwrap_or(""),
         })
     }
 }
@@ -341,19 +364,96 @@ impl ChoreographerService for ChoreographerGrpcService {
 
     async fn get_status(
         &self,
-        _request: Request<pb::GetStatusRequest>,
+        request: Request<pb::GetStatusRequest>,
     ) -> GrpcResult<pb::GetStatusResponse> {
-        Err(Status::unimplemented(
-            "GetStatus is not implemented yet; see service docblock",
-        ))
+        let include_stats = request.into_inner().include_stats;
+        let stats = if include_stats {
+            Some(
+                self.statistics
+                    .snapshot()
+                    .await
+                    .map_err(domain_error_to_status)?,
+            )
+        } else {
+            None
+        };
+
+        Ok(Response::new(pb::GetStatusResponse {
+            version: self.service_version.to_owned(),
+            uptime_seconds: self.started_at.elapsed().as_secs(),
+            health: "healthy".to_owned(),
+            stats: stats.as_ref().map(statistics_to_proto),
+        }))
     }
 
     async fn get_metrics(
         &self,
         _request: Request<pb::GetMetricsRequest>,
     ) -> GrpcResult<pb::GetMetricsResponse> {
-        Err(Status::unimplemented(
-            "GetMetrics is not implemented yet; see service docblock",
-        ))
+        let snap = self
+            .statistics
+            .snapshot()
+            .await
+            .map_err(domain_error_to_status)?;
+        Ok(Response::new(pb::GetMetricsResponse {
+            stats: Some(statistics_to_proto(&snap)),
+        }))
+    }
+}
+
+/// Map the domain [`choreo_core::entities::Statistics`] into the
+/// protobuf `Statistics` message. Kept here, next to the only call
+/// sites, because it is a pure transport concern.
+fn statistics_to_proto(stats: &choreo_core::entities::Statistics) -> pb::Statistics {
+    let per_specialty_counts = stats
+        .per_specialty()
+        .iter()
+        .map(|(sp, count)| (sp.as_str().to_owned(), *count))
+        .collect();
+    pb::Statistics {
+        total_deliberations: stats.total_deliberations(),
+        total_orchestrations: stats.total_orchestrations(),
+        total_duration_ms: stats.total_duration().get(),
+        average_duration_ms: stats.average_duration_ms(),
+        per_specialty_counts,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use choreo_core::entities::Statistics;
+    use choreo_core::value_objects::{DurationMs, Specialty};
+
+    #[test]
+    fn statistics_to_proto_maps_every_field() {
+        let mut stats = Statistics::new();
+        stats.record_deliberation(&Specialty::new("triage").unwrap(), DurationMs::from_millis(100));
+        stats.record_deliberation(&Specialty::new("triage").unwrap(), DurationMs::from_millis(50));
+        stats.record_deliberation(&Specialty::new("reviewer").unwrap(), DurationMs::from_millis(200));
+        stats.record_orchestration(DurationMs::from_millis(400));
+
+        let mapped = statistics_to_proto(&stats);
+        assert_eq!(mapped.total_deliberations, 3);
+        assert_eq!(mapped.total_orchestrations, 1);
+        assert_eq!(mapped.total_duration_ms, 750);
+        // (100 + 50 + 200 + 400) / 4 ops = 187.5
+        assert!((mapped.average_duration_ms - 187.5).abs() < 1e-9);
+        assert_eq!(mapped.per_specialty_counts.get("triage").copied(), Some(2));
+        assert_eq!(
+            mapped.per_specialty_counts.get("reviewer").copied(),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn statistics_to_proto_empty_maps_zeros_and_empty_map() {
+        let stats = Statistics::default();
+        let mapped = statistics_to_proto(&stats);
+        assert_eq!(mapped.total_deliberations, 0);
+        assert_eq!(mapped.total_orchestrations, 0);
+        assert_eq!(mapped.total_duration_ms, 0);
+        assert!((mapped.average_duration_ms - 0.0).abs() < f64::EPSILON);
+        assert!(mapped.per_specialty_counts.is_empty());
     }
 }

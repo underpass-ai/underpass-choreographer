@@ -6,6 +6,7 @@ use choreo_adapters::clock::SystemClock;
 use choreo_adapters::config::EnvConfiguration;
 use choreo_adapters::memory::{
     InMemoryAgentRegistry, InMemoryCouncilRegistry, InMemoryDeliberationRepository,
+    InMemoryStatistics,
 };
 use choreo_adapters::nats::{NatsConfig, NatsMessaging, NatsTriggerSubscriber};
 use choreo_adapters::noop::{NoopExecutor, NoopMessaging};
@@ -18,7 +19,8 @@ use choreo_app::usecases::{
 };
 use choreo_core::error::DomainError;
 use choreo_core::ports::{
-    ConfigurationPort, ExecutorPort, MessagingPort, ScoringPort, ServiceConfig, ValidatorPort,
+    ConfigurationPort, ExecutorPort, MessagingPort, ScoringPort, ServiceConfig, StatisticsPort,
+    ValidatorPort,
 };
 use thiserror::Error;
 use tracing::info;
@@ -89,6 +91,8 @@ pub async fn compose() -> Result<Application, ComposeError> {
         nats_client,
     } = wire_messaging(&service_config).await?;
 
+    let statistics: Arc<dyn StatisticsPort> = Arc::new(InMemoryStatistics::new());
+
     let deliberate = Arc::new(DeliberateUseCase::new(
         clock.clone(),
         council_registry.clone(),
@@ -97,6 +101,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         scoring,
         repository.clone(),
         messaging.clone(),
+        statistics.clone(),
         "choreographer",
     ));
 
@@ -105,6 +110,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         executor,
         messaging.clone(),
         clock.clone(),
+        statistics.clone(),
         "choreographer",
     ));
 
@@ -142,9 +148,15 @@ pub async fn compose() -> Result<Application, ComposeError> {
         .list_councils(list_councils)
         .get_deliberation(get_deliberation)
         .auto_dispatch(auto_dispatch)
+        .statistics(statistics.clone())
+        .service_version(env!("CARGO_PKG_VERSION"))
         .build()?;
 
-    let health_state = crate::health::HealthState::new(nats_client, env!("CARGO_PKG_VERSION"));
+    let health_state = crate::health::HealthState::new(
+        nats_client,
+        statistics.clone(),
+        env!("CARGO_PKG_VERSION"),
+    );
 
     info!(
         grpc_port = service_config.grpc_port,

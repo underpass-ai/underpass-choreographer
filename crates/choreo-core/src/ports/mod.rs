@@ -23,6 +23,7 @@ mod deliberation_repository;
 mod executor;
 mod messaging;
 mod scoring;
+mod statistics;
 mod validator;
 
 pub use agent::{AgentPort, Critique, DraftRequest, Revision};
@@ -34,4 +35,5 @@ pub use deliberation_repository::DeliberationRepositoryPort;
 pub use executor::{ExecutionOutcome, ExecutorPort};
 pub use messaging::{DomainEvent, MessagingPort, SubscriptionHandler};
 pub use scoring::ScoringPort;
+pub use statistics::StatisticsPort;
 pub use validator::ValidatorPort;

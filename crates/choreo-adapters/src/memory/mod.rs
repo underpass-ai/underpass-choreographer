@@ -8,7 +8,9 @@
 mod agent_registry;
 mod council_registry;
 mod deliberation_repository;
+mod statistics;
 
 pub use agent_registry::InMemoryAgentRegistry;
 pub use council_registry::InMemoryCouncilRegistry;
 pub use deliberation_repository::InMemoryDeliberationRepository;
+pub use statistics::InMemoryStatistics;
