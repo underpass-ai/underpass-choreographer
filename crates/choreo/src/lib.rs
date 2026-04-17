@@ -6,8 +6,10 @@
 //! be unit-tested without starting a server.
 
 pub mod compose;
+pub mod health;
 pub mod runtime;
 pub mod seeding;
 
 pub use compose::{compose, Application, ComposeError};
+pub use health::{router as health_router, HealthState};
 pub use runtime::serve;

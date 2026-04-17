@@ -38,7 +38,11 @@ securityContext:
 
 service:
   type: ClusterIP
+  # gRPC is the product surface; HTTP carries only health endpoints
+  # (and, eventually, metrics). Both land on a single Service with
+  # two named ports so probes can hit HTTP without any DNS games.
   port: 50055
+  httpPort: 8080
   annotations: {}
 
 resources:
@@ -73,6 +77,9 @@ affinity: {}
 # through the `AgentPort` trait.
 config:
   grpcPort: 50055
+  # The service exposes HTTP on a separate port for health probes
+  # and future metrics. Kept small, plaintext, cluster-internal.
+  httpPort: 8080
   logLevel: info
   # Optional startup seeding. Comma-separated list of specialty
   # labels: for each one the binary registers a deterministic

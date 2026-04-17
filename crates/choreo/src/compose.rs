@@ -33,6 +33,7 @@ pub struct Application {
     pub repository: Arc<InMemoryDeliberationRepository>,
     pub grpc_service: choreo_adapters::grpc::ChoreographerGrpcService,
     pub nats_subscriber: Option<NatsTriggerSubscriber>,
+    pub health_state: crate::health::HealthState,
 }
 
 impl std::fmt::Debug for Application {
@@ -82,7 +83,11 @@ pub async fn compose() -> Result<Application, ComposeError> {
     let scoring: Arc<dyn ScoringPort> = Arc::new(UniformScoring::new());
     let executor: Arc<dyn ExecutorPort> = Arc::new(NoopExecutor::new());
 
-    let (messaging, nats_subscriber_factory) = wire_messaging(&service_config).await?;
+    let MessagingWiring {
+        port: messaging,
+        subscriber_factory: nats_subscriber_factory,
+        nats_client,
+    } = wire_messaging(&service_config).await?;
 
     let deliberate = Arc::new(DeliberateUseCase::new(
         clock.clone(),
@@ -139,8 +144,11 @@ pub async fn compose() -> Result<Application, ComposeError> {
         .auto_dispatch(auto_dispatch)
         .build()?;
 
+    let health_state = crate::health::HealthState::new(nats_client, env!("CARGO_PKG_VERSION"));
+
     info!(
         grpc_port = service_config.grpc_port,
+        http_port = service_config.http_port,
         nats_enabled = service_config.nats_enabled,
         trigger_subject = service_config.trigger_subject.as_str(),
         "choreographer wired"
@@ -153,6 +161,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         repository,
         grpc_service,
         nats_subscriber,
+        health_state,
     })
 }
 
@@ -190,29 +199,46 @@ async fn connect_nats_with_retry(
     })))
 }
 
-async fn wire_messaging(
-    cfg: &ServiceConfig,
-) -> Result<(Arc<dyn MessagingPort>, Option<SubscriberFactory>), ComposeError> {
+/// Everything `compose` needs out of the messaging wiring phase:
+/// the port implementation that use cases talk through, a factory
+/// for the inbound subscriber, and — when NATS is wired — a handle
+/// to the live client so the health endpoints can probe it.
+struct MessagingWiring {
+    port: Arc<dyn MessagingPort>,
+    subscriber_factory: Option<SubscriberFactory>,
+    nats_client: Option<async_nats::Client>,
+}
+
+async fn wire_messaging(cfg: &ServiceConfig) -> Result<MessagingWiring, ComposeError> {
     if !cfg.nats_enabled {
         info!("nats disabled; using noop messaging");
-        let messaging: Arc<dyn MessagingPort> = Arc::new(NoopMessaging::new());
-        return Ok((messaging, None));
+        let port: Arc<dyn MessagingPort> = Arc::new(NoopMessaging::new());
+        return Ok(MessagingWiring {
+            port,
+            subscriber_factory: None,
+            nats_client: None,
+        });
     }
 
     let nats_cfg = NatsConfig::new(&cfg.nats_url, &cfg.publish_prefix, &cfg.trigger_subject)?;
     let client = connect_nats_with_retry(&nats_cfg.url, NATS_CONNECT_BUDGET).await?;
     info!(url = nats_cfg.url.as_str(), "nats connected");
 
-    let messaging: Arc<dyn MessagingPort> = Arc::new(NatsMessaging::new(
+    let port: Arc<dyn MessagingPort> = Arc::new(NatsMessaging::new(
         client.clone(),
         nats_cfg.subjects.clone(),
     ));
 
     let subjects = nats_cfg.subjects.clone();
-    let factory: SubscriberFactory =
-        Box::new(move |dispatch| NatsTriggerSubscriber::new(client, subjects, dispatch));
+    let factory_client = client.clone();
+    let subscriber_factory: SubscriberFactory =
+        Box::new(move |dispatch| NatsTriggerSubscriber::new(factory_client, subjects, dispatch));
 
-    Ok((messaging, Some(factory)))
+    Ok(MessagingWiring {
+        port,
+        subscriber_factory: Some(subscriber_factory),
+        nats_client: Some(client),
+    })
 }
 
 #[cfg(test)]

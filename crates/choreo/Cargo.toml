@@ -27,6 +27,7 @@ choreo-proto = { workspace = true }
 
 async-nats = { workspace = true }
 async-trait = { workspace = true }
+axum = "0.7"
 thiserror = { workspace = true }
 time = { workspace = true }
 uuid = { workspace = true }
@@ -37,3 +38,7 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 figment = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+tower = { version = "0.4", features = ["util"] }
