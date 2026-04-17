@@ -4,6 +4,7 @@
 //! of primitives. Each value object validates its invariants on
 //! construction and cannot be mutated afterwards.
 
+mod agent_kind;
 mod attributes;
 mod duration;
 mod ids;
@@ -14,6 +15,7 @@ mod score;
 mod specialty;
 mod task_description;
 
+pub use agent_kind::AgentKind;
 pub use attributes::Attributes;
 pub use duration::DurationMs;
 pub use ids::{AgentId, CouncilId, EventId, ProposalId, TaskId};

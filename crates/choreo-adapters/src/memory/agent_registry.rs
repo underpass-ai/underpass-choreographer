@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use choreo_core::error::DomainError;
-use choreo_core::ports::{AgentPort, AgentResolverPort};
+use choreo_core::ports::{AgentPort, AgentRegistryPort, AgentResolverPort};
 use choreo_core::value_objects::AgentId;
 use tokio::sync::RwLock;
 
@@ -69,6 +69,17 @@ impl AgentResolverPort for InMemoryAgentRegistry {
             .get(id)
             .cloned()
             .ok_or(DomainError::NotFound { what: "agent" })
+    }
+}
+
+#[async_trait]
+impl AgentRegistryPort for InMemoryAgentRegistry {
+    async fn register(&self, agent: Arc<dyn AgentPort>) -> Result<(), DomainError> {
+        self.insert(agent).await
+    }
+
+    async fn unregister(&self, id: &AgentId) -> Result<(), DomainError> {
+        self.remove(id).await
     }
 }
 

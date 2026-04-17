@@ -73,10 +73,12 @@ gate in this repository):
   serves the full `underpass.choreo.v1` gRPC contract.
 - Implemented RPCs: `Deliberate`, `Orchestrate`, `CreateCouncil`,
   `ListCouncils`, `DeleteCouncil`, `GetDeliberationResult`,
-  `ProcessTriggerEvent`.
-- Honestly `UNIMPLEMENTED` RPCs: `StreamDeliberation`, `RegisterAgent`,
-  `UnregisterAgent`, `GetStatus`, `GetMetrics`. They return
-  `UNIMPLEMENTED` so clients cannot mistake them for working.
+  `ProcessTriggerEvent`, `GetStatus`, `GetMetrics`, `RegisterAgent`,
+  `UnregisterAgent`. `RegisterAgent` currently materializes agents
+  with `kind == "noop"`; provider-backed kinds land through richer
+  `AgentFactoryPort` wirings in their respective feature slices.
+- Honestly `UNIMPLEMENTED` RPCs: `StreamDeliberation`. It returns
+  `UNIMPLEMENTED` so clients cannot mistake it for working.
 - Optional NATS messaging: when `CHOREO_NATS_ENABLED=true`, the service
   publishes all 5 outbound events (`choreo.task.*`,
   `choreo.deliberation.completed`, `choreo.phase.changed`) and
@@ -88,13 +90,13 @@ gate in this repository):
 
 **What is *not* wired yet**:
 
-- No real LLM / frontier / rule-based agent adapters — only the
-  deterministic `NoopAgent`. Provider adapters (vLLM, Anthropic,
-  OpenAI, …) land in later slices behind their own Cargo features.
-- Statistics / metrics reporting (the `StatisticsPort` is not yet in
-  core).
-- Deliberation streaming and runtime agent registration (their
-  matching RPCs return `UNIMPLEMENTED`).
+- The wired `AgentFactoryPort` today only recognises `kind == "noop"`.
+  Provider-specific factories (vLLM, Anthropic, OpenAI, …) exist as
+  standalone adapters behind their Cargo features but are not yet
+  composed into the binary's factory dispatch — that lands in a later
+  slice.
+- Deliberation streaming (`StreamDeliberation` RPC returns
+  `UNIMPLEMENTED`).
 - Persistence beyond in-process memory.
 
 See `docs/experiments/` for anything beyond these bullet points.

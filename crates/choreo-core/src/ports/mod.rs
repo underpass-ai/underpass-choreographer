@@ -15,6 +15,8 @@
 //!   change.
 
 mod agent;
+mod agent_factory;
+mod agent_registry;
 mod agent_resolver;
 mod clock;
 mod configuration;
@@ -27,6 +29,8 @@ mod statistics;
 mod validator;
 
 pub use agent::{AgentPort, Critique, DraftRequest, Revision};
+pub use agent_factory::{AgentDescriptor, AgentFactoryPort};
+pub use agent_registry::AgentRegistryPort;
 pub use agent_resolver::AgentResolverPort;
 pub use clock::ClockPort;
 pub use configuration::{ConfigurationPort, ServiceConfig};
