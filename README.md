@@ -93,13 +93,19 @@ gate in this repository):
 
 **Persistence**:
 
-- Deliberations persist to Postgres when `CHOREO_POSTGRES_URL` is
-  set (the binary is built with the `postgres` feature); otherwise
-  the in-memory repository is wired. Migrations apply on startup —
-  a fresh cluster is immediately exercisable. Schema lives under
+- When `CHOREO_POSTGRES_URL` is set, deliberations, councils, and
+  the agent registry persist to Postgres; otherwise the in-memory
+  defaults are wired. Persistence choice is binary: all four backings
+  are either Postgres or in-memory together, so no replica reads from
+  a split source of truth. Migrations apply on startup — a fresh
+  cluster is immediately exercisable. Schema lives under
   `crates/choreo-adapters/migrations/postgres/`.
-- Councils, agent registry, and statistics still run in memory;
-  they get their own persistent backings in later slices.
+- Agents persist as descriptors (`id`, `specialty`, `kind`,
+  `attributes`); live `AgentPort` handles are rehydrated through the
+  wired `AgentFactoryPort` on resolve, so no pickled provider state
+  crosses the database boundary.
+- Statistics still run in memory; its persistent backing lands in
+  the next sub-slice (11c).
 
 **What is *not* wired yet**:
 
@@ -110,7 +116,7 @@ gate in this repository):
   slice.
 - `StreamDeliberation` streams phase transitions only; per-proposal,
   per-critique, and per-revision streaming arrives in a later slice.
-- Multi-replica persistence for councils, agent registry, and
-  statistics (they are still in-memory).
+- Statistics still live in memory; a persistent backing for the
+  `StatisticsPort` is the last persistence sub-slice (11c).
 
 See `docs/experiments/` for anything beyond these bullet points.

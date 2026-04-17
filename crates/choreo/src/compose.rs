@@ -11,7 +11,8 @@ use choreo_adapters::memory::{
 use choreo_adapters::nats::{NatsConfig, NatsMessaging, NatsTriggerSubscriber};
 use choreo_adapters::noop::{NoopAgentFactory, NoopExecutor, NoopMessaging};
 use choreo_adapters::postgres::{
-    PostgresConfig, PostgresDeliberationRepository, PostgresPool, PostgresPoolError,
+    PostgresAgentRegistry, PostgresConfig, PostgresCouncilRegistry, PostgresDeliberationRepository,
+    PostgresPool, PostgresPoolError,
 };
 use choreo_adapters::scoring::UniformScoring;
 use choreo_adapters::validators::ContentNonEmptyValidator;
@@ -22,8 +23,9 @@ use choreo_app::usecases::{
 };
 use choreo_core::error::DomainError;
 use choreo_core::ports::{
-    AgentFactoryPort, AgentRegistryPort, ConfigurationPort, DeliberationRepositoryPort,
-    ExecutorPort, MessagingPort, ScoringPort, ServiceConfig, StatisticsPort, ValidatorPort,
+    AgentFactoryPort, AgentRegistryPort, AgentResolverPort, ConfigurationPort, CouncilRegistryPort,
+    DeliberationRepositoryPort, ExecutorPort, MessagingPort, ScoringPort, ServiceConfig,
+    StatisticsPort, ValidatorPort,
 };
 use thiserror::Error;
 use tracing::info;
@@ -33,8 +35,9 @@ use crate::seeding::SeedingError;
 /// Aggregate of every handle the composition root produces.
 pub struct Application {
     pub service_config: ServiceConfig,
-    pub agent_registry: Arc<InMemoryAgentRegistry>,
-    pub council_registry: Arc<InMemoryCouncilRegistry>,
+    pub agent_registry: Arc<dyn AgentRegistryPort>,
+    pub agent_resolver: Arc<dyn AgentResolverPort>,
+    pub council_registry: Arc<dyn CouncilRegistryPort>,
     pub repository: Arc<dyn DeliberationRepositoryPort>,
     pub grpc_service: choreo_adapters::grpc::ChoreographerGrpcService,
     pub nats_subscriber: Option<NatsTriggerSubscriber>,
@@ -83,13 +86,21 @@ pub async fn compose() -> Result<Application, ComposeError> {
     let service_config = EnvConfiguration::new().load().await?;
 
     let clock = Arc::new(SystemClock::new());
-    let agent_registry = Arc::new(InMemoryAgentRegistry::new());
-    let council_registry = Arc::new(InMemoryCouncilRegistry::new());
-    let repository = wire_repository(&service_config).await?;
-
     let validators: Vec<Arc<dyn ValidatorPort>> = vec![Arc::new(ContentNonEmptyValidator::new())];
     let scoring: Arc<dyn ScoringPort> = Arc::new(UniformScoring::new());
     let executor: Arc<dyn ExecutorPort> = Arc::new(NoopExecutor::new());
+    let agent_factory: Arc<dyn AgentFactoryPort> = Arc::new(NoopAgentFactory::new());
+
+    // Pick the persistent backings together so the three registries
+    // and the deliberation repository always live on the same pool
+    // (or all in-memory). Running one Postgres and two in-memory
+    // would split the source of truth across replicas.
+    let Persistence {
+        repository,
+        council_registry,
+        agent_registry,
+        agent_resolver,
+    } = wire_persistence(&service_config, agent_factory.clone()).await?;
 
     let MessagingWiring {
         port: messaging,
@@ -102,7 +113,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
     let deliberate = Arc::new(DeliberateUseCase::new(
         clock.clone(),
         council_registry.clone(),
-        agent_registry.clone(),
+        agent_resolver.clone(),
         validators,
         scoring,
         repository.clone(),
@@ -123,19 +134,17 @@ pub async fn compose() -> Result<Application, ComposeError> {
     let create_council = Arc::new(CreateCouncilUseCase::new(
         clock.clone(),
         council_registry.clone(),
-        agent_registry.clone(),
+        agent_resolver.clone(),
     ));
     let delete_council = Arc::new(DeleteCouncilUseCase::new(council_registry.clone()));
     let list_councils = Arc::new(ListCouncilsUseCase::new(council_registry.clone()));
     let get_deliberation = Arc::new(GetDeliberationUseCase::new(repository.clone()));
 
-    let agent_factory: Arc<dyn AgentFactoryPort> = Arc::new(NoopAgentFactory::new());
-    let agent_registry_port: Arc<dyn AgentRegistryPort> = agent_registry.clone();
     let register_agent = Arc::new(RegisterAgentUseCase::new(
         agent_factory,
-        agent_registry_port.clone(),
+        agent_registry.clone(),
     ));
-    let unregister_agent = Arc::new(UnregisterAgentUseCase::new(agent_registry_port));
+    let unregister_agent = Arc::new(UnregisterAgentUseCase::new(agent_registry.clone()));
 
     let auto_dispatch = Arc::new(AutoDispatchService::new(
         deliberate.clone(),
@@ -182,6 +191,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
     Ok(Application {
         service_config,
         agent_registry,
+        agent_resolver,
         council_registry,
         repository,
         grpc_service,
@@ -266,22 +276,46 @@ async fn wire_messaging(cfg: &ServiceConfig) -> Result<MessagingWiring, ComposeE
     })
 }
 
-/// Pick a [`DeliberationRepositoryPort`] implementation based on the
-/// environment: Postgres when `CHOREO_POSTGRES_URL` is set (migrations
-/// apply on startup so a fresh cluster is exercisable), in-memory
-/// otherwise.
-async fn wire_repository(
+/// Composite of the four persistent handles the app needs. Kept as a
+/// single bag so the composition root wires them together — either
+/// all backed by Postgres, or all in-memory. Splitting the source of
+/// truth across replicas (half Postgres, half in-memory) is not a
+/// useful configuration today.
+struct Persistence {
+    repository: Arc<dyn DeliberationRepositoryPort>,
+    council_registry: Arc<dyn CouncilRegistryPort>,
+    agent_registry: Arc<dyn AgentRegistryPort>,
+    agent_resolver: Arc<dyn AgentResolverPort>,
+}
+
+/// Pick persistent backings based on config. When `CHOREO_POSTGRES_URL`
+/// is set, every registry that has a Postgres adapter goes through
+/// it; migrations apply on startup so a fresh cluster is exercisable.
+/// Otherwise the in-memory defaults are wired.
+async fn wire_persistence(
     cfg: &ServiceConfig,
-) -> Result<Arc<dyn DeliberationRepositoryPort>, ComposeError> {
+    agent_factory: Arc<dyn AgentFactoryPort>,
+) -> Result<Persistence, ComposeError> {
     if let Some(url) = cfg.postgres_url.as_deref() {
-        let pg_cfg = PostgresConfig::from_url(url);
-        let pool = PostgresPool::connect(&pg_cfg).await?;
+        let pool = PostgresPool::connect(&PostgresConfig::from_url(url)).await?;
         pool.run_migrations().await?;
-        info!("postgres deliberation repository wired");
-        Ok(Arc::new(PostgresDeliberationRepository::new(pool)))
+        let agents = Arc::new(PostgresAgentRegistry::new(pool.clone(), agent_factory));
+        info!("postgres persistence wired (deliberations, councils, agents)");
+        Ok(Persistence {
+            repository: Arc::new(PostgresDeliberationRepository::new(pool.clone())),
+            council_registry: Arc::new(PostgresCouncilRegistry::new(pool)),
+            agent_registry: agents.clone(),
+            agent_resolver: agents,
+        })
     } else {
-        info!("postgres disabled; using in-memory deliberation repository");
-        Ok(Arc::new(InMemoryDeliberationRepository::new()))
+        info!("postgres disabled; using in-memory persistence");
+        let agents = Arc::new(InMemoryAgentRegistry::new());
+        Ok(Persistence {
+            repository: Arc::new(InMemoryDeliberationRepository::new()),
+            council_registry: Arc::new(InMemoryCouncilRegistry::new()),
+            agent_registry: agents.clone(),
+            agent_resolver: agents,
+        })
     }
 }
 

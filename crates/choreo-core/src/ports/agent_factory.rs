@@ -17,6 +17,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 
 use crate::error::DomainError;
 use crate::ports::agent::AgentPort;
@@ -25,7 +26,7 @@ use crate::value_objects::{AgentId, AgentKind, Attributes, Specialty};
 /// Everything the factory needs to build a live agent. Mirrors the
 /// `AgentSummary` proto, but kept in domain shapes so use cases never
 /// touch wire types.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentDescriptor {
     pub id: AgentId,
     pub specialty: Specialty,
