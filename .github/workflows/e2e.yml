@@ -1,10 +1,12 @@
 name: e2e
 
+# E2E runs on demand only. The per-PR fast-feedback gates
+# (clippy, test, contract, integration-nats, integration-postgres,
+# container-image, helm-chart) already cover the compile-and-unit
+# surface; full E2E (docker compose + kind) is expensive and kept
+# as a manual check before cutting a release. Trigger from the
+# Actions tab or via `gh workflow run e2e.yml`.
 on:
-  pull_request:
-  push:
-    branches:
-      - main
   workflow_dispatch:
 
 concurrency:
