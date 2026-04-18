@@ -7,12 +7,11 @@
 //! cost — no DB, no NATS, no gRPC — so regressions stick out from
 //! adapter overhead.
 //!
-//! Two canonical scenarios:
-//! - `deliberate/3-agents-0-rounds`: baseline happy path with no
-//!   revision loop. Closest to a minimal invocation.
-//! - `deliberate/3-agents-2-rounds`: the aggregate's revision
-//!   loop runs twice — stresses the O(rounds · agents) peer review
-//!   pairing.
+//! Parameter grid: `agents × rounds`. The aggregate's peer-review
+//! pairing is O(rounds × agents); the rest of the pipeline (seed,
+//! validate, score, rank, save, publish, statistics) is O(agents)
+//! with a small fixed overhead per invocation. Fixture kept cheap
+//! so 16 grid points fit in a normal criterion budget.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -257,16 +256,24 @@ fn deliberate(c: &mut Criterion) {
         .unwrap();
 
     let mut group = c.benchmark_group("deliberate");
-    for (n_agents, rounds) in [(3usize, 0u32), (3, 2)] {
+    // Canonical grid (see docs/experiments/002-scale-sweep). Four
+    // values each of agents and rounds → 16 points. Sizes chosen to
+    // span the realistic operational range without ballooning the
+    // default criterion run past a couple of minutes.
+    let agent_sizes: [usize; 4] = [1, 3, 5, 10];
+    let round_sizes: [u32; 4] = [0, 2, 4, 8];
+    for &n_agents in &agent_sizes {
         let usecase = build_usecase(n_agents);
-        group.bench_with_input(
-            BenchmarkId::from_parameter(format!("{n_agents}-agents-{rounds}-rounds")),
-            &rounds,
-            |b, &rounds| {
-                b.to_async(&runtime)
-                    .iter(|| async { usecase.execute(task(rounds)).await.unwrap() });
-            },
-        );
+        for &rounds in &round_sizes {
+            group.bench_with_input(
+                BenchmarkId::from_parameter(format!("{n_agents}-agents-{rounds}-rounds")),
+                &rounds,
+                |b, &rounds| {
+                    b.to_async(&runtime)
+                        .iter(|| async { usecase.execute(task(rounds)).await.unwrap() });
+                },
+            );
+        }
     }
     group.finish();
 }
