@@ -57,6 +57,14 @@ uuid = { version = "1.10", features = ["v4", "serde"] }
 # observability
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+opentelemetry = "0.27"
+opentelemetry_sdk = { version = "0.27", features = ["rt-tokio"] }
+opentelemetry-otlp = { version = "0.27", default-features = false, features = [
+    "grpc-tonic",
+    "trace",
+] }
+opentelemetry-semantic-conventions = "0.27"
+tracing-opentelemetry = "0.28"
 
 # gRPC
 tonic = "0.12"

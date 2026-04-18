@@ -1,9 +1,11 @@
 use anyhow::Result;
-use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    init_tracing();
+    // Keep the guard alive through the process lifetime. Dropping it
+    // on shutdown flushes the OTLP exporter (under the `otel`
+    // feature) so no in-flight spans are lost.
+    let _telemetry = choreo::init_tracing()?;
 
     tracing::info!(
         service = "underpass-choreographer",
@@ -13,12 +15,4 @@ async fn main() -> Result<()> {
 
     let app = choreo::compose().await?;
     choreo::serve(app).await
-}
-
-fn init_tracing() {
-    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
-    tracing_subscriber::fmt()
-        .with_env_filter(filter)
-        .json()
-        .init();
 }

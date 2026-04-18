@@ -19,11 +19,33 @@ path = "src/lib.rs"
 name = "choreo"
 path = "src/main.rs"
 
+[features]
+# OpenTelemetry OTLP exporter. Turn on with `-F otel` at build time.
+# At runtime the exporter only activates when `CHOREO_OTLP_ENDPOINT`
+# is set; otherwise the binary behaves exactly as without the
+# feature — JSON-format spans to stdout only. This keeps the
+# default container image free of the OTel dependency surface for
+# deployments that do not need it.
+otel = [
+    "dep:opentelemetry",
+    "dep:opentelemetry_sdk",
+    "dep:opentelemetry-otlp",
+    "dep:opentelemetry-semantic-conventions",
+    "dep:tracing-opentelemetry",
+    "choreo-adapters/otel",
+]
+
 [dependencies]
 choreo-core = { workspace = true }
 choreo-app = { workspace = true }
 choreo-adapters = { workspace = true, features = ["grpc", "nats", "postgres"] }
 choreo-proto = { workspace = true }
+
+opentelemetry = { workspace = true, optional = true }
+opentelemetry_sdk = { workspace = true, optional = true }
+opentelemetry-otlp = { workspace = true, optional = true }
+opentelemetry-semantic-conventions = { workspace = true, optional = true }
+tracing-opentelemetry = { workspace = true, optional = true }
 
 async-nats = { workspace = true }
 async-trait = { workspace = true }

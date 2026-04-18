@@ -17,6 +17,7 @@ mod mappers;
 mod service;
 mod status;
 mod stream;
+pub(crate) mod tracecontext;
 
 pub use service::{ChoreographerGrpcService, ChoreographerGrpcServiceBuilder};
 pub use status::domain_error_to_status;

@@ -25,6 +25,7 @@ use super::mappers::{
     trigger_event_from_proto,
 };
 use super::status::domain_error_to_status;
+use super::tracecontext::link_span_to_metadata;
 
 /// The gRPC service struct. Clone-friendly: every dependency is an
 /// `Arc` so multiple request tasks can share state without locking.
@@ -177,6 +178,7 @@ impl ChoreographerService for ChoreographerGrpcService {
         &self,
         request: Request<pb::DeliberateRequest>,
     ) -> GrpcResult<pb::DeliberateResponse> {
+        link_span_to_metadata(&request);
         let task_proto = request
             .into_inner()
             .task
@@ -200,6 +202,7 @@ impl ChoreographerService for ChoreographerGrpcService {
         &self,
         request: Request<pb::StreamDeliberationRequest>,
     ) -> GrpcResult<Self::StreamDeliberationStream> {
+        link_span_to_metadata(&request);
         let task_proto = request
             .into_inner()
             .task
@@ -249,6 +252,7 @@ impl ChoreographerService for ChoreographerGrpcService {
         &self,
         request: Request<pb::GetDeliberationResultRequest>,
     ) -> GrpcResult<pb::GetDeliberationResultResponse> {
+        link_span_to_metadata(&request);
         let task_id = TaskId::new(request.into_inner().task_id).map_err(domain_error_to_status)?;
         match self.get_deliberation.execute(&task_id).await {
             Ok(deliberation) => {
@@ -280,6 +284,7 @@ impl ChoreographerService for ChoreographerGrpcService {
         &self,
         request: Request<pb::OrchestrateRequest>,
     ) -> GrpcResult<pb::OrchestrateResponse> {
+        link_span_to_metadata(&request);
         let req = request.into_inner();
         let task_proto = req
             .task
@@ -301,6 +306,7 @@ impl ChoreographerService for ChoreographerGrpcService {
         &self,
         request: Request<pb::CreateCouncilRequest>,
     ) -> GrpcResult<pb::CreateCouncilResponse> {
+        link_span_to_metadata(&request);
         let req = request.into_inner();
         let n = usize::try_from(req.num_agents).unwrap_or(0);
         if n == 0 {
@@ -338,8 +344,10 @@ impl ChoreographerService for ChoreographerGrpcService {
     #[tracing::instrument(name = "rpc.list_councils", skip_all)]
     async fn list_councils(
         &self,
-        _request: Request<pb::ListCouncilsRequest>,
+        request: Request<pb::ListCouncilsRequest>,
     ) -> GrpcResult<pb::ListCouncilsResponse> {
+        link_span_to_metadata(&request);
+        let _ = request;
         let councils = self
             .list_councils
             .execute()
@@ -359,6 +367,7 @@ impl ChoreographerService for ChoreographerGrpcService {
         &self,
         request: Request<pb::DeleteCouncilRequest>,
     ) -> GrpcResult<pb::DeleteCouncilResponse> {
+        link_span_to_metadata(&request);
         let specialty =
             Specialty::new(request.into_inner().specialty).map_err(domain_error_to_status)?;
         match self.delete_council.execute(&specialty).await {
@@ -375,6 +384,7 @@ impl ChoreographerService for ChoreographerGrpcService {
         &self,
         request: Request<pb::RegisterAgentRequest>,
     ) -> GrpcResult<pb::RegisterAgentResponse> {
+        link_span_to_metadata(&request);
         let descriptor =
             descriptor_from_register_request(request.into_inner()).map_err(|err| match err {
                 DescriptorError::MissingAgentSummary => {
@@ -397,6 +407,7 @@ impl ChoreographerService for ChoreographerGrpcService {
         &self,
         request: Request<pb::UnregisterAgentRequest>,
     ) -> GrpcResult<pb::UnregisterAgentResponse> {
+        link_span_to_metadata(&request);
         let id = AgentId::new(request.into_inner().agent_id).map_err(domain_error_to_status)?;
         match self.unregister_agent.execute(&id).await {
             Ok(()) => Ok(Response::new(pb::UnregisterAgentResponse {
@@ -414,6 +425,7 @@ impl ChoreographerService for ChoreographerGrpcService {
         &self,
         request: Request<pb::ProcessTriggerEventRequest>,
     ) -> GrpcResult<pb::ProcessTriggerEventResponse> {
+        link_span_to_metadata(&request);
         let inner = request.into_inner();
         let ev_proto = inner
             .event
@@ -450,6 +462,7 @@ impl ChoreographerService for ChoreographerGrpcService {
         &self,
         request: Request<pb::GetStatusRequest>,
     ) -> GrpcResult<pb::GetStatusResponse> {
+        link_span_to_metadata(&request);
         let include_stats = request.into_inner().include_stats;
         let stats = if include_stats {
             Some(
@@ -473,8 +486,10 @@ impl ChoreographerService for ChoreographerGrpcService {
     #[tracing::instrument(name = "rpc.get_metrics", skip_all)]
     async fn get_metrics(
         &self,
-        _request: Request<pb::GetMetricsRequest>,
+        request: Request<pb::GetMetricsRequest>,
     ) -> GrpcResult<pb::GetMetricsResponse> {
+        link_span_to_metadata(&request);
+        let _ = request;
         let snap = self
             .statistics
             .snapshot()
