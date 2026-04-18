@@ -1,0 +1,64 @@
+{{- if .Values.networkPolicy.enabled -}}
+# NetworkPolicy pins the pod's network surface.
+#
+# Ingress: only traffic reaching the declared ports (gRPC and HTTP)
+# from pods matching the configured selector. By default the
+# selector is empty — operators MUST opt in a concrete selector
+# (e.g. a callers namespace label). An empty selector would allow
+# traffic from *any* pod in the namespace, which defeats the point.
+#
+# Egress: the choreographer legitimately talks to NATS, Postgres,
+# and an OTLP collector (when wired). DNS is always needed. Toggle
+# blocks on/off to match the deployment.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "choreographer.fullname" . }}
+  labels:
+    {{- include "choreographer.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "choreographer.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - ports:
+        - port: {{ .Values.config.grpcPort }}
+          protocol: TCP
+        - port: {{ .Values.config.httpPort }}
+          protocol: TCP
+      {{- with .Values.networkPolicy.ingressFrom }}
+      from:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  egress:
+    # DNS is always needed.
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    {{- if .Values.messaging.nats.enabled }}
+    {{- with .Values.networkPolicy.egress.nats }}
+    - {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- end }}
+    {{- if .Values.persistence.postgres.enabled }}
+    {{- with .Values.networkPolicy.egress.postgres }}
+    - {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- end }}
+    {{- with .Values.networkPolicy.egress.otlp }}
+    - {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with .Values.networkPolicy.egress.extra }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end -}}

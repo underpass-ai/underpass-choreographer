@@ -22,18 +22,31 @@ spec:
         {{- end }}
     spec:
       serviceAccountName: {{ include "choreographer.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automountServiceAccountToken | default false }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if .Values.tmpVolume.enabled }}
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: {{ .Values.tmpVolume.sizeLimit }}
+      {{- end }}
       containers:
         - name: choreo
           image: {{ include "choreographer.image" . | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
+          {{- if .Values.tmpVolume.enabled }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          {{- end }}
           ports:
             - name: grpc
               containerPort: {{ .Values.config.grpcPort }}
@@ -65,9 +78,19 @@ spec:
             - name: CHOREO_SEED_SPECIALTIES
               value: {{ .Values.config.seedSpecialties | quote }}
             {{- end }}
-            {{- if and .Values.persistence .Values.persistence.postgres .Values.persistence.postgres.enabled .Values.persistence.postgres.url }}
+            {{- if .Values.persistence.postgres.enabled }}
+            {{- if and .Values.persistence.postgres.urlFromSecret.name .Values.persistence.postgres.urlFromSecret.key }}
+            - name: CHOREO_POSTGRES_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.persistence.postgres.urlFromSecret.name | quote }}
+                  key: {{ .Values.persistence.postgres.urlFromSecret.key | quote }}
+            {{- else if .Values.persistence.postgres.url }}
             - name: CHOREO_POSTGRES_URL
               value: {{ .Values.persistence.postgres.url | quote }}
+            {{- else }}
+            {{- fail "persistence.postgres.enabled=true requires either persistence.postgres.url or persistence.postgres.urlFromSecret.{name,key}" }}
+            {{- end }}
             {{- end }}
           {{- if .Values.probes.liveness.enabled }}
           livenessProbe:

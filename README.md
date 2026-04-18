@@ -53,6 +53,23 @@ This project follows the same discipline as its siblings
 - **Distribution via containers and Helm.** Images are built under
   `Dockerfile` (podman and docker supported); deployment is via the
   Helm chart under `charts/choreographer/`.
+  - Pinned images only (a `latest` tag is refused unless
+    `development.allowMutableImageTags` is set)
+  - Non-root pod + container security contexts (runAsNonRoot,
+    readOnlyRootFilesystem, `ALL` capabilities dropped,
+    `seccompProfile: RuntimeDefault`)
+  - `automountServiceAccountToken: false` (the binary does not
+    call the Kubernetes API)
+  - emptyDir on `/tmp` so any library tempfile write survives
+    the read-only root filesystem
+  - `networkPolicy.enabled` opt-in restricts inbound to the pod's
+    declared ports and outbound to DNS, NATS, Postgres, and OTLP
+    (plus any extra rules operators add)
+  - `CHOREO_POSTGRES_URL` sourceable via `valueFrom.secretKeyRef`
+    so the DSN never lands in values files
+  - Optional `PodDisruptionBudget` gated on `pdb.enabled`
+  - Chart-render CI (`scripts/ci/helm-lint.sh`) exercises every
+    hardening feature and refuses a manifest that drops one.
 
 ### Quality gates
 
