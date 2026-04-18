@@ -83,6 +83,54 @@ impl fmt::Debug for VllmBearerToken {
 }
 
 // ---------------------------------------------------------------------------
+// Optional mTLS client identity
+// ---------------------------------------------------------------------------
+
+/// Client certificate + private key (PEM-encoded) for mTLS-protected
+/// vLLM endpoints. The bytes are held in memory and fed to
+/// [`reqwest::Identity`] when the HTTP client is built; they never
+/// appear in `Debug` output.
+#[derive(Clone)]
+pub struct VllmClientIdentity {
+    pem_bundle: Vec<u8>,
+}
+
+impl VllmClientIdentity {
+    /// Build an identity from concatenated cert + key PEM. The two
+    /// inputs are joined with a newline so the PEM separators stay
+    /// well-formed even if the caller forgot the trailing `\n`.
+    pub fn from_cert_and_key(cert_pem: &[u8], key_pem: &[u8]) -> Result<Self, DomainError> {
+        if cert_pem.is_empty() {
+            return Err(DomainError::EmptyField {
+                field: "vllm.client_cert_pem",
+            });
+        }
+        if key_pem.is_empty() {
+            return Err(DomainError::EmptyField {
+                field: "vllm.client_key_pem",
+            });
+        }
+        let mut bundle = Vec::with_capacity(cert_pem.len() + key_pem.len() + 1);
+        bundle.extend_from_slice(cert_pem);
+        if !cert_pem.ends_with(b"\n") {
+            bundle.push(b'\n');
+        }
+        bundle.extend_from_slice(key_pem);
+        Ok(Self { pem_bundle: bundle })
+    }
+
+    fn expose(&self) -> &[u8] {
+        &self.pem_bundle
+    }
+}
+
+impl fmt::Debug for VllmClientIdentity {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("VllmClientIdentity(**redacted**)")
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
 
@@ -97,6 +145,7 @@ pub struct VllmConfig {
     endpoint: String,
     model: String,
     bearer: Option<VllmBearerToken>,
+    client_identity: Option<VllmClientIdentity>,
     max_tokens: u32,
     timeout: Duration,
 }
@@ -114,6 +163,7 @@ impl VllmConfig {
             endpoint: DEFAULT_ENDPOINT.to_owned(),
             model,
             bearer: None,
+            client_identity: None,
             max_tokens: DEFAULT_MAX_TOKENS,
             timeout: DEFAULT_TIMEOUT,
         })
@@ -133,6 +183,16 @@ impl VllmConfig {
     #[must_use]
     pub fn with_bearer(mut self, bearer: VllmBearerToken) -> Self {
         self.bearer = Some(bearer);
+        self
+    }
+
+    /// Attach a client certificate + private key for mTLS-protected
+    /// endpoints. The identity is handed to `reqwest` when the
+    /// agent's HTTP client is built; if the PEM is malformed, the
+    /// error surfaces at agent construction time.
+    #[must_use]
+    pub fn with_client_identity(mut self, identity: VllmClientIdentity) -> Self {
+        self.client_identity = Some(identity);
         self
     }
 
@@ -176,15 +236,22 @@ impl fmt::Debug for VllmAgent {
 
 impl VllmAgent {
     pub fn new(id: AgentId, specialty: Specialty, config: VllmConfig) -> Result<Self, DomainError> {
-        let http = Client::builder()
-            .timeout(config.timeout)
-            .build()
-            .map_err(|err| {
-                debug!(error = %err, "vllm: failed to build http client");
+        let mut builder = Client::builder().timeout(config.timeout);
+        if let Some(identity) = &config.client_identity {
+            let parsed = reqwest::Identity::from_pem(identity.expose()).map_err(|err| {
+                debug!(error = %err, "vllm: malformed client identity PEM");
                 DomainError::InvariantViolated {
-                    reason: "vllm: failed to build http client",
+                    reason: "vllm: client identity PEM is malformed",
                 }
             })?;
+            builder = builder.identity(parsed);
+        }
+        let http = builder.build().map_err(|err| {
+            debug!(error = %err, "vllm: failed to build http client");
+            DomainError::InvariantViolated {
+                reason: "vllm: failed to build http client",
+            }
+        })?;
         Ok(Self {
             id,
             specialty,
@@ -418,6 +485,58 @@ mod tests {
         let shown = format!("{t:?}");
         assert!(!shown.contains("very-secret"), "token leaked: {shown}");
         assert!(shown.contains("redacted"));
+    }
+
+    #[test]
+    fn client_identity_debug_is_redacted() {
+        let pem = b"-----BEGIN CERTIFICATE-----\nabc\n-----END CERTIFICATE-----";
+        let key = b"-----BEGIN PRIVATE KEY-----\nxyz\n-----END PRIVATE KEY-----";
+        let identity = VllmClientIdentity::from_cert_and_key(pem, key).unwrap();
+        let shown = format!("{identity:?}");
+        assert!(!shown.contains("abc"), "cert leaked: {shown}");
+        assert!(!shown.contains("xyz"), "key leaked: {shown}");
+        assert!(shown.contains("redacted"));
+    }
+
+    #[test]
+    fn client_identity_rejects_empty_inputs() {
+        let key = b"-----BEGIN PRIVATE KEY-----\nxyz\n-----END PRIVATE KEY-----";
+        assert!(matches!(
+            VllmClientIdentity::from_cert_and_key(b"", key).unwrap_err(),
+            DomainError::EmptyField {
+                field: "vllm.client_cert_pem"
+            }
+        ));
+        let cert = b"-----BEGIN CERTIFICATE-----\nabc\n-----END CERTIFICATE-----";
+        assert!(matches!(
+            VllmClientIdentity::from_cert_and_key(cert, b"").unwrap_err(),
+            DomainError::EmptyField {
+                field: "vllm.client_key_pem"
+            }
+        ));
+    }
+
+    #[test]
+    fn malformed_client_identity_surfaces_at_agent_construction() {
+        // PEM that looks structurally valid but is NOT a real cert.
+        // `reqwest::Identity::from_pem` will reject this during
+        // agent construction; that's the invariant we pin here.
+        let cert = b"-----BEGIN CERTIFICATE-----\nnot-really-base64\n-----END CERTIFICATE-----";
+        let key = b"-----BEGIN PRIVATE KEY-----\nalso-not-base64\n-----END PRIVATE KEY-----";
+        let identity = VllmClientIdentity::from_cert_and_key(cert, key).unwrap();
+        let config = VllmConfig::new("m").unwrap().with_client_identity(identity);
+        let err = VllmAgent::new(
+            AgentId::new("a").unwrap(),
+            Specialty::new("triage").unwrap(),
+            config,
+        )
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            DomainError::InvariantViolated {
+                reason: "vllm: client identity PEM is malformed"
+            }
+        ));
     }
 
     #[test]

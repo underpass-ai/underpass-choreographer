@@ -16,8 +16,18 @@ workspace = true
 name = "choreo-e2e-runner"
 path = "src/main.rs"
 
+# Provider-E2E runner: drives the vLLM agent adapter directly
+# against a real vLLM endpoint (mTLS or bearer). Kept as a second
+# binary so the compose/k8s runner that drives the choreographer
+# stays trivial and network-free by design.
+[[bin]]
+name = "choreo-e2e-provider"
+path = "src/bin/provider.rs"
+
 [dependencies]
 choreo-proto = { workspace = true }
+choreo-core = { workspace = true }
+choreo-adapters = { workspace = true, features = ["agent-vllm"] }
 tokio = { workspace = true }
 tonic = { workspace = true }
 anyhow = { workspace = true }

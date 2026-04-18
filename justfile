@@ -70,6 +70,14 @@ e2e-compose:
 e2e-kubernetes:
     bash scripts/ci/e2e-kubernetes.sh
 
+# Provider-level E2E: exercises the `agent-vllm` adapter against a
+# real vLLM endpoint via mTLS. Expects `e2e-client-tls` in the
+# target namespace (default `underpass-runtime`); override with
+# NAMESPACE=<ns>. Build the runner image first (`just
+# build-provider-image`) and make it reachable from the cluster.
+e2e-provider-vllm:
+    bash scripts/ci/e2e-provider-vllm.sh
+
 # -----------------------------------------------------------------------------
 # chart & image
 # -----------------------------------------------------------------------------
@@ -82,6 +90,12 @@ helm-lint:
 # the dockerfile + entrypoint match what CI/CD ships.
 build-image:
     bash scripts/ci/container-image.sh
+
+# Build the provider-E2E runner image. Not published — operators
+# push to whatever registry their cluster can pull from. Tag via
+# IMAGE_TAG=<tag>.
+build-provider-image:
+    bash scripts/ci/build-provider-image.sh
 
 # -----------------------------------------------------------------------------
 # running the binary

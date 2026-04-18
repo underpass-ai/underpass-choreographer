@@ -72,6 +72,39 @@ just e2e-compose     # full stack via docker compose + runner
 just e2e-kubernetes  # kind cluster + Helm chart + runner Job
 ```
 
+### Provider-E2E (vLLM)
+
+Exercises the `agent-vllm` adapter directly against a real vLLM
+endpoint — not the full choreographer — so it pins the provider
+wire contract. The Kubernetes Job mounts a client certificate and
+hits the endpoint via mTLS.
+
+```bash
+# Build the runner image and push it where the cluster can pull it.
+IMAGE_TAG=<registry>/underpass-choreographer-e2e-provider:dev \
+    just build-provider-image
+
+# Edit tests/e2e/kubernetes/provider-vllm-job.yaml to use that tag,
+# then:
+NAMESPACE=<ns-holding-e2e-client-tls> just e2e-provider-vllm
+```
+
+Env vars consumed by the runner (set in the Job's `env` block,
+edit the manifest for a different endpoint):
+
+| Var | Required | Notes |
+|---|---|---|
+| `CHOREO_VLLM_ENDPOINT` | yes | base URL, e.g. `https://qwen35-9b.llm.underpassai.com` |
+| `CHOREO_VLLM_MODEL` | yes | model id, e.g. `Qwen/Qwen3.5-9B` |
+| `CHOREO_VLLM_CLIENT_CERT_PATH` | with key | PEM file for mTLS client cert |
+| `CHOREO_VLLM_CLIENT_KEY_PATH` | with cert | PEM file for mTLS client key |
+| `CHOREO_VLLM_BEARER_TOKEN` | optional | bearer auth |
+| `CHOREO_VLLM_MAX_TOKENS` | optional | default `1024`; bump when the model uses a reasoning parser that burns budget before `content` |
+
+The runner validates `generate` + `critique` + `revise` each
+return text of at least 20 characters; a failing assertion exits
+the Job non-zero and the script surfaces the pod status.
+
 ## Benchmarks
 
 ```bash

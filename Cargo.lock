@@ -458,6 +458,8 @@ name = "choreo-e2e-runner"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "choreo-adapters",
+ "choreo-core",
  "choreo-proto",
  "tokio",
  "tonic",

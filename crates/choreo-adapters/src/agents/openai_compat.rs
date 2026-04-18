@@ -67,6 +67,15 @@ pub(super) struct ChatChoice {
 pub(super) struct ChatResponseMessage {
     #[serde(default)]
     pub content: Option<String>,
+    /// Qwen3 (and other reasoning-parser-enabled models) split their
+    /// output between `content` (the final answer) and `reasoning`
+    /// (the chain-of-thought). When the token budget is consumed by
+    /// reasoning and `content` comes back null, we still have the
+    /// reasoning text — fall back to it rather than erroring, so the
+    /// deliberation keeps working against reasoning-configured vLLM
+    /// deployments.
+    #[serde(default)]
+    pub reasoning: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -75,6 +84,13 @@ pub(super) struct ChatResponseMessage {
 
 /// Extract the first choice's text content. Rejects missing /
 /// empty / whitespace-only responses with provider-tagged errors.
+///
+/// Falls back to the reasoning trace when the primary `content`
+/// comes back null/empty but the response carries a non-empty
+/// `reasoning` (Qwen3 and similar reasoning-parser-enabled models
+/// with a short token budget). We log the fallback at debug-level
+/// from the caller — the signal is still domain-meaningful text,
+/// it just arrives through a different wire field.
 pub(super) fn extract_text(resp: ChatResponse, errs: &ErrorStrings) -> Result<String, DomainError> {
     let first = resp
         .choices
@@ -83,18 +99,37 @@ pub(super) fn extract_text(resp: ChatResponse, errs: &ErrorStrings) -> Result<St
         .ok_or(DomainError::InvariantViolated {
             reason: errs.no_choices,
         })?;
-    let content = first
-        .message
-        .and_then(|m| m.content)
-        .ok_or(DomainError::InvariantViolated {
-            reason: errs.missing_content,
-        })?;
-    if content.trim().is_empty() {
-        return Err(DomainError::InvariantViolated {
-            reason: errs.empty_content,
-        });
+    let message = first.message.ok_or(DomainError::InvariantViolated {
+        reason: errs.missing_content,
+    })?;
+
+    let primary = message.content.and_then(|c| {
+        let trimmed = c.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(c)
+        }
+    });
+
+    if let Some(text) = primary {
+        return Ok(text);
     }
-    Ok(content)
+
+    // Fallback: reasoning field.
+    if let Some(reasoning) = message.reasoning {
+        let trimmed = reasoning.trim();
+        if !trimmed.is_empty() {
+            return Ok(reasoning);
+        }
+    }
+
+    // Neither `content` nor `reasoning` usable. Distinguish the two
+    // upstream shapes: "field absent" vs "field present but empty" —
+    // both are operational bugs but the diagnostic reason differs.
+    Err(DomainError::InvariantViolated {
+        reason: errs.empty_content,
+    })
 }
 
 /// Classify an HTTP response status into a provider-tagged domain
@@ -174,7 +209,7 @@ mod tests {
     }
 
     #[test]
-    fn extract_text_rejects_missing_content() {
+    fn extract_text_rejects_missing_content_without_reasoning() {
         let resp = parse_response(json!({
             "choices": [{"message": {"role": "assistant"}}]
         }));
@@ -182,15 +217,64 @@ mod tests {
         assert!(matches!(
             err,
             DomainError::InvariantViolated {
-                reason: "test: missing content"
+                reason: "test: empty content"
             }
         ));
     }
 
     #[test]
-    fn extract_text_rejects_whitespace_content() {
+    fn extract_text_rejects_whitespace_content_without_reasoning() {
         let resp = parse_response(json!({
             "choices": [{"message": {"role": "assistant", "content": "   \n\t"}}]
+        }));
+        let err = extract_text(resp, &TEST_ERRS).unwrap_err();
+        assert!(matches!(
+            err,
+            DomainError::InvariantViolated {
+                reason: "test: empty content"
+            }
+        ));
+    }
+
+    #[test]
+    fn extract_text_falls_back_to_reasoning_when_content_is_null() {
+        // Real-world shape produced by Qwen3 with --reasoning-parser=qwen3
+        // when `max_tokens` was spent inside the reasoning phase and
+        // `content` never materialised on the wire.
+        let resp = parse_response(json!({
+            "choices": [{"message": {
+                "role": "assistant",
+                "content": null,
+                "reasoning": "Thinking Process:\n1. Analyze..."
+            }}]
+        }));
+        let text = extract_text(resp, &TEST_ERRS).unwrap();
+        assert!(
+            text.starts_with("Thinking"),
+            "reasoning fallback not used: got {text:?}"
+        );
+    }
+
+    #[test]
+    fn extract_text_prefers_content_over_reasoning_when_both_present() {
+        let resp = parse_response(json!({
+            "choices": [{"message": {
+                "role": "assistant",
+                "content": "primary answer",
+                "reasoning": "should not be picked"
+            }}]
+        }));
+        assert_eq!(extract_text(resp, &TEST_ERRS).unwrap(), "primary answer");
+    }
+
+    #[test]
+    fn extract_text_rejects_content_and_reasoning_both_empty() {
+        let resp = parse_response(json!({
+            "choices": [{"message": {
+                "role": "assistant",
+                "content": "",
+                "reasoning": "   "
+            }}]
         }));
         let err = extract_text(resp, &TEST_ERRS).unwrap_err();
         assert!(matches!(
