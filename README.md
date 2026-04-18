@@ -122,10 +122,14 @@ gate in this repository):
   inbound subscriber, and `AutoDispatchService` emit `#[tracing::
   instrument]` spans with domain fields (`task_id`, `specialty`,
   `event_id`, `agent_id`, `kind`). A regression test pins the
-  `deliberate` span name and fields. **OTLP export** and **W3C
-  tracecontext propagation** across NATS / gRPC boundaries land in
-  a follow-up slice; today spans are observable in-process via the
-  binary's structured JSON subscriber and whatever collector is
-  pointed at stdout.
+  `deliberate` span name and fields.
+- W3C Trace Context propagation **across NATS**: every outbound
+  event carries a `traceparent` header stamped by the publisher
+  (`TraceContext::generate()` when no upstream context is present).
+  The inbound subscriber extracts `trace_id` and `span_id` from the
+  header and surfaces them as fields on the `nats.trigger.inbound`
+  span so downstream OTel-aware collectors can stitch the trace
+  hierarchy. Integration-tested against a real NATS container. OTLP
+  export + gRPC metadata propagation land in a follow-up slice.
 
 See `docs/experiments/` for anything beyond these bullet points.

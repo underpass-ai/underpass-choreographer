@@ -5,8 +5,15 @@
 //! for the event type; thanks to `#[serde(flatten)]` on the envelope
 //! field the shape matches the AsyncAPI contract (envelope at the
 //! root next to event-specific fields).
+//!
+//! Every outbound message also carries a W3C Trace Context
+//! `traceparent` NATS header (generated per publish when no upstream
+//! context is available). Downstream OTel-aware consumers can stitch
+//! the trace hierarchy from this header; the inbound subscriber in
+//! this crate reads the same header back and surfaces it as span
+//! fields on `nats.trigger.inbound`.
 
-use async_nats::Client;
+use async_nats::{header::HeaderMap, Client};
 use async_trait::async_trait;
 use choreo_core::error::DomainError;
 use choreo_core::events::{
@@ -14,10 +21,14 @@ use choreo_core::events::{
     TaskFailedEvent,
 };
 use choreo_core::ports::MessagingPort;
+use choreo_core::value_objects::TraceContext;
 use serde::Serialize;
 use tracing::debug;
 
 use super::config::NatsSubjects;
+
+/// NATS header name for W3C Trace Context propagation.
+pub(super) const TRACEPARENT_HEADER: &str = "traceparent";
 
 /// Publishes domain events to NATS.
 ///
@@ -54,8 +65,11 @@ impl NatsMessaging {
                 reason: "nats: failed to serialize outbound event",
             }
         })?;
+        let trace = TraceContext::generate();
+        let mut headers = HeaderMap::new();
+        headers.insert(TRACEPARENT_HEADER, trace.to_header().as_str());
         self.client
-            .publish(subject.to_owned(), payload.into())
+            .publish_with_headers(subject.to_owned(), headers, payload.into())
             .await
             .map_err(|err| {
                 debug!(error = %err, subject, "nats publish failed");
@@ -63,7 +77,7 @@ impl NatsMessaging {
                     reason: "nats: publish failed",
                 }
             })?;
-        debug!(subject, "nats event published");
+        debug!(subject, trace_id = trace.trace_id(), "nats event published");
         Ok(())
     }
 }
