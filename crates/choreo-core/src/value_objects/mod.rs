@@ -14,6 +14,7 @@ mod rubric;
 mod score;
 mod specialty;
 mod task_description;
+mod trace_context;
 
 pub use agent_kind::AgentKind;
 pub use attributes::Attributes;
@@ -25,3 +26,4 @@ pub use rubric::Rubric;
 pub use score::Score;
 pub use specialty::Specialty;
 pub use task_description::TaskDescription;
+pub use trace_context::TraceContext;

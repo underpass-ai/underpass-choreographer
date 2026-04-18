@@ -18,7 +18,7 @@ use choreo_core::events::{
 };
 use choreo_core::ports::MessagingPort;
 use choreo_core::value_objects::{
-    AgentId, DurationMs, EventId, ProposalId, Score, Specialty, TaskId,
+    AgentId, DurationMs, EventId, ProposalId, Score, Specialty, TaskId, TraceContext,
 };
 use futures::StreamExt;
 use testcontainers::{
@@ -228,4 +228,36 @@ async fn all_outbound_events_land_on_their_canonical_subjects() {
     let failed: serde_json::Value = serde_json::from_slice(&got_failed.payload).unwrap();
     assert_eq!(failed["error_kind"], "validator.timeout");
     assert_eq!(failed["error_reason"], "deadline exceeded");
+
+    // Every outbound message must carry a W3C `traceparent` header
+    // that our parser accepts. This pins the inject-on-publish
+    // contract; downstream OTel-aware collectors can stitch on the
+    // same header.
+    let mut seen_trace_ids = std::collections::HashSet::new();
+    for (subject, message) in [
+        (&subjects.task_dispatched, &got_dispatched),
+        (&subjects.task_completed, &got_completed),
+        (&subjects.task_failed, &got_failed),
+        (&subjects.deliberation_completed, &got_deliberation),
+        (&subjects.phase_changed, &got_phase),
+    ] {
+        let headers = message
+            .headers
+            .as_ref()
+            .unwrap_or_else(|| panic!("{subject}: no headers on message"));
+        let header_value = headers
+            .get("traceparent")
+            .unwrap_or_else(|| panic!("{subject}: missing traceparent header"))
+            .as_str();
+        let parsed = TraceContext::parse(header_value)
+            .unwrap_or_else(|e| panic!("{subject}: traceparent must parse: {e}"));
+        seen_trace_ids.insert(parsed.trace_id().to_owned());
+    }
+    // Each publish generates a fresh trace id, so the five messages
+    // should yield five distinct trace ids.
+    assert_eq!(
+        seen_trace_ids.len(),
+        5,
+        "every publish must generate a distinct traceparent (saw {seen_trace_ids:?})"
+    );
 }
