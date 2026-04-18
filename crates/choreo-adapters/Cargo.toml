@@ -27,6 +27,16 @@ nats = ["dep:async-nats"]
 # later slices.
 postgres = ["dep:sqlx"]
 
+# OpenTelemetry integration. Pulls in the bridge crates the gRPC
+# interceptor needs to extract W3C tracecontext from request
+# metadata and set it as the OTel parent context. The exporter
+# itself lives in the choreo binary crate under the same flag.
+otel = [
+    "dep:opentelemetry",
+    "dep:opentelemetry_sdk",
+    "dep:tracing-opentelemetry",
+]
+
 # Agent providers (LLMs, humans-in-the-loop, rule engines, ...).
 # Each is a peer adapter behind its own feature flag — none is privileged.
 agent-vllm = ["_http"]
@@ -59,8 +69,15 @@ prost-types = { workspace = true, optional = true }
 async-nats = { workspace = true, optional = true }
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false, optional = true }
 sqlx = { workspace = true, optional = true }
+opentelemetry = { workspace = true, optional = true }
+opentelemetry_sdk = { workspace = true, optional = true }
+tracing-opentelemetry = { workspace = true, optional = true }
 
 [dev-dependencies]
 mockall = { workspace = true }
 tokio-test = { workspace = true }
 wiremock = "0.6"
+tracing-subscriber = { workspace = true }
+opentelemetry = { workspace = true }
+opentelemetry_sdk = { workspace = true }
+tracing-opentelemetry = { workspace = true }

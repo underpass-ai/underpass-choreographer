@@ -45,6 +45,17 @@ pub mod validators;
 #[cfg(feature = "grpc")]
 pub mod grpc;
 
+/// Re-exports intended only for this crate's integration tests.
+///
+/// Hidden from rustdoc because no production consumer should depend
+/// on these items — they exist so the integration harness under
+/// `tests/` can reach helpers that are otherwise module-private.
+#[cfg(all(feature = "grpc", feature = "otel"))]
+#[doc(hidden)]
+pub mod __test_only {
+    pub use crate::grpc::tracecontext::link_span_to_metadata;
+}
+
 #[cfg(feature = "nats")]
 pub mod nats;
 

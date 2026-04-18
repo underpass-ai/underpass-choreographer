@@ -128,8 +128,20 @@ gate in this repository):
   (`TraceContext::generate()` when no upstream context is present).
   The inbound subscriber extracts `trace_id` and `span_id` from the
   header and surfaces them as fields on the `nats.trigger.inbound`
-  span so downstream OTel-aware collectors can stitch the trace
-  hierarchy. Integration-tested against a real NATS container. OTLP
-  export + gRPC metadata propagation land in a follow-up slice.
+  span. Integration-tested against a real NATS container.
+- W3C Trace Context propagation **across gRPC** (opt-in via the
+  `otel` Cargo feature): every RPC handler calls
+  `link_span_to_metadata`, which reads `traceparent` from request
+  metadata and sets it as the OTel parent context of the current
+  tracing span. Integration-tested via a `tracing-opentelemetry`
+  bridge.
+- **OTLP exporter** (opt-in via the `otel` feature + runtime
+  `CHOREO_OTLP_ENDPOINT`): when both are present the binary
+  installs a batching OTLP/gRPC exporter and layers the
+  `tracing-opentelemetry` bridge into the subscriber, so every
+  instrumented span ships to the configured collector with real
+  OTel trace/span IDs. Feature off → the binary has zero OTel
+  dependency surface. Endpoint unset → the exporter is not wired
+  (no silent background connections).
 
 See `docs/experiments/` for anything beyond these bullet points.

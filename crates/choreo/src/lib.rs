@@ -9,7 +9,9 @@ pub mod compose;
 pub mod health;
 pub mod runtime;
 pub mod seeding;
+pub mod telemetry;
 
 pub use compose::{compose, Application, ComposeError};
 pub use health::{router as health_router, HealthState};
 pub use runtime::serve;
+pub use telemetry::{init_tracing, TelemetryGuard};
