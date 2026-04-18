@@ -16,6 +16,11 @@ serviceAccount:
   create: true
   annotations: {}
   name: ""
+  # The binary does not call the Kubernetes API, so mounting the
+  # service-account token inside the pod is gratuitous attack
+  # surface. Turn it back on only if a future adapter legitimately
+  # needs in-cluster credentials.
+  automountServiceAccountToken: false
 
 podAnnotations: {}
 podLabels: {}
@@ -97,25 +102,99 @@ messaging:
     # Wildcard of inbound trigger subjects consumed by the service.
     triggerSubject: choreo.trigger.>
 
-# Persistent storage for deliberations.
-# When `enabled: true`, the binary wires the Postgres repository
-# (migrations apply on startup). Otherwise the in-memory repository
-# is used. Only deliberations persist at this phase; councils,
-# agent registry, and statistics remain in-memory.
+# Persistent storage for deliberations, councils, agents, and
+# statistics. When `enabled: true`, every registry that has a
+# Postgres adapter goes through it atomically; migrations apply on
+# startup.
 persistence:
   postgres:
     enabled: false
-    # Plain URL form. Real deployments should source this from a
-    # Secret-mounted file and set `urlFromSecret.name/key` instead of
-    # hard-coding here; those fields arrive with the chart-hardening
-    # slice.
+    # One of the two URL sources below must be set when enabled.
+    # Secret-by-reference is strongly preferred in production so
+    # the DSN (and the embedded password) never land in the
+    # Deployment spec or in Helm value files.
     url: ""
+    urlFromSecret:
+      name: ""
+      key: ""
 
 tls:
   # Transport security mode for the gRPC service.
   # One of: "none" | "server" | "mutual".
   mode: none
   existingSecret: ""
+
+# PodDisruptionBudget. Only meaningful for multi-replica deployments;
+# off by default (single-replica is the chart's default posture).
+pdb:
+  enabled: false
+  # Either `minAvailable` or `maxUnavailable` — the template only
+  # emits a block when both this value is set and `pdb.enabled`.
+  minAvailable: 1
+  # maxUnavailable: ""
+
+# NetworkPolicy. Restricts both ingress (only declared ports) and
+# egress (DNS + NATS + Postgres + OTLP by default). Off by default
+# so the chart installs on clusters without a NetworkPolicy CNI;
+# production deployments should flip this to true.
+networkPolicy:
+  enabled: false
+  # Who can reach the pod. Must be a non-empty list in production —
+  # an empty list combined with a podSelector-only ingress rule
+  # would allow every pod in the namespace. Example:
+  #
+  #   ingressFrom:
+  #     - namespaceSelector:
+  #         matchLabels:
+  #           role: client
+  #     - podSelector:
+  #         matchLabels:
+  #           app.kubernetes.io/name: caller
+  ingressFrom: []
+  egress:
+    # Pre-wired egress blocks for the dependencies the binary
+    # actually talks to. Each entry is a single NetworkPolicy
+    # peer (`to`) + ports group; set it to `~` (null) to drop
+    # that block when the dependency lives outside the cluster
+    # and egress is permitted elsewhere.
+    nats:
+      to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: nats
+      ports:
+        - port: 4222
+          protocol: TCP
+    postgres:
+      to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: postgres
+      ports:
+        - port: 5432
+          protocol: TCP
+    otlp:
+      to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: otel-collector
+      ports:
+        - port: 4317
+          protocol: TCP
+    # Any extra rules operators want to append (e.g. vLLM endpoint,
+    # Anthropic/OpenAI via an egress proxy). Full NetworkPolicy
+    # rule shape.
+    extra: []
+
+# Read-only root filesystem is enforced via securityContext, but
+# libraries reach for /tmp occasionally. Mount an in-memory emptyDir
+# so those writes succeed without loosening the FS permissions.
+tmpVolume:
+  enabled: true
+  sizeLimit: 64Mi
 
 ingress:
   enabled: false

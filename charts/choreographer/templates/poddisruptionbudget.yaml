@@ -1,0 +1,22 @@
+{{- if .Values.pdb.enabled -}}
+# PodDisruptionBudget for multi-replica deployments. Single-replica
+# is the chart's default posture, for which a PDB adds no value
+# (voluntary eviction already has nowhere to go).
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "choreographer.fullname" . }}
+  labels:
+    {{- include "choreographer.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "choreographer.selectorLabels" . | nindent 6 }}
+  {{- if .Values.pdb.minAvailable }}
+  minAvailable: {{ .Values.pdb.minAvailable }}
+  {{- else if .Values.pdb.maxUnavailable }}
+  maxUnavailable: {{ .Values.pdb.maxUnavailable }}
+  {{- else }}
+  {{- fail "pdb.enabled=true requires pdb.minAvailable or pdb.maxUnavailable" }}
+  {{- end }}
+{{- end -}}
