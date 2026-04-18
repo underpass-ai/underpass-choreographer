@@ -1,0 +1,147 @@
+    Finished `bench` profile [optimized] target(s) in 0.12s
+     Running benches/deliberate.rs (target/release/deps/deliberate-4abbffe59e1e448b)
+Gnuplot not found, using plotters backend
+Benchmarking deliberate/1-agents-0-rounds
+Benchmarking deliberate/1-agents-0-rounds: Warming up for 1.0000 s
+Benchmarking deliberate/1-agents-0-rounds: Collecting 50 samples in estimated 2.0004 s (1.3M iterations)
+Benchmarking deliberate/1-agents-0-rounds: Analyzing
+deliberate/1-agents-0-rounds
+                        time:   [1.5253 µs 1.5431 µs 1.5672 µs]
+Found 3 outliers among 50 measurements (6.00%)
+  2 (4.00%) high mild
+  1 (2.00%) high severe
+Benchmarking deliberate/1-agents-2-rounds
+Benchmarking deliberate/1-agents-2-rounds: Warming up for 1.0000 s
+Benchmarking deliberate/1-agents-2-rounds: Collecting 50 samples in estimated 2.0007 s (1.2M iterations)
+Benchmarking deliberate/1-agents-2-rounds: Analyzing
+deliberate/1-agents-2-rounds
+                        time:   [1.5492 µs 1.5597 µs 1.5739 µs]
+Found 4 outliers among 50 measurements (8.00%)
+  1 (2.00%) high mild
+  3 (6.00%) high severe
+Benchmarking deliberate/1-agents-4-rounds
+Benchmarking deliberate/1-agents-4-rounds: Warming up for 1.0000 s
+Benchmarking deliberate/1-agents-4-rounds: Collecting 50 samples in estimated 2.0007 s (1.3M iterations)
+Benchmarking deliberate/1-agents-4-rounds: Analyzing
+deliberate/1-agents-4-rounds
+                        time:   [1.4919 µs 1.5176 µs 1.5511 µs]
+Found 9 outliers among 50 measurements (18.00%)
+  4 (8.00%) high mild
+  5 (10.00%) high severe
+Benchmarking deliberate/1-agents-8-rounds
+Benchmarking deliberate/1-agents-8-rounds: Warming up for 1.0000 s
+Benchmarking deliberate/1-agents-8-rounds: Collecting 50 samples in estimated 2.0016 s (1.3M iterations)
+Benchmarking deliberate/1-agents-8-rounds: Analyzing
+deliberate/1-agents-8-rounds
+                        time:   [1.4978 µs 1.5340 µs 1.5750 µs]
+Found 6 outliers among 50 measurements (12.00%)
+  1 (2.00%) high mild
+  5 (10.00%) high severe
+Benchmarking deliberate/3-agents-0-rounds
+Benchmarking deliberate/3-agents-0-rounds: Warming up for 1.0000 s
+Benchmarking deliberate/3-agents-0-rounds: Collecting 50 samples in estimated 2.0006 s (667k iterations)
+Benchmarking deliberate/3-agents-0-rounds: Analyzing
+deliberate/3-agents-0-rounds
+                        time:   [2.7801 µs 2.7907 µs 2.8022 µs]
+                        change: [-11.819% -10.969% -10.247%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking deliberate/3-agents-2-rounds
+Benchmarking deliberate/3-agents-2-rounds: Warming up for 1.0000 s
+Benchmarking deliberate/3-agents-2-rounds: Collecting 50 samples in estimated 2.0010 s (570k iterations)
+Benchmarking deliberate/3-agents-2-rounds: Analyzing
+deliberate/3-agents-2-rounds
+                        time:   [3.3207 µs 3.3712 µs 3.4355 µs]
+                        change: [-3.0663% -0.2942% +2.3555%] (p = 0.86 > 0.05)
+                        No change in performance detected.
+Found 3 outliers among 50 measurements (6.00%)
+  3 (6.00%) high mild
+Benchmarking deliberate/3-agents-4-rounds
+Benchmarking deliberate/3-agents-4-rounds: Warming up for 1.0000 s
+Benchmarking deliberate/3-agents-4-rounds: Collecting 50 samples in estimated 2.0008 s (547k iterations)
+Benchmarking deliberate/3-agents-4-rounds: Analyzing
+deliberate/3-agents-4-rounds
+                        time:   [3.6926 µs 3.7479 µs 3.8137 µs]
+Found 3 outliers among 50 measurements (6.00%)
+  1 (2.00%) high mild
+  2 (4.00%) high severe
+Benchmarking deliberate/3-agents-8-rounds
+Benchmarking deliberate/3-agents-8-rounds: Warming up for 1.0000 s
+Benchmarking deliberate/3-agents-8-rounds: Collecting 50 samples in estimated 2.0056 s (451k iterations)
+Benchmarking deliberate/3-agents-8-rounds: Analyzing
+deliberate/3-agents-8-rounds
+                        time:   [4.3151 µs 4.3552 µs 4.4024 µs]
+Found 8 outliers among 50 measurements (16.00%)
+  6 (12.00%) high mild
+  2 (4.00%) high severe
+Benchmarking deliberate/5-agents-0-rounds
+Benchmarking deliberate/5-agents-0-rounds: Warming up for 1.0000 s
+Benchmarking deliberate/5-agents-0-rounds: Collecting 50 samples in estimated 2.0052 s (393k iterations)
+Benchmarking deliberate/5-agents-0-rounds: Analyzing
+deliberate/5-agents-0-rounds
+                        time:   [5.0670 µs 5.1278 µs 5.2038 µs]
+Found 5 outliers among 50 measurements (10.00%)
+  1 (2.00%) high mild
+  4 (8.00%) high severe
+Benchmarking deliberate/5-agents-2-rounds
+Benchmarking deliberate/5-agents-2-rounds: Warming up for 1.0000 s
+Benchmarking deliberate/5-agents-2-rounds: Collecting 50 samples in estimated 2.0066 s (347k iterations)
+Benchmarking deliberate/5-agents-2-rounds: Analyzing
+deliberate/5-agents-2-rounds
+                        time:   [5.7254 µs 5.7420 µs 5.7617 µs]
+Found 4 outliers among 50 measurements (8.00%)
+  1 (2.00%) high mild
+  3 (6.00%) high severe
+Benchmarking deliberate/5-agents-4-rounds
+Benchmarking deliberate/5-agents-4-rounds: Warming up for 1.0000 s
+Benchmarking deliberate/5-agents-4-rounds: Collecting 50 samples in estimated 2.0069 s (311k iterations)
+Benchmarking deliberate/5-agents-4-rounds: Analyzing
+deliberate/5-agents-4-rounds
+                        time:   [6.5074 µs 6.5999 µs 6.7056 µs]
+Found 5 outliers among 50 measurements (10.00%)
+  4 (8.00%) high mild
+  1 (2.00%) high severe
+Benchmarking deliberate/5-agents-8-rounds
+Benchmarking deliberate/5-agents-8-rounds: Warming up for 1.0000 s
+Benchmarking deliberate/5-agents-8-rounds: Collecting 50 samples in estimated 2.0098 s (250k iterations)
+Benchmarking deliberate/5-agents-8-rounds: Analyzing
+deliberate/5-agents-8-rounds
+                        time:   [7.6060 µs 7.6301 µs 7.6573 µs]
+Found 1 outliers among 50 measurements (2.00%)
+  1 (2.00%) high mild
+Benchmarking deliberate/10-agents-0-rounds
+Benchmarking deliberate/10-agents-0-rounds: Warming up for 1.0000 s
+Benchmarking deliberate/10-agents-0-rounds: Collecting 50 samples in estimated 2.0130 s (185k iterations)
+Benchmarking deliberate/10-agents-0-rounds: Analyzing
+deliberate/10-agents-0-rounds
+                        time:   [10.715 µs 10.801 µs 10.914 µs]
+Found 5 outliers among 50 measurements (10.00%)
+  2 (4.00%) high mild
+  3 (6.00%) high severe
+Benchmarking deliberate/10-agents-2-rounds
+Benchmarking deliberate/10-agents-2-rounds: Warming up for 1.0000 s
+Benchmarking deliberate/10-agents-2-rounds: Collecting 50 samples in estimated 2.0127 s (157k iterations)
+Benchmarking deliberate/10-agents-2-rounds: Analyzing
+deliberate/10-agents-2-rounds
+                        time:   [12.427 µs 12.475 µs 12.539 µs]
+Found 4 outliers among 50 measurements (8.00%)
+  3 (6.00%) high mild
+  1 (2.00%) high severe
+Benchmarking deliberate/10-agents-4-rounds
+Benchmarking deliberate/10-agents-4-rounds: Warming up for 1.0000 s
+Benchmarking deliberate/10-agents-4-rounds: Collecting 50 samples in estimated 2.0091 s (139k iterations)
+Benchmarking deliberate/10-agents-4-rounds: Analyzing
+deliberate/10-agents-4-rounds
+                        time:   [14.243 µs 14.339 µs 14.444 µs]
+Found 5 outliers among 50 measurements (10.00%)
+  2 (4.00%) high mild
+  3 (6.00%) high severe
+Benchmarking deliberate/10-agents-8-rounds
+Benchmarking deliberate/10-agents-8-rounds: Warming up for 1.0000 s
+Benchmarking deliberate/10-agents-8-rounds: Collecting 50 samples in estimated 2.0008 s (115k iterations)
+Benchmarking deliberate/10-agents-8-rounds: Analyzing
+deliberate/10-agents-8-rounds
+                        time:   [17.427 µs 17.516 µs 17.644 µs]
+Found 9 outliers among 50 measurements (18.00%)
+  4 (8.00%) high mild
+  5 (10.00%) high severe
+

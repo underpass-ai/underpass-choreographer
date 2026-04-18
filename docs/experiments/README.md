@@ -70,3 +70,4 @@ Concrete next experiments (by number or slug).
 | # | Slug | Status | Summary |
 |---|---|---|---|
 | 001 | [baseline-deliberation-latency](001-baseline-deliberation-latency/README.md) | complete | `DeliberateUseCase::execute` runs in ~3.1–3.6 µs (3 agents, 0–2 rounds) on commodity hardware with stubbed ports — domain loop stays well under a 10 µs self-cost budget. |
+| 002 | [deliberation-scale-sweep](002-deliberation-scale-sweep/README.md) | complete | 4×4 grid (agents ∈ {1,3,5,10} × rounds ∈ {0,2,4,8}). Two-term linear model `0.26 + 1.05·agents + 0.07·(rounds × agents)` µs fits every operational point within ±10 %. Peer-review costs ~60–85 ns per round-agent pair. |

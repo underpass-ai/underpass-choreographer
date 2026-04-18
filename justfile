@@ -127,6 +127,10 @@ bench-deliberate:
 bench-experiment-001:
     bash docs/experiments/001-baseline-deliberation-latency/run.sh
 
+# Reproduce experiment 002.
+bench-experiment-002:
+    bash docs/experiments/002-deliberation-scale-sweep/run.sh
+
 # -----------------------------------------------------------------------------
 # release
 # -----------------------------------------------------------------------------
