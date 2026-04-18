@@ -1,0 +1,26 @@
+    Finished `bench` profile [optimized] target(s) in 0.09s
+     Running benches/deliberate.rs (target/release/deps/deliberate-4abbffe59e1e448b)
+Gnuplot not found, using plotters backend
+Benchmarking deliberate/3-agents-0-rounds
+Benchmarking deliberate/3-agents-0-rounds: Warming up for 3.0000 s
+Benchmarking deliberate/3-agents-0-rounds: Collecting 100 samples in estimated 5.0079 s (1.6M iterations)
+Benchmarking deliberate/3-agents-0-rounds: Analyzing
+deliberate/3-agents-0-rounds
+                        time:   [3.1001 µs 3.1205 µs 3.1470 µs]
+                        change: [-0.4789% +0.7272% +1.8388%] (p = 0.31 > 0.05)
+                        No change in performance detected.
+Found 12 outliers among 100 measurements (12.00%)
+  4 (4.00%) high mild
+  8 (8.00%) high severe
+Benchmarking deliberate/3-agents-2-rounds
+Benchmarking deliberate/3-agents-2-rounds: Warming up for 3.0000 s
+Benchmarking deliberate/3-agents-2-rounds: Collecting 100 samples in estimated 5.0027 s (1.5M iterations)
+Benchmarking deliberate/3-agents-2-rounds: Analyzing
+deliberate/3-agents-2-rounds
+                        time:   [3.4382 µs 3.5772 µs 3.7221 µs]
+                        change: [+1.2831% +3.6424% +6.3117%] (p = 0.02 < 0.05)
+                        Performance has regressed.
+Found 14 outliers among 100 measurements (14.00%)
+  9 (9.00%) high mild
+  5 (5.00%) high severe
+
