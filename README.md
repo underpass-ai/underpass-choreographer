@@ -78,8 +78,13 @@ This project follows the same discipline as its siblings
 - Integration tests: **testcontainers-backed**, real services per run
   (no mocks at the integration boundary).
 - End-to-end tests: a runner container drives scenarios either via
-  `docker compose` (fast feedback) or as a Kubernetes `Job` against a
-  kind cluster with the Helm chart installed (contract-true path).
+  `docker compose` or as a Kubernetes `Job` against a kind cluster
+  with the Helm chart installed (contract-true path). Both paths
+  are **manual-dispatch only** — the per-PR gates
+  (`clippy`, `test`, `contract`, `integration-nats`,
+  `integration-postgres`, `container-image`, `helm-chart`) already
+  cover the compile-and-unit surface; E2E is reserved for pre-
+  release validation. Trigger via `gh workflow run e2e.yml`.
 
 ## Status
 
