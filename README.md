@@ -14,6 +14,17 @@ runs deliberations, and publishes outcome events. It does **not** embed any
 domain vocabulary (no stories, plans, roles hardcoded) — all that is injected
 via configuration and proto messages.
 
+## Start here
+
+- [`docs/dev-loop.md`](docs/dev-loop.md) — local iteration loop,
+  every command mirrors a CI gate.
+- [`docs/release.md`](docs/release.md) — versioning + cut-a-release
+  checklist.
+- [`docs/PRINCIPLES.md`](docs/PRINCIPLES.md) — honesty discipline.
+- [`docs/experiments/`](docs/experiments/) — append-only lab
+  notebook (baselines, scale sweeps, null results).
+- `justfile` at the repo root — `just` lists every recipe.
+
 ## Workspace
 
 | Crate | Purpose |
