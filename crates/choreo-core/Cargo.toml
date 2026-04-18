@@ -24,3 +24,8 @@ tracing = { workspace = true }
 tokio = { workspace = true }
 mockall = { workspace = true }
 serde_json = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "trace_context"
+harness = false

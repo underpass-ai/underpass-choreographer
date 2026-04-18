@@ -67,4 +67,6 @@ Concrete next experiments (by number or slug).
 
 ## Index
 
-_Empty. The Choreographer has not yet run any experiments._
+| # | Slug | Status | Summary |
+|---|---|---|---|
+| 001 | [baseline-deliberation-latency](001-baseline-deliberation-latency/README.md) | complete | `DeliberateUseCase::execute` runs in ~3.1–3.6 µs (3 agents, 0–2 rounds) on commodity hardware with stubbed ports — domain loop stays well under a 10 µs self-cost budget. |

@@ -1,0 +1,56 @@
+   Compiling regex-automata v0.4.14
+   Compiling tracing-core v0.1.36
+   Compiling tokio v1.52.0
+   Compiling tracing v0.1.44
+   Compiling choreo-core v0.1.0 (/home/tirso/ai/developents/underpass-orchestrator/crates/choreo-core)
+   Compiling regex v1.12.3
+   Compiling criterion v0.5.1
+    Finished `bench` profile [optimized] target(s) in 18.90s
+     Running benches/trace_context.rs (target/release/deps/trace_context-5fbf2a3e609a5b63)
+Gnuplot not found, using plotters backend
+Benchmarking TraceContext::parse(valid)
+Benchmarking TraceContext::parse(valid): Warming up for 3.0000 s
+Benchmarking TraceContext::parse(valid): Collecting 100 samples in estimated 5.0004 s (59M iterations)
+Benchmarking TraceContext::parse(valid): Analyzing
+TraceContext::parse(valid)
+                        time:   [84.147 ns 85.535 ns 87.238 ns]
+                        change: [-7.5686% -5.4626% -3.5890%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 11 outliers among 100 measurements (11.00%)
+  3 (3.00%) high mild
+  8 (8.00%) high severe
+
+Benchmarking TraceContext::to_header
+Benchmarking TraceContext::to_header: Warming up for 3.0000 s
+Benchmarking TraceContext::to_header: Collecting 100 samples in estimated 5.0005 s (46M iterations)
+Benchmarking TraceContext::to_header: Analyzing
+TraceContext::to_header time:   [108.49 ns 109.94 ns 111.66 ns]
+                        change: [-2.7452% -0.3606% +2.1480%] (p = 0.76 > 0.05)
+                        No change in performance detected.
+Found 10 outliers among 100 measurements (10.00%)
+  9 (9.00%) high mild
+  1 (1.00%) high severe
+
+Benchmarking TraceContext::generate
+Benchmarking TraceContext::generate: Warming up for 3.0000 s
+Benchmarking TraceContext::generate: Collecting 100 samples in estimated 5.0013 s (12M iterations)
+Benchmarking TraceContext::generate: Analyzing
+TraceContext::generate  time:   [424.33 ns 430.15 ns 436.69 ns]
+                        change: [-0.6045% +2.0926% +5.1230%] (p = 0.21 > 0.05)
+                        No change in performance detected.
+Found 4 outliers among 100 measurements (4.00%)
+  2 (2.00%) high mild
+  2 (2.00%) high severe
+
+Benchmarking TraceContext::parse + to_header
+Benchmarking TraceContext::parse + to_header: Warming up for 3.0000 s
+Benchmarking TraceContext::parse + to_header: Collecting 100 samples in estimated 5.0001 s (23M iterations)
+Benchmarking TraceContext::parse + to_header: Analyzing
+TraceContext::parse + to_header
+                        time:   [219.45 ns 220.95 ns 222.61 ns]
+                        change: [+2.9683% +5.1092% +7.3279%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 10 outliers among 100 measurements (10.00%)
+  4 (4.00%) high mild
+  6 (6.00%) high severe
+

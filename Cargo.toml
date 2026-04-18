@@ -93,6 +93,9 @@ figment = { version = "0.10", features = ["env", "toml"] }
 mockall = "0.13"
 tokio-test = "0.4"
 
+# benchmarking
+criterion = { version = "0.5", features = ["async_tokio"] }
+
 # internal
 choreo-core = { path = "crates/choreo-core" }
 choreo-app = { path = "crates/choreo-app" }

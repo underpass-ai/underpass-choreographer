@@ -144,6 +144,29 @@ jobs:
       - name: Lint Helm chart
         run: bash scripts/ci/helm-lint.sh
 
+  benches-compile:
+    # Criterion benches don't run on every PR (too noisy, wrong
+    # signal/noise ratio) but they must keep compiling — a stale
+    # bench silently breaks every experiment's reproducer.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    needs: [contract]
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9
+        with:
+          toolchain: 1.90.0
+      - name: Install protoc
+        run: bash scripts/ci/install-protoc.sh
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5
+      - name: Compile benches
+        run: bash scripts/ci/bench-compile.sh
+
   sonarcloud:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
