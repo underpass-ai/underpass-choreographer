@@ -1,5 +1,7 @@
 # Underpass Choreographer
 
+> Part of [Underpass AI](https://underpassai.com) — memory and execution infrastructure for reliable AI agents.
+
 Event-driven coordination plane for specialist agents. Domain-agnostic port of
 the `swe-ai-fleet` orchestrator service to Rust.
 
