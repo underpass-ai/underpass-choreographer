@@ -1,0 +1,32 @@
+[package]
+name = "choreo-mcp-proto"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.90"
+license = "Apache-2.0"
+authors = ["Tirso Garcia Ibañez"]
+repository = "https://github.com/underpass-ai/underpass-choreographer"
+description = "Standalone vendored proto types for underpass.choreo.v1, distributed alongside the choreo-mcp binary so `cargo install choreo-mcp` can pull from crates.io without depending on the choreographer's internal workspace crates."
+keywords = ["mcp", "choreographer", "grpc", "tonic", "underpass"]
+categories = ["api-bindings"]
+publish = true
+include = [
+    "src/**/*.rs",
+    "proto/**/*.proto",
+    "build.rs",
+    "Cargo.toml",
+    "README.md",
+    "LICENSE*",
+]
+
+[lib]
+
+[dependencies]
+# Explicit pins (NOT workspace = true). Published crates can't inherit
+# workspace deps once consumed by an out-of-workspace `cargo install`.
+prost = "0.13"
+prost-types = "0.13"
+tonic = { version = "0.12", features = ["tls", "tls-roots"] }
+
+[build-dependencies]
+tonic-build = "0.12"

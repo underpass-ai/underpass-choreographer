@@ -602,6 +602,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "choreo-mcp-proto"
+version = "0.1.0"
+dependencies = [
+ "prost",
+ "prost-types",
+ "tonic",
+ "tonic-build",
+]
+
+[[package]]
 name = "choreo-proto"
 version = "0.1.0"
 dependencies = [

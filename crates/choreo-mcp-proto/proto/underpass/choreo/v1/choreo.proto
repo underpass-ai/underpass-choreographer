@@ -1,0 +1,564 @@
+// Vendored from underpass-choreographer's choreo-proto crate. Keep in sync via the build script.
+// Copyright Underpass AI. Licensed under Apache-2.0.
+//
+// Underpass Choreographer — event-driven coordinator of specialist agent
+// councils. Use-case agnostic: no vocabulary from any specific domain
+// (software engineering, clinical, supply chain, etc.) is baked in.
+//
+// Key concepts:
+//   - Specialty: a free-form label identifying a kind of expertise
+//                (e.g. "triage", "reviewer", "planner"). Defined by the
+//                operator, never enumerated by this contract.
+//   - Agent:     a participant capable of proposing, critiquing, and
+//                revising solutions for a task.
+//   - Council:   a group of Agents for a given Specialty that deliberates
+//                over a task.
+//   - Task:      a unit of work submitted for deliberation; carries a
+//                description and structured constraints.
+//   - Deliberation: proposal -> peer critique -> revision -> validation
+//                   -> scoring -> ranked results.
+//   - TriggerEvent: an inbound domain event that instructs the
+//                   choreographer to dispatch deliberations across one
+//                   or more specialties.
+//
+// All domain-specific content is carried as opaque, structured data
+// (google.protobuf.Struct / map<string, Value>) so any use case can
+// attach its own attributes without modifying this contract.
+
+syntax = "proto3";
+
+package underpass.choreo.v1;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+// ============================================================================
+// Service
+// ============================================================================
+
+// Implementation status (server side) at v0.1:
+//
+// Every RPC is backed by a use case in `choreo-app/src/usecases/`
+// (or `services/auto_dispatch.rs` for ProcessTriggerEvent;
+// `StatisticsPort::snapshot` for GetStatus / GetMetrics;
+// `AgentFactoryPort` + `AgentRegistryPort` for RegisterAgent /
+// UnregisterAgent; `DeliberationObserverPort` bridged to an mpsc
+// channel for StreamDeliberation).
+//
+// Caveats the project's honesty principles require to surface:
+//
+//   RegisterAgent currently materializes only `kind == "noop"` —
+//   provider-backed kinds (vLLM, Anthropic, OpenAI, …) are wired in
+//   their respective feature slices by composing a richer
+//   AgentFactoryPort in the binary.
+//
+//   StreamDeliberation emits one `DeliberationUpdate` per phase
+//   transition (Proposing → Revising → Validating → Scoring →
+//   Completed) and a final frame carrying the winner
+//   `DeliberationResult`. It does not yet emit per-proposal /
+//   per-critique / per-revision frames.
+service ChoreographerService {
+  // ---- Deliberation ----------------------------------------------------
+
+  // Run a deliberation on the council registered for the requested
+  // specialty. Blocks until the ranked results are ready.
+  rpc Deliberate(DeliberateRequest) returns (DeliberateResponse);
+
+  // Like Deliberate but streams progress updates (proposals, critiques,
+  // revisions, scores) as they happen.
+  rpc StreamDeliberation(StreamDeliberationRequest) returns (stream StreamDeliberationResponse);
+
+  // Retrieve a previously-executed deliberation by task id.
+  rpc GetDeliberationResult(GetDeliberationResultRequest) returns (GetDeliberationResultResponse);
+
+  // End-to-end orchestration: deliberate AND execute the winning
+  // proposal via the configured executor port. Opaque to the
+  // choreographer what "execute" means — determined by the adapter.
+  rpc Orchestrate(OrchestrateRequest) returns (OrchestrateResponse);
+
+  // ---- Council / Agent registry ---------------------------------------
+
+  rpc CreateCouncil(CreateCouncilRequest) returns (CreateCouncilResponse);
+  rpc ListCouncils(ListCouncilsRequest) returns (ListCouncilsResponse);
+  rpc DeleteCouncil(DeleteCouncilRequest) returns (DeleteCouncilResponse);
+
+  rpc RegisterAgent(RegisterAgentRequest) returns (RegisterAgentResponse);
+  rpc UnregisterAgent(UnregisterAgentRequest) returns (UnregisterAgentResponse);
+
+  // ---- Triggers (generic, replaces ProcessPlanningEvent) --------------
+
+  // Submit a domain event that should fan out to one or more
+  // deliberations. Mirrors the behavior of the NATS auto-dispatch path
+  // but exposed as a synchronous RPC for callers without a broker.
+  rpc ProcessTriggerEvent(ProcessTriggerEventRequest) returns (ProcessTriggerEventResponse);
+
+  // ---- Council decision (Epic 9) --------------------------------------
+  //
+  // Consumer-facing surface that hands the council a contract and
+  // an external-context bundle and returns the *validated* winner.
+  // Decoupled from any executor — consumers integrate the runtime
+  // separately if they need to act on the decision.
+
+  rpc RunCouncilDecision(RunCouncilDecisionRequest) returns (RunCouncilDecisionResponse);
+
+  // CRUD over the contract registry. Without these the
+  // RunCouncilDecision RPC would only accept contracts seeded via
+  // CHOREO_CONTRACT_DIR.
+
+  rpc RegisterContract(RegisterContractRequest) returns (RegisterContractResponse);
+  rpc ListContracts(ListContractsRequest) returns (ListContractsResponse);
+  rpc DeleteContract(DeleteContractRequest) returns (DeleteContractResponse);
+
+  // ---- Observability --------------------------------------------------
+
+  rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
+  rpc GetMetrics(GetMetricsRequest) returns (GetMetricsResponse);
+}
+
+// ============================================================================
+// Core value objects
+// ============================================================================
+
+// A Task is the unit of work a council deliberates over.
+// `description` is a free-form prompt; `attributes` is an opaque bag
+// for use-case-specific structured data. `external_context` is a
+// bounded, typed bundle of caller-materialized context that the
+// choreographer can pass through to councils without turning it into
+// one giant opaque blob.
+message Task {
+  string task_id = 1;
+  string description = 2;
+  string specialty = 3;
+  Constraints constraints = 4;
+  google.protobuf.Struct attributes = 5;
+  ExternalContextBundle external_context = 6;
+  TaskMetadata metadata = 7;
+}
+
+// Constraints shape how the council deliberates.
+// `rubric` is opaque to the choreographer — passed verbatim to agents
+// and validators as part of the deliberation context.
+message Constraints {
+  google.protobuf.Struct rubric = 1;
+  uint32 rounds = 2; // peer-review rounds; 0 means implementation default
+  uint32 num_agents = 3; // requested parallelism; 0 means use council size
+  uint64 deadline_ms = 4; // optional soft deadline; 0 means none
+  OutputContract output_contract = 5;
+}
+
+// Generic structured-output contract for one council invocation.
+// Presence of this block switches deliberation into structured-output
+// mode: callers require proposals to satisfy the declared format and
+// field rules instead of remaining free-form text only.
+//
+// `json_schema`, when non-empty, is a JSON Schema document (draft
+// 2020-12 or earlier, autodetected) that proposal outputs must
+// satisfy. Field-level rules (`fields`) keep working alongside — they
+// are the lightweight predecessor and remain useful for the simple
+// "required + enum" case without a full schema. Concrete behaviour:
+//
+//  - empty `json_schema` + non-empty `fields` -> legacy field-rule
+//    validators run (RequiredFieldsValidator, AllowedStringValuesValidator).
+//  - non-empty `json_schema` -> the schema is parsed at validator wiring
+//    time; every proposal output is validated against it as one extra
+//    `ValidatorReport` ("json_schema" kind).
+//  - both populated -> both run. Failure of either fails the proposal.
+//
+// Application-owned domain shapes (incident report, decision record,
+// inspection finding, ...) are expressed as JSON Schemas in
+// `api/examples/output-contracts/` and bound here by the caller.
+message OutputContract {
+  string contract_id = 1;
+  OutputFormat format = 2;
+  map<string, OutputFieldRule> fields = 3;
+  string json_schema = 4;
+}
+
+enum OutputFormat {
+  OUTPUT_FORMAT_UNSPECIFIED = 0;
+  OUTPUT_FORMAT_JSON_OBJECT = 1;
+}
+
+message OutputFieldRule {
+  bool required = 1;
+  repeated string allowed_string_values = 2;
+}
+
+// Bounded, caller-materialized context bundle passed into a council.
+// The contract is intentionally generic: callers define `item.kind`
+// labels and attach machine-readable detail through `attributes`.
+message ExternalContextBundle {
+  string bundle_id = 1;
+  string schema_version = 2;
+  ContextSummary summary = 3;
+  repeated ContextItem items = 4;
+  repeated ContextReference references = 5;
+  google.protobuf.Struct metadata = 6;
+}
+
+message ContextSummary {
+  string text = 1;
+  google.protobuf.Struct attributes = 2;
+}
+
+message ContextItem {
+  string item_id = 1;
+  string kind = 2;
+  string title = 3;
+  string narrative = 4;
+  google.protobuf.Struct attributes = 5;
+  repeated string reference_ids = 6;
+}
+
+message ContextReference {
+  string reference_id = 1;
+  string uri = 2;
+  string title = 3;
+  string media_type = 4;
+  google.protobuf.Struct attributes = 5;
+}
+
+// Integration-neutral task metadata. Product/domain identifiers
+// belong in Task.attributes or ExternalContextBundle.metadata; the
+// choreographer only interprets causal ids and its own contract /
+// execution hints.
+message TaskMetadata {
+  string source_event_id = 1;
+  string causation_id = 2;
+  string correlation_id = 3;
+  string council_contract_id = 4;
+  string output_contract_id = 5;
+  google.protobuf.Struct execution_profile = 6;
+}
+
+// A single agent's output from one step of deliberation.
+message Proposal {
+  string proposal_id = 1;
+  string author_agent_id = 2;
+  string content = 3; // free-form solution artifact
+  google.protobuf.Struct metadata = 4; // opaque per-agent annotations
+}
+
+// Outcome of validating and scoring a proposal.
+//
+// `passed` is NOT stored: it is a pure projection of `reports` and
+// MUST be computed by serializers as `reports.all(|r| r.passed)` if
+// their wire format needs it. Having two sources of truth for pass /
+// fail is a denormalization bug waiting to happen and is refused here.
+message ValidationOutcome {
+  double score = 1;
+  repeated ValidatorReport reports = 2;
+}
+
+message ValidatorReport {
+  // Free-form, adapter-defined kind (e.g. `"lint"`, `"policy"`,
+  // `"dry-run"`, `"clinical-safety"`, `"fact-check"`).
+  string kind = 1;
+  bool passed = 2;
+  string summary = 3;
+  google.protobuf.Struct details = 4;
+}
+
+// A ranked deliberation result.
+message DeliberationResult {
+  Proposal proposal = 1;
+  ValidationOutcome validation = 2;
+  uint32 rank = 3; // 0 = winner
+}
+
+// Incremental update emitted during streaming deliberation.
+message DeliberationUpdate {
+  string task_id = 1;
+  DeliberationPhase phase = 2;
+  oneof payload {
+    Proposal proposal = 10;
+    Critique critique = 11;
+    Revision revision = 12;
+    ValidationOutcome validation = 13;
+    DeliberationResult result = 14;
+  }
+  google.protobuf.Timestamp emitted_at = 20;
+}
+
+// Lifecycle phases of a deliberation. Matches the domain aggregate's
+// 5-state FSM: Proposing → Revising → Validating → Scoring → Completed.
+// There is no separate `CRITIQUING` phase — critique/revise rounds
+// happen internally within `REVISING`.
+enum DeliberationPhase {
+  DELIBERATION_PHASE_UNSPECIFIED = 0;
+  DELIBERATION_PHASE_PROPOSING = 1;
+  DELIBERATION_PHASE_REVISING = 2;
+  DELIBERATION_PHASE_VALIDATING = 3;
+  DELIBERATION_PHASE_SCORING = 4;
+  DELIBERATION_PHASE_COMPLETED = 5;
+}
+
+message Critique {
+  string reviewer_agent_id = 1;
+  string target_proposal_id = 2;
+  string feedback = 3;
+}
+
+message Revision {
+  string author_agent_id = 1;
+  string proposal_id = 2;
+  string updated_content = 3;
+}
+
+// ============================================================================
+// Council / Agent
+// ============================================================================
+
+message CouncilSummary {
+  string specialty = 1;
+  uint32 num_agents = 2;
+  repeated AgentSummary agents = 3; // optional; populated on request
+  google.protobuf.Timestamp created_at = 4;
+}
+
+message AgentSummary {
+  string agent_id = 1;
+  string specialty = 2;
+  string kind = 3; // adapter-defined, e.g. "vllm", "frontier", "rule", "human"
+  google.protobuf.Struct attributes = 4;
+}
+
+// ============================================================================
+// Triggers
+// ============================================================================
+
+// Opaque event instructing the choreographer to run deliberations.
+// The event carries its own domain payload and the list of specialties
+// whose councils should be dispatched.
+message TriggerEvent {
+  string event_id = 1;
+  string kind = 2; // free-form, e.g. "alert.fired", "case.opened"
+  string source = 3; // producer identifier
+  google.protobuf.Timestamp emitted_at = 4;
+
+  repeated string requested_specialties = 5;
+  string task_description_template = 6; // optional literal task description supplied by the producer
+  Constraints constraints = 7;
+
+  google.protobuf.Struct payload = 8; // opaque domain data
+  ExternalContextBundle external_context = 9;
+  string correlation_id = 10;
+  string causation_id = 11;
+}
+
+message ProcessTriggerEventRequest {
+  TriggerEvent event = 1;
+}
+
+message ProcessTriggerEventResponse {
+  TriggerAck ack = 1;
+}
+
+message TriggerAck {
+  string event_id = 1;
+  bool accepted = 2;
+  repeated string dispatched_task_ids = 3;
+  string reason = 4; // populated when accepted=false
+}
+
+// ============================================================================
+// RPC request / response messages
+// ============================================================================
+
+message DeliberateRequest {
+  Task task = 1;
+}
+
+message StreamDeliberationRequest {
+  Task task = 1;
+}
+
+message StreamDeliberationResponse {
+  DeliberationUpdate update = 1;
+}
+
+message DeliberateResponse {
+  string task_id = 1;
+  repeated DeliberationResult results = 2;
+  string winner_proposal_id = 3;
+  uint64 duration_ms = 4;
+  google.protobuf.Struct metadata = 5;
+}
+
+message GetDeliberationResultRequest {
+  string task_id = 1;
+}
+
+message GetDeliberationResultResponse {
+  bool found = 1;
+  DeliberateResponse result = 2;
+}
+
+message OrchestrateRequest {
+  Task task = 1;
+  google.protobuf.Struct execution_options = 2; // opaque for executor adapter
+}
+
+message OrchestrateResponse {
+  string task_id = 1;
+  string execution_id = 2;
+  DeliberationResult winner = 3;
+  repeated DeliberationResult candidates = 4;
+  uint64 duration_ms = 5;
+  google.protobuf.Struct metadata = 6;
+}
+
+message CreateCouncilRequest {
+  string specialty = 1;
+  uint32 num_agents = 2;
+  google.protobuf.Struct agent_config = 3; // passed to agent factory
+}
+
+message CreateCouncilResponse {
+  CouncilSummary council = 1;
+}
+
+message ListCouncilsRequest {
+  bool include_agents = 1;
+}
+
+message ListCouncilsResponse {
+  repeated CouncilSummary councils = 1;
+}
+
+message DeleteCouncilRequest {
+  string specialty = 1;
+}
+
+message DeleteCouncilResponse {
+  bool deleted = 1;
+}
+
+message RegisterAgentRequest {
+  string specialty = 1;
+  AgentSummary agent = 2;
+  google.protobuf.Struct agent_config = 3;
+}
+
+message RegisterAgentResponse {
+  string agent_id = 1;
+}
+
+message UnregisterAgentRequest {
+  string agent_id = 1;
+}
+
+message UnregisterAgentResponse {
+  bool unregistered = 1;
+}
+
+message GetStatusRequest {
+  bool include_stats = 1;
+}
+
+message GetStatusResponse {
+  string version = 1;
+  uint64 uptime_seconds = 2;
+  string health = 3; // "healthy" | "degraded" | "unhealthy"
+  Statistics stats = 4;
+}
+
+message GetMetricsRequest {}
+
+message GetMetricsResponse {
+  Statistics stats = 1;
+}
+
+message Statistics {
+  uint64 total_deliberations = 1;
+  uint64 total_orchestrations = 2;
+  uint64 total_duration_ms = 3;
+  double average_duration_ms = 4;
+  map<string, uint64> per_specialty_counts = 5;
+}
+
+// ============================================================================
+// Council decision (Epic 9) — consumer-facing, contract-aware,
+// no executor coupling.
+// ============================================================================
+
+message RunCouncilDecisionRequest {
+  // Caller picks one of two ways to identify the council.
+  oneof selector {
+    string council_id = 1;
+    string specialty = 2;
+  }
+  // Slug previously registered through RegisterContract or seeded
+  // from CHOREO_CONTRACT_DIR. Must match an existing contract.
+  string contract_id = 3;
+  // Optional bundle the council can read during deliberation
+  // (kernel rehydration output, retrieval results, etc.).
+  ExternalContextBundle external_context = 4;
+  // How strictly the response honours the contract. Defaults to
+  // STRICT when UNSPECIFIED.
+  ValidationMode validation_mode = 5;
+  // Causal metadata the choreographer copies into the outbound
+  // bus event when the deliberation completes.
+  TaskMetadata metadata = 6;
+  // Free-form task description the council reads as context. The
+  // choreographer itself does not parse it.
+  string description = 7;
+}
+
+enum ValidationMode {
+  VALIDATION_MODE_UNSPECIFIED = 0;
+  VALIDATION_MODE_STRICT = 1;
+  VALIDATION_MODE_WARN = 2;
+}
+
+message CandidateSummary {
+  string proposal_id = 1;
+  string author_agent_id = 2;
+  double score = 3;
+  repeated ValidatorReport reports = 4;
+  uint32 rank = 5;
+  bool passed = 6;
+}
+
+message ValidationOutcomeSummary {
+  // True iff the winning proposal passed every validator.
+  bool passed = 1;
+  // Number of candidates that passed every validator.
+  uint32 candidates_passed = 2;
+  // Total candidates considered for ranking.
+  uint32 candidates_total = 3;
+}
+
+message RunCouncilDecisionResponse {
+  string task_id = 1;
+  // Winning proposal already validated when this message is built.
+  DeliberationResult winner = 2;
+  ValidationOutcomeSummary validation = 3;
+  // Per-candidate breakdown, ordered by rank ascending.
+  repeated CandidateSummary candidates = 4;
+  uint64 duration_ms = 5;
+  // Effective validation mode (echoed back so warned-but-returned
+  // responses are unambiguous).
+  ValidationMode validation_mode = 6;
+}
+
+// CRUD over the contract registry.
+
+message RegisterContractRequest {
+  OutputContract contract = 1;
+}
+message RegisterContractResponse {
+  string contract_id = 1;
+}
+
+message ListContractsRequest {}
+message ListContractsResponse {
+  repeated OutputContract contracts = 1;
+}
+
+message DeleteContractRequest {
+  string contract_id = 1;
+}
+message DeleteContractResponse {
+  bool deleted = 1;
+}

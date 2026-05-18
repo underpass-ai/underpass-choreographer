@@ -5,6 +5,7 @@ members = [
     "crates/choreo-app",
     "crates/choreo-adapters",
     "crates/choreo-proto",
+    "crates/choreo-mcp-proto",
     "crates/choreo",
     "crates/choreo-tests-integration",
     "crates/choreo-e2e-runner",
@@ -109,6 +110,7 @@ choreo-core = { path = "crates/choreo-core" }
 choreo-app = { path = "crates/choreo-app" }
 choreo-adapters = { path = "crates/choreo-adapters" }
 choreo-proto = { path = "crates/choreo-proto" }
+choreo-mcp-proto = { path = "crates/choreo-mcp-proto", version = "0.1.0" }
 choreo-tests-integration = { path = "crates/choreo-tests-integration" }
 
 [profile.release]
