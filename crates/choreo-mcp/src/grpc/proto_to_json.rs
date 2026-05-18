@@ -4,7 +4,7 @@
 //! key explicitly so the wire schema is documented in the code and
 //! reviewers can spot accidental drops at PR time.
 
-use choreo_proto::v1 as pb;
+use choreo_mcp_proto::v1 as pb;
 use prost_types::{
     value::Kind as PbKind, ListValue, Struct as PbStruct, Timestamp, Value as PbValue,
 };

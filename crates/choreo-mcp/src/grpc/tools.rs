@@ -5,8 +5,8 @@
 //! generated tonic client, and converts the response back via
 //! `proto_to_json`. tonic `Status` errors collapse to plain strings.
 
-use choreo_proto::v1 as pb;
-use choreo_proto::v1::choreographer_service_client::ChoreographerServiceClient;
+use choreo_mcp_proto::v1 as pb;
+use choreo_mcp_proto::v1::choreographer_service_client::ChoreographerServiceClient;
 use serde_json::{json, Value};
 use tonic::transport::Channel;
 

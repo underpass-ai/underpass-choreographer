@@ -7,7 +7,7 @@
 
 use std::collections::BTreeMap;
 
-use choreo_proto::v1 as pb;
+use choreo_mcp_proto::v1 as pb;
 use prost_types::{
     value::Kind as PbKind, ListValue, Struct as PbStruct, Timestamp, Value as PbValue,
 };

@@ -1,12 +1,22 @@
 [package]
 name = "choreo-mcp"
-version.workspace = true
-edition.workspace = true
-rust-version.workspace = true
-license.workspace = true
-authors.workspace = true
-repository.workspace = true
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.90"
+license = "Apache-2.0"
+authors = ["Tirso Garcia Ibañez"]
+repository = "https://github.com/underpass-ai/underpass-choreographer"
 description = "Stdio MCP (Model Context Protocol) adapter that exposes the Underpass Choreographer gRPC API to coding agents (Codex, Claude Desktop, …)."
+keywords = ["mcp", "anthropic", "choreographer", "stdio"]
+categories = ["command-line-utilities"]
+publish = true
+readme = "README.md"
+include = [
+    "src/**/*.rs",
+    "Cargo.toml",
+    "README.md",
+    "LICENSE*",
+]
 
 [lints]
 workspace = true
@@ -16,7 +26,7 @@ name = "choreo-mcp"
 path = "src/main.rs"
 
 [dependencies]
-choreo-proto = { workspace = true }
+choreo-mcp-proto = { workspace = true }
 async-trait = { workspace = true }
 futures = { workspace = true }
 prost-types = { workspace = true }
@@ -28,6 +38,10 @@ tonic = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 opentelemetry = { workspace = true }
+testcontainers = { version = "0.23", optional = true }
+
+[features]
+container-tests = ["dep:testcontainers"]
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full", "test-util"] }

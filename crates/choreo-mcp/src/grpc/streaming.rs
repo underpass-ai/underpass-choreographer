@@ -7,7 +7,7 @@
 //! winner pulled out of the last `result`-typed frame for caller
 //! convenience.
 
-use choreo_proto::v1 as pb;
+use choreo_mcp_proto::v1 as pb;
 use futures::StreamExt;
 use serde_json::{json, Value};
 use tonic::Streaming;
