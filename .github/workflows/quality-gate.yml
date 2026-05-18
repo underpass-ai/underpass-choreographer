@@ -167,6 +167,31 @@ jobs:
       - name: Compile benches
         run: bash scripts/ci/bench-compile.sh
 
+  publish-dry-run:
+    # Catches packaging regressions for the two crates that go to
+    # crates.io (`choreo-mcp-proto` + `choreo-mcp`) before they hit
+    # the publish-distribution workflow. No registry token is
+    # required — `cargo publish --dry-run` and `cargo package -l`
+    # only validate metadata and the file list.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    needs: [contract]
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9
+        with:
+          toolchain: 1.90.0
+      - name: Install protoc
+        run: bash scripts/ci/install-protoc.sh
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5
+      - name: Publish dry-run
+        run: bash scripts/ci/publish-dry-run.sh
+
   sonarcloud:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
