@@ -38,30 +38,35 @@ Two surfaces beyond the eight areas:
   as a `choreo_*` tool. End-user docs live at
   [`docs/operations/mcp-stdio.md`](./operations/mcp-stdio.md); per-
   client snippets for Codex CLI and Claude Desktop live under
-  `docs/operations/mcp/`. Foundation merged 2026-05-12; the
-  distribution slice ships install + smoke scripts and a top-README
-  link.
+  `docs/operations/mcp/`. Foundation merged 2026-05-12;
+  distribution slice (install + smoke scripts + top-README link)
+  merged 2026-05-13; crates.io distribution + real-kernel container
+  integration test merged 2026-05-14 (Bundle B —
+  `crates/choreo-mcp-proto/` vendored proto crate, tag-gated
+  `publish-crate-{proto,mcp}` workflow jobs, per-PR
+  `publish-dry-run` gate, `tests/real_kernel.rs` behind the
+  `container-tests` Cargo feature).
 - **Downstream product integrations (PIR, payments incident response,
   custom agentic flows)** are **out of scope for this repo**. The
   product owns its own deliberation surface; Choreographer's job is to
   expose a clean, fully-typed gRPC API plus the MCP wrapping so any
   agentic consumer can drive it.
 
-Genuinely open work: the crates.io distribution debt for `choreo-mcp`
-(needs the proto tree vendored into a separate crate before
-`cargo install` from a registry will work), Epic 9 (a dedicated
-council-decision RPC if and when a consumer asks for more than the
-generic `Deliberate` / `Orchestrate`), the handshake-level TLS
-integration test (currently the wiring is exercised by env-loading
-unit tests + helm-lint, not a real cert handshake), and the Epic 11
-follow-ups (a stack scenario that asserts schema validation +
-ExternalContextBundle round-trip, and merging the provider-runner
-E2E into the same compose stack). Milestones A, B, and C are all
-complete as of 2026-05-12.
+Genuinely open work: Epic 9 (a dedicated council-decision RPC if and
+when a consumer asks for more than the generic `Deliberate` /
+`Orchestrate`), the handshake-level TLS integration test (currently
+the wiring is exercised by env-loading unit tests + helm-lint, not a
+real cert handshake), and the Epic 11 follow-ups (a stack scenario
+that asserts schema validation + ExternalContextBundle round-trip,
+and merging the provider-runner E2E into the same compose stack).
+Milestones A, B, and C are all complete as of 2026-05-12. The
+`choreo-mcp` crates.io distribution debt is cleared as of
+2026-05-14 (Bundle B): vendored proto crate + tag-gated publish jobs
++ per-PR publish-dry-run + real-kernel container integration test.
 
 The recommended remaining execution order is:
 
-- Phase 3: `choreo-mcp` crates.io distribution + handshake-level TLS test
+- Phase 3: handshake-level TLS integration test
 - Phase 4: dedicated agent-facing RPC + report artifact (only if a
   consumer asks for them)
 - Phase 5: stack E2E with a real council and the Runtime executor
@@ -160,7 +165,9 @@ State at session close: Milestones A (foundations) + B (mostly,
 report artifact pending) + C (Epic 6 + 7 done; Epic 8 server done,
 outbound client TLS open) substantially advanced. MCP adapter live
 end-to-end with `cargo install --git` UX (crates.io publication
-deferred — proto vendoring required).
+deferred — proto vendoring required). Bundle B (2026-05-14) cleared
+the registry leg: `choreo-mcp-proto` + `choreo-mcp` ship to crates.io
+through tag-gated publish jobs.
 
 ## Phase 1 — Runtime And Context Foundations
 
@@ -933,7 +940,9 @@ Deliverables:
 
 ### Epic 13. MCP stdio adapter
 
-Status: foundation done (2026-05-12); distribution slice in flight.
+Status: foundation done (2026-05-12); distribution slice done
+(2026-05-14, Bundle B — crates.io publication + real-kernel
+container integration test).
 
 Current state:
 
@@ -953,10 +962,11 @@ Current state:
   the same auto-detection pattern as the sibling rehydration-mcp.
 - 21 unit tests + workspace clippy clean.
 
-Distribution slice (in flight):
+Distribution slice (done 2026-05-14):
 
-- `scripts/mcp/install-choreo-mcp.sh` — `cargo install --git` wrapper
-  with pinned `CHOREO_MCP_BRANCH/TAG/REV` (mutually exclusive).
+- `scripts/mcp/install-choreo-mcp.sh` — registry mode by default
+  (`cargo install choreo-mcp`); `CHOREO_MCP_INSTALL_MODE=git` falls
+  back to the `--git`/`--branch`/`--tag`/`--rev` source path.
 - `scripts/mcp/choreo-stdio-smoke.sh` — one `tools/call` + grep marker
   for both fixture and live modes.
 - `docs/operations/mcp-stdio.md` — canonical user-facing UX.
@@ -968,17 +978,31 @@ Distribution slice (in flight):
 Relevant code:
 
 - [`crates/choreo-mcp/`](../crates/choreo-mcp/)
+- [`crates/choreo-mcp-proto/`](../crates/choreo-mcp-proto/) — vendored
+  proto crate that lets `choreo-mcp` ship to crates.io independent of
+  the internal workspace's `choreo-proto`.
+- [`crates/choreo-mcp/tests/real_kernel.rs`](../crates/choreo-mcp/tests/real_kernel.rs)
+  — `container-tests`-gated integration test that boots the
+  published choreographer image and drives the MCP binary
+  end-to-end (16 tools listed, 4 read-only RPCs called).
 - [`docs/operations/mcp-stdio.md`](./operations/mcp-stdio.md)
 
-#### Deliverables (open)
+#### Deliverables
 
-1. `crates.io` publication. Blocked by the proto tree being path-deped
-   from `choreo-mcp`. Needs the proto package vendored into a
-   standalone crate (or `choreo-proto` itself published) before
-   `cargo install` from a registry will work.
-2. Real-kernel integration test that boots a choreographer in a
-   container and exercises every tool through MCP (separate from the
-   existing e2e-runner gRPC scenarios).
+1. `crates.io` publication — **done 2026-05-14**. The proto tree is
+   now vendored into a dedicated `choreo-mcp-proto` crate
+   ([`crates/choreo-mcp-proto/`](../crates/choreo-mcp-proto/)); the
+   `publish-distribution.yml` workflow gained tag-only
+   `publish-crate-{proto,mcp}` jobs that serialize on
+   `compose-smoke` (proto first, then mcp with 30 s for registry
+   index propagation). A separate `publish-dry-run` job in
+   `quality-gate.yml` runs `cargo publish --dry-run -p choreo-mcp-proto`
+   + `cargo package --list -p choreo-mcp` on every PR so packaging
+   regressions surface before the release-tag workflow.
+2. Real-kernel integration test — **done 2026-05-14**. Lives at
+   [`crates/choreo-mcp/tests/real_kernel.rs`](../crates/choreo-mcp/tests/real_kernel.rs),
+   gated by the `container-tests` Cargo feature; `cargo test
+   --workspace` stays fast and network-free.
 
 ## Proposed execution order
 
@@ -1131,8 +1155,8 @@ The following rule should be treated as hard policy:
 
 Status 2026-05-12: Milestones A, B, and C are all complete.
 Milestones D (Epic 9 consumer-facing RPC + Epic 11 real-council /
-runtime E2E legs) and the crates.io publication leg of Epic 13 are
-the remaining open items.
+runtime E2E legs) are the remaining open items. The crates.io
+publication leg of Epic 13 cleared on 2026-05-14 (Bundle B).
 
 Why the rule still applies in spirit even with B and C now cleared:
 

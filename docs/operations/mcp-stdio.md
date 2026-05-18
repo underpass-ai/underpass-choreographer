@@ -57,19 +57,27 @@ CHOREO_MCP_BACKEND=fixture cargo run -p choreo-mcp --locked
 
 ## Installation
 
-For users outside the repo, install as a Cargo binary from Git:
+For users outside the repo, install as a Cargo binary from crates.io:
 
 ```bash
-cargo install --git https://github.com/underpass-ai/underpass-choreographer choreo-mcp --locked
+cargo install choreo-mcp --locked
 ```
 
-The repo helper wraps the same path and supports pinned refs:
+The first registry release lands the next time a `v*` tag is pushed
+through `publish-distribution.yml`. The companion crate
+`choreo-mcp-proto` (vendored proto types) publishes immediately
+before; both are gated on the `compose-smoke` release smoke test.
+
+The repo helper wraps the same path. Default mode is `registry`;
+pass `CHOREO_MCP_INSTALL_MODE=git` for the dev fallback against the
+source repo (useful for validating an unreleased change):
 
 ```bash
 bash scripts/mcp/install-choreo-mcp.sh
 
-CHOREO_MCP_TAG=v0.1.0 bash scripts/mcp/install-choreo-mcp.sh
-CHOREO_MCP_REV=<git-sha> bash scripts/mcp/install-choreo-mcp.sh
+# dev / pinned-ref mode:
+CHOREO_MCP_INSTALL_MODE=git CHOREO_MCP_TAG=v0.1.0 bash scripts/mcp/install-choreo-mcp.sh
+CHOREO_MCP_INSTALL_MODE=git CHOREO_MCP_REV=<git-sha> bash scripts/mcp/install-choreo-mcp.sh
 ```
 
 After install, the adapter is just `choreo-mcp` on PATH:
@@ -77,14 +85,6 @@ After install, the adapter is just `choreo-mcp` on PATH:
 ```bash
 CHOREO_MCP_GRPC_ENDPOINT=https://choreographer.example.com choreo-mcp
 ```
-
-### Distribution debt — crates.io
-
-The crate is **not** on crates.io. The generated gRPC client builds
-from the repository's checked-in proto tree, which `cargo install`
-needs at build time. Vendoring the proto tree into a dedicated crate
-is tracked as a follow-up in [`docs/backlog.md`](../backlog.md). The
-supported external path for this phase is `cargo install --git`.
 
 ## Live gRPC mode
 

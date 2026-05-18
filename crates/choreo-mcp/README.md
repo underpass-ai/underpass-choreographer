@@ -10,6 +10,16 @@ This README is the developer-oriented twin: it covers running the
 adapter from a checkout, the test surface, and the design choices
 worth knowing when you touch the code.
 
+## Install (registry)
+
+```bash
+cargo install choreo-mcp --locked
+```
+
+This pulls `choreo-mcp` + the vendored `choreo-mcp-proto` from
+crates.io. The dev fallback against this repo's source tree is
+`CHOREO_MCP_INSTALL_MODE=git bash scripts/mcp/install-choreo-mcp.sh`.
+
 ## Run from a checkout
 
 ```bash
@@ -118,10 +128,22 @@ cargo test -p choreo-mcp --locked
 - `src/observability.rs::tests` — error-kind labels and the recursive
   size approximator used in trace events.
 
-Live gRPC backend integration tests against a real choreographer
-ship under
-[`crates/choreo-tests-integration`](../choreo-tests-integration/)
-(forthcoming in the smoke/integration slice).
+### Real-kernel container integration test
+
+A separate `tests/real_kernel.rs` boots the published
+`ghcr.io/underpass-ai/underpass-choreographer:latest` image via
+testcontainers, spawns this crate's binary against its mapped gRPC
+port, and exercises `initialize`, `tools/list` (asserts the full 16-
+tool catalog), and `tools/call` on the four simplest read-only RPCs.
+The test is gated by the `container-tests` Cargo feature so the
+default workspace `cargo test --workspace` stays fast + network-free.
+
+```bash
+cargo test -p choreo-mcp --features container-tests
+```
+
+The default `cargo test --workspace` does NOT compile testcontainers
+or pull the image.
 
 ## Common pitfalls
 

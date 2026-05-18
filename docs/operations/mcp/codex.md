@@ -3,13 +3,23 @@
 Codex CLI reads MCP servers from its TOML config (usually
 `~/.codex/config.toml` or `~/.config/codex/config.toml`). The
 `choreo-mcp` adapter is added once; every Codex session can then call
-the 12 `choreo_*` tools.
+the 16 `choreo_*` tools.
 
 See the canonical UX reference at
 [`docs/operations/mcp-stdio.md`](../mcp-stdio.md) for the tool list,
 env-var reference, and TLS posture options.
 
 ## Quick add (installed binary)
+
+Install from crates.io:
+
+```bash
+cargo install choreo-mcp --locked
+```
+
+The dev fallback (in-tree source) lives at
+`CHOREO_MCP_INSTALL_MODE=git bash scripts/mcp/install-choreo-mcp.sh`
+in the repo.
 
 ```bash
 codex mcp add underpass-choreographer \
@@ -62,7 +72,7 @@ command = "choreo-mcp"
 CHOREO_MCP_BACKEND = "fixture"
 ```
 
-The 12 `choreo_*` tools become callable; every call returns the
+The 16 `choreo_*` tools become callable; every call returns the
 deterministic canned response (no network).
 
 ## mTLS to a hardened deployment

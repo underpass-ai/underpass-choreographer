@@ -15,6 +15,16 @@ env-var reference, and TLS posture options.
 
 ## Installed binary
 
+Install from crates.io:
+
+```bash
+cargo install choreo-mcp --locked
+```
+
+The dev fallback (in-tree source) lives at
+`CHOREO_MCP_INSTALL_MODE=git bash scripts/mcp/install-choreo-mcp.sh`
+in the repo.
+
 ```json
 {
   "mcpServers": {

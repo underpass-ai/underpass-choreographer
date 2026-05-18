@@ -46,9 +46,10 @@ is injected via configuration and proto messages.
 | `choreo-core` | Domain types, ports, events. No IO. |
 | `choreo-app` | Use cases / application services. |
 | `choreo-adapters` | NATS, gRPC clients, config, external integrations. |
-| `choreo-proto` | Tonic-generated gRPC code (`underpass.choreo.v1`). |
+| `choreo-proto` | Tonic-generated gRPC code (`underpass.choreo.v1`). Internal — consumed by `choreo`/`choreo-app`/`choreo-adapters`. |
+| `choreo-mcp-proto` | Standalone vendored proto crate published to crates.io alongside `choreo-mcp`. |
 | `choreo` | Binary: wires adapters, runs gRPC + NATS. |
-| `choreo-mcp` | Stdio MCP adapter that exposes every gRPC RPC as an MCP tool. |
+| `choreo-mcp` | Stdio MCP adapter that exposes every gRPC RPC as an MCP tool. Published to crates.io (`cargo install choreo-mcp`). |
 
 ## Principles
 
