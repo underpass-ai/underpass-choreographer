@@ -11,15 +11,17 @@ Three planes, three repos:
 
 | Plane | Repo | Brand name | Role |
 |---|---|---|---|
-| Memory + context | [`rehydration-kernel`](https://github.com/underpass-ai/rehydration-kernel) | **Underpass KMP** (Kernel Memory Plane / Kernel Memory Protocol) | Renders LLM-ready context bundles from a typed knowledge graph. |
+| Memory + context | [`rehydration-kernel`](https://github.com/underpass-ai/rehydration-kernel) | **Underpass KMP** (Kernel Memory Plane / Kernel Memory Protocol) | One possible producer of LLM-ready context bundles from a typed knowledge graph. |
 | Coordination | this repo | **Underpass Choreographer** | Composes councils, runs deliberations, validates outputs, hands winners to an executor. |
 | Execution + governed tools | [`underpass-runtime`](https://github.com/underpass-ai/underpass-runtime) | **Underpass Runtime** | Sessions, governed tool invocations, artifacts, policy decisions. |
 
-The choreographer talks to KMP through caller-supplied
-`ExternalContextBundle`s, and to the Runtime through the
-`RuntimeExecutor` adapter. It does **not** embed any product
-vocabulary (no stories, plans, incidents, claims hardcoded) — all that
-is injected via configuration and proto messages.
+Choreographer is agnostic and independently usable. It does not depend
+on KMP, PIR, or any downstream product. It accepts caller-supplied
+`ExternalContextBundle`s from any context source; KMP is one studied
+producer, not a required dependency. Runtime execution is optional via
+the `RuntimeExecutor` adapter. Choreographer does **not** embed any
+product vocabulary (no stories, plans, incidents, claims hardcoded) —
+all that is injected via configuration and proto messages.
 
 ## Start here
 
@@ -122,13 +124,14 @@ gate in this repository):
   serves the full `underpass.choreo.v1` gRPC contract.
 - Implemented RPCs: every RPC in the `underpass.choreo.v1` contract
   is backed by a use case — `Deliberate`, `StreamDeliberation`,
-  `Orchestrate`, `CreateCouncil`, `ListCouncils`, `DeleteCouncil`,
-  `GetDeliberationResult`, `ProcessTriggerEvent`, `GetStatus`,
-  `GetMetrics`, `RegisterAgent`, `UnregisterAgent`. No RPC returns
-  `UNIMPLEMENTED`. Caveats: (a) `RegisterAgent` currently materializes
-  agents with `kind == "noop"`; provider-backed kinds land through
-  richer `AgentFactoryPort` wirings in their respective feature
-  slices. (b) `StreamDeliberation` emits phase transitions + a final
+  `GetDeliberationResult`, `Orchestrate`, `CreateCouncil`,
+  `ListCouncils`, `DeleteCouncil`, `RegisterAgent`,
+  `UnregisterAgent`, `ProcessTriggerEvent`, `RunCouncilDecision`,
+  `RegisterContract`, `ListContracts`, `DeleteContract`, `GetStatus`,
+  and `GetMetrics`. No RPC returns `UNIMPLEMENTED`. Caveats:
+  (a) provider-backed `RegisterAgent` kinds require the matching Cargo
+  feature and boot-time credentials; `noop` is always available.
+  (b) `StreamDeliberation` emits phase transitions + a final
   `DeliberationResult` frame, not per-proposal/critique/revision
   events.
 - Optional NATS messaging: when `CHOREO_NATS_ENABLED=true`, the service
@@ -172,7 +175,7 @@ gate in this repository):
   Startup log emits `agent_kinds=` listing every kind the binary will
   accept on `RegisterAgent`.
 
-**What is *not* wired yet**:
+**Caveats and observability**:
 
 - `StreamDeliberation` streams phase transitions only; per-proposal,
   per-critique, and per-revision streaming arrives in a later slice.

@@ -2,6 +2,12 @@
 
 Snapshot date: 2026-04-25
 
+Historical status: this is a legacy PIR product-integration design.
+PIR is owned outside this repository, and this file is retained for
+context only. It is a case-study document, not a product dependency or
+roadmap requirement. Current Choreographer readiness lives in
+[`backlog.md`](./backlog.md) and [`stack-gap-analysis.md`](./stack-gap-analysis.md).
+
 This document defines how `underpass-choreographer` could participate in
 `underpass-payments-incident-response` ("PIR") for complex incidents that
 should not escalate directly to a human.
@@ -23,7 +29,7 @@ deliberation engine for a narrow part of the incident lifecycle.
 Companion documents:
 
 - [`stack-gap-analysis.md`](./stack-gap-analysis.md)
-- [`pir-choreographer-readiness-backlog.md`](./pir-choreographer-readiness-backlog.md)
+- [`backlog.md`](./backlog.md)
 
 ## Executive summary
 
@@ -209,22 +215,23 @@ Choreographer already provides:
 
 This is good raw machinery for expert conversations.
 
-### What Choreographer still lacks for this use case
+### What Choreographer lacked at this snapshot
 
-Per this repo's own stack-gap analysis, Choreographer is not yet a real
-stack-integrated peer of Runtime and Kernel.
+At the 2026-04-25 snapshot, this repo's stack-gap analysis said
+Choreographer was not yet a real stack-integrated peer of Runtime and
+Kernel.
 
-Current blockers include:
+Blockers at that time included:
 
-- `NoopExecutor` is still wired in the binary
-- `NoopAgentFactory` is still wired in the binary
-- no real runtime gRPC executor adapter is composed
-- no kernel integration or context rehydration path exists
-- event correlation is partial
-- TLS server wiring is missing despite chart surface
-- JetStream semantics are not truly implemented even though the docs mention it
+- `NoopExecutor` was still wired in the binary
+- `NoopAgentFactory` was still wired in the binary
+- the real runtime gRPC executor adapter was not composed
+- no kernel integration or context rehydration path existed
+- event correlation was partial
+- TLS server wiring was missing despite chart surface
+- JetStream semantics were not truly implemented even though the docs mentioned it
 
-That means Choreographer can host deliberation today, but it cannot yet
+At that time, Choreographer could host deliberation, but could not yet
 truthfully own a production-critical PIR integration point that depends on:
 
 - real kernel-fed context

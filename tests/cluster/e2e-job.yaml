@@ -10,14 +10,16 @@
 #   real deploy. They pass when the choreographer is wired correctly
 #   to its own NATS bus.
 #
-# - Scenarios 5–6 in the current e2e-runner are written for the
-#   compose stub-runtime (they expect a tool named `stub.echo` to
-#   succeed and free-form proposals to be rejected by a strict
-#   JSON Schema). Against the real `underpass-runtime`, the
-#   stub.echo tool is not in the catalog, so scenario 5 surfaces a
-#   `NotFound: runtime resource` from the runtime — proving the
-#   gRPC mTLS path is wired, but failing the assertion. Treat 5–6
-#   as design-for-stub when reading the Job's exit code.
+# - Scenarios 5-9 in the current e2e-runner are compose-shaped:
+#   scenario 5 expects a Runtime tool named `stub.echo`, scenarios
+#   8-9 expect the `stub-llm` OpenAI-compatible sidecar, and
+#   scenario 6 asserts strict rejection of free-form NoopAgent
+#   output. Against a real `underpass-runtime`, `stub.echo` is not
+#   normally in the catalog, so scenario 5 can surface
+#   `NotFound: runtime resource` — proving the gRPC mTLS path was
+#   reached, but failing the assertion. Treat this Job as a targeted
+#   connectivity smoke unless the namespace also provides equivalent
+#   test fixtures.
 #
 # Apply after `helm upgrade --install`. The Job's TTL cleans the
 # resource after 10 min.

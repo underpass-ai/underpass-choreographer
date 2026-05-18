@@ -98,15 +98,15 @@ the typed shape without parsing the printed table.
 ## Known limitations
 
 - **`bundle_seam_documented` is intentionally `Skipped`.** The
-  external context bundle round-trip is owned by Epic 11 scenario 7
-  (still open in `docs/backlog.md`). Once that scenario lands the
-  assertion can be flipped to `Passed`.
-- **Chain 2's positive path needs a structured-JSON agent.** Today's
-  compose stack registers a `NoopAgent` that emits free-form text;
-  the `JsonSchemaValidator` always rejects it. Once a stub-LLM
-  provider sidecar that emits JSON satisfying the schema ships, the
-  rejection assertion will downgrade to `Skipped` and
-  `report_payload_validates` will go `Passed`.
+  stack-level external context bundle round-trip is covered by
+  `make e2e-compose` scenario 7; this consumer harness keeps that
+  assertion as a documented out-of-scope seam rather than duplicating
+  the stack E2E.
+- **Chain 2's positive path needs a structured-JSON agent.** The
+  default smoke path targets a NoopAgent stack and proves strict
+  schema rejection. The compose stack also ships a `stub-llm` sidecar
+  that emits Report-shaped JSON; wiring the consumer smoke harness to
+  register that agent is a follow-up positive-path mode.
 - The trigger publish in Chain 1 is informational only —
   `RunCouncilDecision` is invoked directly, so the trigger path does
   not gate the run. Pinning the trigger-driven path end-to-end is

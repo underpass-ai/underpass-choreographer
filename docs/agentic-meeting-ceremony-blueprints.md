@@ -4,6 +4,10 @@ Status: initial blueprint catalog. These are product-agnostic meeting designs
 optimized for the Underpass sibling capabilities: rehydration kernel as the
 context/scenario provider and runtime client as the governed tool runtime.
 
+Choreographer itself remains agnostic and independent. The sibling
+systems named here are example providers for study and evaluation, not
+required dependencies of the Choreographer product.
+
 Date: 2026-04-26
 
 Related research: `docs/agentic-conversation-ceremony-evaluation-research.md`.

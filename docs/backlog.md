@@ -5,6 +5,11 @@ dropped 2026-05-12 (PIR is owned by a separate project — this backlog
 tracks Choreographer's own stack-readiness, not any one downstream
 consumer).
 
+Choreographer is agnostic and independent. References to PIR, KMP,
+Runtime, or other repositories in this backlog are historical context,
+study material, or examples of possible integrations. They are not
+required dependencies for Choreographer as a product.
+
 Companion documents:
 
 - [`stack-gap-analysis.md`](./stack-gap-analysis.md)
@@ -18,7 +23,7 @@ agent-facing surface (gRPC + MCP), and reproducible stack E2E.
 
 ## Executive summary
 
-As of 2026-05-11 the eight stack-readiness areas resolve as follows:
+As of 2026-05-14 the eight stack-readiness areas resolve as follows:
 
 | # | Area | State |
 |---|---|---|
@@ -28,8 +33,8 @@ As of 2026-05-11 the eight stack-readiness areas resolve as follows:
 | 4 | complete causal metadata propagation | done (Epic 5) |
 | 5 | provider-backed council materialization | done (`DispatchingAgentFactory` wired with `noop`/`anthropic`/`openai`/`vllm` arms) |
 | 6 | honest and durable transport semantics | done (AsyncAPI now declares plain core NATS; JetStream deferred) |
-| 7 | real TLS / mTLS posture | done (gRPC server TLS in `none`/`server`/`mutual` modes; chart honest; Runtime client TLS shipped 2026-05-12; handshake-level integration test still deferred) |
-| 8 | stack-level end-to-end proofs | done (E2E covers seeded council, deliberation, causal metadata over NATS, `Orchestrate → RuntimeExecutor → stub-runtime`, `ExternalContextBundle` round-trip, and the positive structured-output `RunCouncilDecision` path via the `stub-llm` sidecar; real-provider vLLM council remains `make e2e-provider-vllm`) |
+| 7 | real TLS / mTLS posture | done (gRPC server TLS in `none`/`server`/`mutual` modes; chart honest; Runtime client TLS shipped 2026-05-12; handshake-level server + mutual TLS tests shipped 2026-05-14) |
+| 8 | stack-level end-to-end proofs | done (E2E covers seeded council, deliberation, causal metadata over NATS, `Orchestrate -> RuntimeExecutor -> stub-runtime`, `ExternalContextBundle` round-trip, positive structured-output `RunCouncilDecision` through the `stub-llm` sidecar, and OpenAI-shaped + vLLM-shaped provider paths; real external vLLM validation remains `make e2e-provider-vllm`) |
 
 Two surfaces beyond the eight areas:
 
@@ -47,42 +52,42 @@ Two surfaces beyond the eight areas:
   expose a clean, fully-typed gRPC API plus the MCP wrapping so any
   agentic consumer can drive it.
 
-Genuinely open work: the crates.io distribution debt for `choreo-mcp`
-(needs the proto tree vendored into a separate crate before
-`cargo install` from a registry will work), Epic 9 (a dedicated
-council-decision RPC if and when a consumer asks for more than the
-generic `Deliberate` / `Orchestrate`), the handshake-level TLS
-integration test (currently the wiring is exercised by env-loading
-unit tests + helm-lint, not a real cert handshake), and the Epic 11
-follow-ups (a stack scenario that asserts schema validation +
-ExternalContextBundle round-trip, and merging the provider-runner
-E2E into the same compose stack). Milestones A, B, and C are all
-complete as of 2026-05-12.
+Genuinely open work after the 2026-05-14 bundles is narrower:
+document the compose E2E stub-LLM surface, optionally teach
+`choreo-consumer-smoke` to drive the positive structured-output
+sidecar path, and keep the operator-facing `make e2e-provider-vllm`
+flow for real external vLLM endpoints. Milestones A, B, C, D, and E
+are all complete as of 2026-05-14. The `choreo-mcp` crates.io
+distribution debt is also cleared: vendored proto crate + tag-gated
+publish jobs + per-PR publish-dry-run + real-kernel container
+integration test.
 
 The recommended remaining execution order is:
 
-- Phase 3: `choreo-mcp` crates.io distribution + handshake-level TLS test
-- Phase 4: dedicated agent-facing RPC + report artifact (only if a
-  consumer asks for them)
-- Phase 5: stack E2E with a real council and the Runtime executor
+- compose-level operations doc for the stub-runtime / stub-LLM E2E path
+- optional consumer-smoke positive-path mode against a structured JSON agent
+- real-provider validation as an operator-run E2E (`make e2e-provider-vllm`)
 
 ## Out of scope
 
 This backlog does not include:
 
-- moving kernel graph semantics into Choreographer
+- moving any context system's graph semantics into Choreographer
 - making Choreographer domain-specific (payments, incidents, …)
 - implementing any downstream product (PIR, payments incident
   response, etc.) in this repository
 
 ## Priorities
 
-### P0 — hard blockers (remaining)
+### P0 — hard blockers (cleared)
 
-These items still block downstream consumer integration.
+No repo-owned P0 blockers remain as of 2026-05-14. The former P0
+items are now cleared:
 
 - dedicated consumer-facing RPC surface (Epic 9)
-- stack E2E proof with real provider council + ExternalContextBundle round-trip + schema-validated structured output in the same compose stack (Epic 11 follow-ups)
+- stack E2E proof with Runtime executor, provider-shaped council,
+  `ExternalContextBundle` round-trip, and schema-validated structured
+  output in the same compose stack (Epic 11)
 
 Already cleared: Runtime executor adapter (Epic 1), Kernel context
 boundary (Epic 2), structured council output contracts (Epic 3),
@@ -220,9 +225,9 @@ listed below are present in the repo today.
 - use-case integration test proving `OrchestrateUseCase` emits correct events
   for success and failure with the runtime adapter wired
 
-### Epic 2. Kernel context boundary
+### Epic 2. External context boundary
 
-Status: done (option A — caller-materialized context)
+Status: done (caller-materialized, context-provider-agnostic input)
 
 Current state:
 
@@ -247,14 +252,16 @@ Relevant code:
 - [`crates/choreo-app/src/usecases/deliberate.rs`](../crates/choreo-app/src/usecases/deliberate.rs)
 
 Progress as of 2026-05-11: implementation landed in commit `fab9bfb`
-(PR #43). Option B (a Kernel adapter port owned by Choreographer)
-remains explicitly deferred — the backlog recommended option A.
+(PR #43). A Choreographer-owned adapter for any specific context
+system remains intentionally out of scope unless a concrete product
+needs that boundary.
 
 #### Deliverables
 
 1. define one explicit context ingestion boundary:
-   - option A: caller fetches kernel context and passes it to Choreographer
-   - option B: Choreographer can fetch context itself through a new port
+   - caller fetches context and passes it to Choreographer
+   - a future product-specific adapter can fetch context through a new
+     port if needed
 2. choose one as the production path for the first downstream integration
 3. define a stable structured bundle shape for expert councils:
    - incident summary
@@ -266,15 +273,15 @@ remains explicitly deferred — the backlog recommended option A.
 
 #### Recommendation
 
-For the first slice, prefer caller-materialized context:
+Prefer caller-materialized context:
 
-- the consumer remains the kernel-first owner
+- the consumer remains the owner of its context system
 - Choreographer remains domain-agnostic
 - the integration boundary is cleaner
 
 That means Choreographer must still gain a first-class notion of
 "structured external context bundle", but it does not have to own
-Kernel transport in v1.
+context-provider transport.
 
 #### Acceptance criteria
 
@@ -569,8 +576,8 @@ integration on direct gRPC.
 
 ### Epic 8. TLS / mTLS parity
 
-Status: done end-to-end (server + client); only the handshake-level
-integration test remains deferred.
+Status: done end-to-end (server + client + handshake-level
+integration tests).
 
 Current state (2026-05-11):
 
@@ -755,14 +762,15 @@ schema (renamed to drop product vocabulary where appropriate, e.g.
 
 ### Epic 11. Choreographer stack E2E
 
-Status: positive structured-output leg landed 2026-05-14 (stub-LLM
-sidecar + scenario 8); the "real provider council" leg
-(vLLM/Anthropic/OpenAI in the compose stack) remains optional and is
-still covered separately by `make e2e-provider-vllm`.
+Status: done for the repo-owned stack E2E path as of 2026-05-14.
+The compose stack covers the Runtime executor via `stub-runtime`, the
+positive structured-output path via `stub-llm`, and both OpenAI-shaped
+and vLLM-shaped provider adapters. A real external vLLM endpoint
+remains an operator-run validation through `make e2e-provider-vllm`.
 
 Current state:
 
-- `crates/choreo-e2e-runner/src/main.rs` runs eight scenarios against
+- `crates/choreo-e2e-runner/src/main.rs` runs nine scenarios against
   a real gRPC + NATS stack with stub-runtime + stub-llm sidecars:
   1. seeded council is visible
   2. `Deliberate` on the seeded specialty returns a winner
@@ -790,6 +798,11 @@ Current state:
      agent is an `openai`-kind descriptor pointing at the `stub-llm`
      sidecar (added 2026-05-14); the outbound envelope omits
      `external_context_bundle_id` (no bundle was sent).
+  9. The same Report-contract success path runs through a `vllm`-kind
+     agent descriptor pointed at the same `stub-llm` sidecar. This
+     proves the vLLM-shaped adapter path in the same compose run; a
+     real external vLLM endpoint remains covered by
+     `make e2e-provider-vllm`.
 - the `stub-runtime` sidecar ships in this repo as
   `crates/choreo-e2e-runner/src/bin/stub_runtime.rs` +
   `tests/e2e/stub-runtime.Dockerfile`. It serves the canonical
@@ -806,11 +819,11 @@ Current state:
   the stub-runtime logs `CreateSession`, `InvokeTool(stub.echo)`,
   and `CloseSession` once per orchestration.
 - the seed council still uses `NoopAgent`; scenarios 1–7 stay on
-  that path. Scenario 8 dynamically registers an `openai`-kind agent
-  pointing at the `stub-llm` sidecar so the positive structured-
-  output path is exercised without a real provider in the compose
-  stack. Real-provider councils against vLLM remain exercised
-  separately by `make e2e-provider-vllm` (Epic-6 provider runner).
+  that path. Scenarios 8 and 9 dynamically register `openai` and
+  `vllm` agent descriptors pointing at the `stub-llm` sidecar so the
+  positive structured-output path is exercised without depending on a
+  real external provider. Real-provider councils against vLLM remain
+  exercised separately by `make e2e-provider-vllm`.
 
 Relevant code:
 
@@ -838,7 +851,9 @@ Status of the chain:
 - bounded external trigger → ✅ scenario 4 (NATS) + scenario 5 (gRPC).
 - context bundle → ✅ scenario 7 round-trips the bundle id into the
   outbound `DeliberationCompleted` envelope (2026-05-14).
-- real council → ✅ via `make e2e-provider-vllm` (provider runner).
+- real council → ✅ scenario 9 via the vLLM adapter against the
+  `stub-llm` OpenAI-compatible sidecar; real external vLLM remains
+  an operator-run validation via `make e2e-provider-vllm`.
 - validated structured result → ✅ scenario 6 covers the rejection
   path (JsonSchemaValidator fires, `error_kind =
   "deliberation.no_valid_proposal"` on the bus, `FailedPrecondition`
@@ -848,29 +863,17 @@ Status of the chain:
   schema.
 - runtime execution → ✅ scenario 5 (stub-runtime).
 
-#### Remaining follow-ups (out of Milestone D's critical path)
+#### Remaining follow-ups
 
-- scenario 7: `Deliberate` with an `ExternalContextBundle` attached
-  → ✅ done (2026-05-14). `DeliberationCompletedEvent` now carries
-  the optional `external_context_bundle_id` and the e2e-runner asserts
-  the bundle id round-trips to the outbound bus envelope.
-- positive structured-output scenario → ✅ done (2026-05-14).
-  Scenario 8 brings up a `stub-llm` sidecar (OpenAI Chat Completions
-  shape, always returns a JSON Report payload that satisfies the
-  canonical schema) and asserts the positive path through
-  `RunCouncilDecision` in Strict mode.
-- merge the provider-runner E2E (vLLM) into the same compose stack
-  → ✅ done 2026-05-14 (Bundle A). Scenario 9 registers a
-  `kind=vllm` agent pointing at the existing `stub-llm` sidecar
-  (both adapters speak `POST /v1/chat/completions`), so a single
-  `make e2e-compose` now covers both the openai-shaped and the
-  vllm-shaped paths. `make e2e-provider-vllm` stays for operators
-  who want to validate against a REAL vLLM endpoint.
 - compose-level operations doc (`docs/operations/compose-e2e.md`):
   the stub-llm sidecar, its OpenAI-compat surface, the hard-coded
   Report payload, and the `STUB_LLM_LISTEN` override all need a
   prose home. The doc itself does not exist yet — leaving as a
   follow-up so this slice stays additive.
+- optional consumer-smoke positive-path mode: the underlying stub-LLM
+  capability exists, but `choreo-consumer-smoke` still defaults to
+  the NoopAgent rejection path unless a consumer wires a structured
+  JSON agent.
 
 ### Epic 12. Consumer integration smoke prerequisites
 
@@ -911,20 +914,20 @@ Deliverables:
 - Operations doc: `docs/operations/consumer-smoke.md`.
 - `make consumer-smoke` Makefile target.
 
-#### Remaining gaps (out of Epic 12's scope, tracked under Epic 11)
+#### Remaining gaps (outside Epic 12's shipped surface)
 
-- **Bundle round-trip** (`bundle_seam_documented` Skipped). Owned by
-  Epic 11 scenario 7. Once that lands the assertion flips to Passed.
-- **Chain 2 positive path** (`report_payload_validates` Skipped on
-  today's stack). The stub-LLM sidecar shipped under Epic 11
-  scenario 8 (2026-05-14) — follow-up consumers can now register an
+- **Bundle round-trip** (`bundle_seam_documented`) remains `Skipped`
+  in the consumer-smoke harness by design; Epic 11 scenario 7 already
+  proves the stack-level round-trip in `make e2e-compose`.
+- **Chain 2 positive path** (`report_payload_validates`) remains
+  `Skipped` against the default NoopAgent stack. The stub-LLM sidecar
+  shipped under Epic 11 scenario 8, so consumers can now register an
   `openai`-kind agent against `http://stub-llm:8000` to exercise the
-  positive path. Wiring `choreo-consumer-smoke` chain 2 to that
-  sidecar (so the harness flips Skipped → Passed) is the remaining
-  work; the underlying capability is in place.
-- **Provider-runner E2E merged into `make e2e-compose`** so a single
-  command exercises real provider council + real (stub) runtime in
-  one shot — also Epic 11.
+  positive path; teaching the smoke harness to run that variant is a
+  follow-up.
+- **Provider-runner E2E merged into `make e2e-compose`** is done via
+  scenario 9. `make e2e-provider-vllm` remains for validating a real
+  external vLLM endpoint.
 
 #### Relevant code
 
@@ -933,12 +936,12 @@ Deliverables:
 
 ### Epic 13. MCP stdio adapter
 
-Status: foundation done (2026-05-12); distribution slice in flight.
+Status: done (foundation 2026-05-12; distribution 2026-05-14).
 
 Current state:
 
 - `crates/choreo-mcp` exposes every RPC of `underpass.choreo.v1` as
-  a `choreo_*` MCP tool (12 tools 1:1 with the gRPC service).
+  a `choreo_*` MCP tool (16 tools 1:1 with the gRPC service).
 - JSON-RPC 2.0 over stdin/stdout, no MCP SDK — the wire protocol is
   hand-rolled so it stays in lock-step with the proto contract.
 - `ChoreoMcpToolBackend` trait has two impls: fixture (canned
@@ -949,14 +952,16 @@ Current state:
 - `StreamDeliberation` buffered into one response (frames array +
   winner extracted from the last `result`-typed frame). MCP stdio is
   sync.
-- 6 env vars (`CHOREO_MCP_BACKEND` + 5 `CHOREO_MCP_GRPC_TLS_*`) with
-  the same auto-detection pattern as the sibling rehydration-mcp.
+- 7 env vars (`CHOREO_MCP_BACKEND`, `CHOREO_MCP_GRPC_ENDPOINT`, and
+  5 `CHOREO_MCP_GRPC_TLS_*`) with the same auto-detection pattern as
+  the sibling rehydration-mcp.
 - 21 unit tests + workspace clippy clean.
 
-Distribution slice (in flight):
+Distribution slice (done 2026-05-14):
 
-- `scripts/mcp/install-choreo-mcp.sh` — `cargo install --git` wrapper
-  with pinned `CHOREO_MCP_BRANCH/TAG/REV` (mutually exclusive).
+- `scripts/mcp/install-choreo-mcp.sh` — registry mode by default
+  (`cargo install choreo-mcp`); `CHOREO_MCP_INSTALL_MODE=git` falls
+  back to the `--git`/`--branch`/`--tag`/`--rev` source path.
 - `scripts/mcp/choreo-stdio-smoke.sh` — one `tools/call` + grep marker
   for both fixture and live modes.
 - `docs/operations/mcp-stdio.md` — canonical user-facing UX.
@@ -970,12 +975,10 @@ Relevant code:
 - [`crates/choreo-mcp/`](../crates/choreo-mcp/)
 - [`docs/operations/mcp-stdio.md`](./operations/mcp-stdio.md)
 
-#### Deliverables (open)
+#### Deliverables (met)
 
-1. `crates.io` publication. Blocked by the proto tree being path-deped
-   from `choreo-mcp`. Needs the proto package vendored into a
-   standalone crate (or `choreo-proto` itself published) before
-   `cargo install` from a registry will work.
+1. `crates.io` publication readiness: vendored proto crate,
+   tag-gated publish jobs, and per-PR publish dry-run.
 2. Real-kernel integration test that boots a choreographer in a
    container and exercises every tool through MCP (separate from the
    existing e2e-runner gRPC scenarios).
@@ -1027,9 +1030,8 @@ Exit condition:
 
 - composition, transport, and security claims match reality
 
-**Cleared 2026-05-12.** Epics 6, 7, 8 all done end-to-end. Handshake-
-level integration test remains as an Epic 8 follow-up but is not on
-the milestone-C critical path.
+**Cleared 2026-05-14.** Epics 6, 7, and 8 are all done end-to-end,
+including the server and mutual TLS handshake integration tests.
 
 ### Milestone D — Consumer-facing surface
 
@@ -1042,8 +1044,10 @@ Exit condition:
 
 - consumers have a clean RPC surface to integrate with
 
-**Open.** Epic 9 not started; Epic 11 partial (4 scenarios but no real
-council and no runtime executor wired in the stack).
+**Cleared 2026-05-14.** Epic 9 shipped `RunCouncilDecision` plus
+contract CRUD, and Epic 11 now runs the nine-scenario compose E2E
+path with Runtime executor, external context round-trip, structured
+output success, and OpenAI-shaped + vLLM-shaped provider paths.
 
 ### Milestone E — integration-ready
 
@@ -1057,11 +1061,11 @@ Exit condition:
 
 **Cleared 2026-05-14.** Epic 12 done — consumer-smoke harness lives
 at `crates/choreo-consumer-smoke` with two chains, a CLI, and two
-integration tests against the in-process `GrpcFixture`. The
-remaining "open" assertions (`bundle_seam_documented` and Chain 2's
-positive `report_payload_validates`) are intentionally `Skipped`
-with explicit reasons that point at Epic 11's pending scenarios; they
-are not on Epic 12's critical path.
+integration tests against the in-process `GrpcFixture`. The remaining
+`Skipped` assertions are explicit harness-scope choices: bundle
+round-trip is covered by Epic 11 scenario 7, and Chain 2's positive
+path needs a structured JSON agent instead of the default NoopAgent
+stack.
 
 ## Suggested issue breakdown
 
@@ -1074,7 +1078,7 @@ are not on Epic 12's critical path.
 - structured output mode — done
 - incident / run / causation metadata propagation — done
 
-### Open waves
+### Follow-up waves
 
 #### Wave 4a — real provider factories — done
 
@@ -1109,17 +1113,20 @@ tests via `NoopAgentFactory`).
   2026-05-12): mirrors the MCP adapter's pattern with auto-detection
   + 7 env-loading / URI-upgrade unit tests + explicit
   `TlsReadFailed { path, source }` error variant.
-- Open follow-up: handshake-level integration test against a
-  choreographer instance with a self-signed cert (likely with
-  `rcgen` as a dev-dep).
+- Handshake-level integration tests shipped 2026-05-14:
+  `tls_server_handshake.rs` and `tls_mutual_handshake.rs` mint
+  self-signed leaves through the shared TLS fixture and exercise real
+  server + mutual TLS handshakes.
 
 #### Wave 5 — Consumer-facing surface
 
-- add a dedicated `RunCouncilDecision` (or equivalent) RPC backed by
-  the structured-output mode
-- add JSON Schema validator and a report-shape validator
-- add `Report` / `HumanHandoffReport` entity + proto + persistence
-- extend the e2e-runner to drive a real council + the Runtime executor
+- `RunCouncilDecision` plus contract CRUD — done
+- JSON Schema validator and canonical Report schema — done
+- no bespoke `Report` / `HumanHandoffReport` entity by design; Report
+  stays a JSON Schema output contract so product vocabulary does not
+  enter the core
+- e2e-runner drives Runtime executor plus OpenAI-shaped and vLLM-shaped
+  provider paths — done
 
 ## Gating rule
 
@@ -1129,23 +1136,21 @@ The following rule should be treated as hard policy:
 > output should depend on Choreographer until Milestones A, B, and C
 > are complete.
 
-Status 2026-05-12: Milestones A, B, and C are all complete.
-Milestones D (Epic 9 consumer-facing RPC + Epic 11 real-council /
-runtime E2E legs) and the crates.io publication leg of Epic 13 are
-the remaining open items.
+Status 2026-05-14: Milestones A, B, C, D, and E are complete. The
+crates.io publication leg of Epic 13 also cleared in Bundle B.
 
 Why the rule still applies in spirit even with B and C now cleared:
 
-- without Milestone D (Epic 9's consumer-facing RPC + Epic 11's
-  real-council / runtime E2E legs) no consumer has been proven able
-  to drive Choreographer through its public surfaces at production
-  scale.
+- consumer-specific production readiness still requires each downstream
+  product to run its own smoke against its provider credentials,
+  Runtime catalog, context source, and output contracts.
 
 ## Final recommendation
 
 If only one sentence is carried forward from this document, it should be:
 
-> Choreographer's job is to be a trustworthy stack peer — real Runtime,
-> real context, structured outputs, honest transport, agent-callable
-> through gRPC and MCP, with stack E2E — and nothing more. Downstream
-> products integrate; they are not implemented here.
+> Choreographer's job is to be a trustworthy, agnostic coordination
+> product — structured external context input, structured outputs,
+> honest transport, optional execution adapters, and agent-callable
+> surfaces through gRPC and MCP. Downstream products integrate; they
+> are not implemented here.

@@ -46,10 +46,10 @@ import "google/protobuf/timestamp.proto";
 //
 // Caveats the project's honesty principles require to surface:
 //
-//   RegisterAgent currently materializes only `kind == "noop"` —
-//   provider-backed kinds (vLLM, Anthropic, OpenAI, …) are wired in
-//   their respective feature slices by composing a richer
-//   AgentFactoryPort in the binary.
+//   RegisterAgent accepts `kind == "noop"` unconditionally. Provider-
+//   backed kinds (vLLM, Anthropic, OpenAI, …) are accepted when the
+//   binary was compiled with the matching feature and booted with the
+//   required provider configuration.
 //
 //   StreamDeliberation emits one `DeliberationUpdate` per phase
 //   transition (Proposing → Revising → Validating → Scoring →
@@ -63,8 +63,9 @@ service ChoreographerService {
   // specialty. Blocks until the ranked results are ready.
   rpc Deliberate(DeliberateRequest) returns (DeliberateResponse);
 
-  // Like Deliberate but streams progress updates (proposals, critiques,
-  // revisions, scores) as they happen.
+  // Like Deliberate but streams phase updates plus a final winner frame.
+  // Per-proposal, per-critique, and per-revision frames are reserved
+  // for a later additive slice.
   rpc StreamDeliberation(StreamDeliberationRequest) returns (stream StreamDeliberationResponse);
 
   // Retrieve a previously-executed deliberation by task id.

@@ -61,6 +61,10 @@ without an extra round trip.
 | `choreo_register_agent`           | `RegisterAgent`                   | control plane |
 | `choreo_unregister_agent`         | `UnregisterAgent`                 | control plane |
 | `choreo_process_trigger_event`    | `ProcessTriggerEvent`             | event ingest |
+| `choreo_run_council_decision`     | `RunCouncilDecision`              | validated council decision |
+| `choreo_register_contract`        | `RegisterContract`                | contract registry |
+| `choreo_list_contracts`           | `ListContracts`                   | contract registry |
+| `choreo_delete_contract`          | `DeleteContract`                  | contract registry |
 | `choreo_get_status`               | `GetStatus`                       | observability |
 | `choreo_get_metrics`              | `GetMetrics`                      | observability |
 

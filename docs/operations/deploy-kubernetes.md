@@ -57,16 +57,20 @@ curl -s localhost:8080/readyz   # {"checks":[{"name":"nats","healthy":true,...}]
 ## End-to-end against the deploy
 
 `tests/cluster/e2e-job.yaml` runs the `choreo-e2e-runner` binary as
-a Job. Scenarios 1–4 cover gRPC + NATS + causal metadata against the
+a Job. The current runner is the same nine-scenario binary used by
+compose. Scenarios 1–4 cover gRPC + NATS + causal metadata against a
 real deploy and pass when the choreographer is wired correctly.
 
-Scenarios 5–6 in the current runner are designed for the compose
-**stub-runtime** sidecar (they call a tool named `stub.echo` and
-assert JSON-Schema rejection on free-form proposals). Against the
-real `underpass-runtime`, the tool is not in the catalog, so the
-runner exits with a `NotFound: runtime resource` from scenario 5 —
-that proves the mTLS gRPC path is wired but fails the assertion.
-Treat 5–6 as **design-for-stub** when reading the Job's exit code.
+Scenarios 5-9 are compose-shaped: scenario 5 expects a Runtime tool
+named `stub.echo`, scenarios 8-9 expect the `stub-llm` OpenAI-
+compatible sidecar, and scenario 6 asserts strict rejection of the
+NoopAgent's free-form output. Against the real `underpass-runtime`,
+the `stub.echo` tool is not normally in the catalog, so the runner can
+exit with `NotFound: runtime resource` from scenario 5. That proves
+the Runtime gRPC path was reached, but it is not a green full-stack
+acceptance signal. Treat the cluster Job as a targeted connectivity
+smoke unless the namespace also provides the same stub services or
+equivalent test fixtures.
 
 ```bash
 kubectl apply -f tests/cluster/e2e-job.yaml

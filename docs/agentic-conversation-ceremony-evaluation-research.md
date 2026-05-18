@@ -3,6 +3,11 @@
 Status: research and design proposal. This document is not an implementation
 claim.
 
+Choreographer is agnostic and independent. KMP, Runtime, and other
+systems mentioned here are studied as possible context, evidence, or
+tool providers for evaluations; they are not required dependencies of
+the Choreographer product.
+
 Date: 2026-04-26
 
 ## Scope
@@ -14,11 +19,11 @@ application-owned identifiers must stay at the edge through task attributes,
 external context metadata, output contracts, kernel graph data, or runtime
 session metadata.
 
-Code reviewed locally:
+Code reviewed locally for the original research snapshot:
 
-- Current repo: `/home/tirso/ai/developents/underpass-orchestrator`.
-- Downloaded runtime repo: `/tmp/underpass-agentic-research/underpass-runtime`.
-- Downloaded kernel repo: `/tmp/underpass-agentic-research/rehydration-kernel`.
+- this Choreographer repository
+- a local checkout of `underpass-runtime`
+- a local checkout of `rehydration-kernel`
 
 Detailed meeting blueprints live in
 `docs/agentic-meeting-ceremony-blueprints.md`.

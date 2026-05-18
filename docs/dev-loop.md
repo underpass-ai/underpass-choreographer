@@ -171,7 +171,11 @@ lab-notebook contract).
 ## Running the binary
 
 ```bash
-# With defaults (no NATS, no Postgres).
+# With no external services.
+CHOREO_NATS_ENABLED=false just run
+
+# With defaults, the binary expects NATS at nats://nats:4222 and uses
+# in-memory persistence unless CHOREO_POSTGRES_URL is set.
 just run
 
 # With the OTLP exporter compiled in. At runtime, set
