@@ -24,8 +24,8 @@ use choreo_adapters::runtime::{
 use choreo_adapters::scoring::{JudgeAwareScoring, UniformScoring};
 use choreo_adapters::validators::{
     AllowedStringValuesValidator, BoundedEventShapeValidator, ClaimsEvidenceGroundedValidator,
-    ContentNonEmptyValidator, JsonObjectOutputValidator, JsonSchemaValidator,
-    RequiredFieldsValidator,
+    ClaimsEvidenceSupportedValidator, ContentNonEmptyValidator, JsonObjectOutputValidator,
+    JsonSchemaValidator, RequiredFieldsValidator,
 };
 use choreo_app::services::AutoDispatchService;
 use choreo_app::usecases::{
@@ -139,6 +139,16 @@ pub async fn compose() -> Result<Application, ComposeError> {
         // grounding rule). Runs before the shape-budget guard so orphan
         // refs are named even when the output is otherwise well-formed.
         Arc::new(ClaimsEvidenceGroundedValidator::new()),
+        // Semantic support: rejects claims whose *cited* evidence does
+        // not actually support them, judged through the deployment's
+        // evidence-support judge (`CHOREO_SUPPORT_JUDGE_ENABLED`, vLLM
+        // endpoint/model). No-op unless a contract declares
+        // `evidence.semantic_support`; a contract that demands it with
+        // no judge wired fails its step loudly instead of running the
+        // gate voided.
+        Arc::new(ClaimsEvidenceSupportedValidator::new(
+            choreo_adapters::agents::support_judge_from_env(metrics_recorder.clone())?,
+        )),
         // Final shape-budget guard: defends downstream bus consumers
         // against pathological JSON (deeply nested, huge arrays,
         // bloated strings). Uses the validator's conservative

@@ -39,6 +39,9 @@ mod instrument;
 #[cfg(any(feature = "agent-openai", feature = "agent-vllm"))]
 pub mod judge;
 
+#[cfg(any(feature = "agent-openai", feature = "agent-vllm"))]
+pub mod support_judge;
+
 #[cfg(feature = "agent-anthropic")]
 pub mod anthropic;
 
@@ -56,7 +59,7 @@ pub use factory::{
 use std::sync::Arc;
 
 use choreo_core::error::DomainError;
-use choreo_core::ports::{MetricsRecorderPort, ValidatorPort};
+use choreo_core::ports::{EvidenceSupportJudgePort, MetricsRecorderPort, ValidatorPort};
 
 /// Build the LLM-judge validator from the environment, when enabled.
 ///
@@ -95,14 +98,74 @@ pub fn judge_from_env(
 
 /// Whether the operator opted the judge in via `CHOREO_JUDGE_ENABLED`.
 fn judge_enabled() -> bool {
-    std::env::var("CHOREO_JUDGE_ENABLED")
-        .map(|value| {
-            matches!(
-                value.trim().to_ascii_lowercase().as_str(),
-                "1" | "true" | "yes"
-            )
-        })
-        .unwrap_or(false)
+    env_flag_enabled("CHOREO_JUDGE_ENABLED")
+}
+
+/// Whether an opt-in boolean env flag is set (`1`/`true`/`yes`).
+fn env_flag_enabled(name: &str) -> bool {
+    std::env::var(name).is_ok_and(|value| {
+        matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes"
+        )
+    })
+}
+
+/// Build the evidence-support judge from the environment, when enabled.
+///
+/// The support judge is opt-in via `CHOREO_SUPPORT_JUDGE_ENABLED`
+/// (`1`/`true`/`yes`) and reuses the vLLM endpoint and model
+/// (`CHOREO_VLLM_ENDPOINT`, `CHOREO_VLLM_MODEL`), mirroring
+/// [`judge_from_env`]. Note the asymmetry with the quality judge: the
+/// support judge is *demanded per step* by an `output_contract`
+/// declaring `evidence.semantic_support` — when a contract demands it
+/// and this returns `None`, the `claims-evidence-supported` validator
+/// fails the step loudly instead of running the gate voided.
+///
+/// Returns `Ok(None)` when disabled, or when the binary was built
+/// without a Chat-Completions provider feature. Returns `Err` —
+/// failing fast — when explicitly enabled but misconfigured.
+pub fn support_judge_from_env(
+    metrics: Arc<dyn MetricsRecorderPort>,
+) -> Result<Option<Arc<dyn EvidenceSupportJudgePort>>, DomainError> {
+    if !support_judge_enabled() {
+        return Ok(None);
+    }
+    #[cfg(any(feature = "agent-openai", feature = "agent-vllm"))]
+    {
+        build_env_support_judge(metrics).map(Some)
+    }
+    #[cfg(not(any(feature = "agent-openai", feature = "agent-vllm")))]
+    {
+        let _ = metrics;
+        tracing::warn!(
+            "CHOREO_SUPPORT_JUDGE_ENABLED is set but this build has no Chat-Completions \
+             provider feature; contracts demanding semantic support will fail their steps"
+        );
+        Ok(None)
+    }
+}
+
+/// Whether the operator opted the support judge in via
+/// `CHOREO_SUPPORT_JUDGE_ENABLED`.
+fn support_judge_enabled() -> bool {
+    env_flag_enabled("CHOREO_SUPPORT_JUDGE_ENABLED")
+}
+
+/// Construct the support judge from the vLLM endpoint/model env,
+/// failing fast on a missing or invalid setting.
+#[cfg(any(feature = "agent-openai", feature = "agent-vllm"))]
+fn build_env_support_judge(
+    metrics: Arc<dyn MetricsRecorderPort>,
+) -> Result<Arc<dyn EvidenceSupportJudgePort>, DomainError> {
+    let endpoint = std::env::var("CHOREO_VLLM_ENDPOINT").map_err(|_| DomainError::EmptyField {
+        field: "support_judge.endpoint",
+    })?;
+    let model = std::env::var("CHOREO_VLLM_MODEL").map_err(|_| DomainError::EmptyField {
+        field: "support_judge.model",
+    })?;
+    let judge = support_judge::LlmEvidenceSupportJudge::new(endpoint, model, metrics)?;
+    Ok(Arc::new(judge))
 }
 
 /// Construct the judge from the vLLM endpoint/model env, failing fast on a

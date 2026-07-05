@@ -5,10 +5,12 @@
 //! safety, policy compliance, fact checking, …) belong in the
 //! integrating product, not in the Choreographer.
 
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use choreo_core::entities::{TaskConstraints, ValidatorReport};
 use choreo_core::error::DomainError;
-use choreo_core::ports::ValidatorPort;
+use choreo_core::ports::{EvidenceExcerpt, EvidenceSupportJudgePort, ValidatorPort};
 use choreo_core::value_objects::Attributes;
 use serde_json::{json, Map, Value};
 
@@ -859,6 +861,279 @@ fn claim_preview(claim: &Map<String, Value>) -> String {
     }
 }
 
+/// Cap on the number of claims one proposal may put in front of the
+/// support judge. Far above any real decision output; a proposal that
+/// exceeds it fails the gate instead of burning a judge call per claim.
+const MAX_JUDGED_CLAIMS: usize = 64;
+
+/// A validator that enforces the semantic-support rule declared in the
+/// output contract's evidence block: every claim's *cited* evidence
+/// bodies must actually support what the claim says, as judged through
+/// the wired [`EvidenceSupportJudgePort`].
+///
+/// This is the second gate behind [`ClaimsEvidenceGroundedValidator`]:
+/// grounding proves the citation exists; this proves it holds. The
+/// judgment is model-backed, but the *decision* stays deterministic —
+/// a claim passes iff the verdict says `supported` with confidence at
+/// or above the contract's `min_confidence` — and every verdict
+/// (supported or not, with its rationale) is recorded in the report's
+/// details, so the judge's opinion becomes part of the decision record
+/// instead of an unrecorded opinion.
+///
+/// Semantics:
+///
+/// - no contract, or no grounding rule, or no semantic-support rule →
+///   pass (`"no semantic support configured"`, the sibling validators'
+///   pattern).
+/// - semantic-support rule declared but no judge wired → **hard
+///   error**: running the step unjudged would silently void the
+///   policy, the same posture the grounding gate takes on an absent
+///   evidence pack.
+/// - a judge transport/parse failure is a hard error too (fail
+///   closed): a gate that cannot judge must not wave proposals
+///   through.
+/// - claims citing refs the rule has no body for produce a violation
+///   (those refs are outside the pack — the grounding gate names them;
+///   this gate refuses to judge on nothing).
+pub struct ClaimsEvidenceSupportedValidator {
+    judge: Option<Arc<dyn EvidenceSupportJudgePort>>,
+}
+
+impl std::fmt::Debug for ClaimsEvidenceSupportedValidator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ClaimsEvidenceSupportedValidator")
+            .field("judge_wired", &self.judge.is_some())
+            .finish()
+    }
+}
+
+impl ClaimsEvidenceSupportedValidator {
+    /// Build the validator. `judge` is `None` when the deployment did
+    /// not wire a support judge; the validator stays a no-op unless a
+    /// contract demands semantic support, in which case it fails
+    /// loudly.
+    #[must_use]
+    pub fn new(judge: Option<Arc<dyn EvidenceSupportJudgePort>>) -> Self {
+        Self { judge }
+    }
+}
+
+#[async_trait]
+impl ValidatorPort for ClaimsEvidenceSupportedValidator {
+    fn kind(&self) -> &'static str {
+        "claims-evidence-supported"
+    }
+
+    async fn validate(
+        &self,
+        proposal_content: &str,
+        constraints: &TaskConstraints,
+    ) -> Result<ValidatorReport, DomainError> {
+        let Some(rule) = constraints
+            .output_contract()
+            .and_then(|contract| contract.evidence_grounding())
+        else {
+            return ValidatorReport::new(
+                self.kind(),
+                true,
+                "no semantic support configured",
+                Attributes::empty(),
+            );
+        };
+        let Some(support) = rule.semantic_support() else {
+            return ValidatorReport::new(
+                self.kind(),
+                true,
+                "no semantic support configured",
+                Attributes::empty(),
+            );
+        };
+        let Some(judge) = self.judge.as_ref() else {
+            // Fail the step, not the proposal: a contract demanding a
+            // judgment the deployment cannot produce is a wiring gap,
+            // and waving the proposal through would void the policy.
+            return Err(DomainError::InvariantViolated {
+                reason: "semantic support demanded by the contract but no \
+                         evidence-support judge is wired (set CHOREO_SUPPORT_JUDGE_ENABLED)",
+            });
+        };
+        // `unwrap` is safe: the two `let Some` above prove the contract exists.
+        let contract_id = constraints
+            .output_contract()
+            .map(choreo_core::value_objects::OutputContract::contract_id)
+            .unwrap_or_default()
+            .to_owned();
+
+        let object = match parse_json_object(proposal_content) {
+            Ok(object) => object,
+            Err(summary) => {
+                return ValidatorReport::new(
+                    self.kind(),
+                    false,
+                    summary,
+                    attributes(json!({ "contract_id": contract_id }))?,
+                );
+            }
+        };
+        let Some(claims) = object.get(rule.claims_field()).and_then(Value::as_array) else {
+            return ValidatorReport::new(
+                self.kind(),
+                false,
+                format!(
+                    "claims field `{}` is missing or not an array",
+                    rule.claims_field()
+                ),
+                attributes(json!({
+                    "contract_id": contract_id,
+                    "claims_field": rule.claims_field(),
+                }))?,
+            );
+        };
+        if claims.len() > MAX_JUDGED_CLAIMS {
+            return ValidatorReport::new(
+                self.kind(),
+                false,
+                format!(
+                    "{} claims exceed the judgeable limit of {MAX_JUDGED_CLAIMS}",
+                    claims.len()
+                ),
+                attributes(json!({ "contract_id": contract_id }))?,
+            );
+        }
+
+        let (verdicts, violations) =
+            judge_claims(judge.as_ref(), claims, rule.refs_field(), support).await?;
+
+        let details = attributes(json!({
+            "contract_id": contract_id,
+            "min_confidence": support.min_confidence(),
+            "verdicts": verdicts,
+            "violations": violations,
+        }))?;
+        if violations.is_empty() {
+            ValidatorReport::new(
+                self.kind(),
+                true,
+                format!(
+                    "all {} claims semantically supported by their cited evidence \
+                     (min_confidence {})",
+                    claims.len(),
+                    support.min_confidence()
+                ),
+                details,
+            )
+        } else {
+            ValidatorReport::new(
+                self.kind(),
+                false,
+                format!(
+                    "{} of {} claims lack semantic support from their cited evidence",
+                    violations.len(),
+                    claims.len()
+                ),
+                details,
+            )
+        }
+    }
+}
+
+/// Judge every claim and collect the verdicts (all of them, so the
+/// judge's opinion rides the decision record) plus the violations (the
+/// claims the deterministic rule rejects). A judge failure propagates:
+/// the gate fails closed.
+async fn judge_claims(
+    judge: &dyn EvidenceSupportJudgePort,
+    claims: &[Value],
+    refs_field: &str,
+    support: &choreo_core::value_objects::SemanticSupportRule,
+) -> Result<(Vec<Value>, Vec<Value>), DomainError> {
+    let mut verdicts = Vec::with_capacity(claims.len());
+    let mut violations = Vec::new();
+    for (index, claim) in claims.iter().enumerate() {
+        let Some(claim_object) = claim.as_object() else {
+            violations.push(json!({
+                "claim_index": index,
+                "problem": "claim is not a JSON object",
+                "actual_type": value_type_name(claim),
+            }));
+            continue;
+        };
+        let preview = claim_preview(claim_object);
+        let excerpts = cited_excerpts(claim_object, refs_field, support);
+        if excerpts.is_empty() {
+            violations.push(json!({
+                "claim_index": index,
+                "claim_preview": preview,
+                "problem": "claim cites no evidence with a judgeable body",
+            }));
+            continue;
+        }
+        let claim_text = claim_object
+            .get("text")
+            .and_then(Value::as_str)
+            .map_or_else(
+                || Value::Object(claim_object.clone()).to_string(),
+                str::to_owned,
+            );
+
+        let verdict = judge.assess(&claim_text, &excerpts).await?;
+        let accepted = verdict.supported && verdict.confidence >= support.min_confidence();
+        verdicts.push(json!({
+            "claim_index": index,
+            "claim_preview": preview,
+            "refs": excerpts
+                .iter()
+                .map(|excerpt| excerpt.reference.clone())
+                .collect::<Vec<_>>(),
+            "supported": verdict.supported,
+            "confidence": verdict.confidence,
+            "rationale": verdict.rationale,
+        }));
+        if !accepted {
+            violations.push(json!({
+                "claim_index": index,
+                "claim_preview": preview,
+                "problem": if verdict.supported {
+                    format!(
+                        "supported but confidence {} is below min_confidence {}",
+                        verdict.confidence,
+                        support.min_confidence()
+                    )
+                } else {
+                    "cited evidence does not support the claim".to_owned()
+                },
+            }));
+        }
+    }
+    Ok((verdicts, violations))
+}
+
+/// The evidence excerpts a claim actually cited, resolved to bodies.
+/// Refs without a body in the rule are skipped — they are outside the
+/// pack, which the grounding gate reports by name; this gate only
+/// judges on real text.
+fn cited_excerpts(
+    claim: &Map<String, Value>,
+    refs_field: &str,
+    support: &choreo_core::value_objects::SemanticSupportRule,
+) -> Vec<EvidenceExcerpt> {
+    claim
+        .get(refs_field)
+        .and_then(Value::as_array)
+        .map(|refs| {
+            refs.iter()
+                .filter_map(Value::as_str)
+                .filter_map(|reference| {
+                    support.body(reference).map(|body| EvidenceExcerpt {
+                        reference: reference.to_owned(),
+                        body: body.to_owned(),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 fn parse_json_object(proposal_content: &str) -> Result<Map<String, Value>, String> {
     let trimmed = strip_markdown_fences(proposal_content);
     let value: Value = serde_json::from_str(trimmed)
@@ -1058,6 +1333,234 @@ mod tests {
             .await
             .unwrap();
         assert!(r.passed());
+    }
+
+    // ---- ClaimsEvidenceSupportedValidator ------------------------------
+
+    use choreo_core::ports::SupportVerdict;
+    use choreo_core::value_objects::SemanticSupportRule;
+
+    /// Scripted judge: answers by looking the claim text up in a
+    /// verdict table; records what it was asked so tests can assert the
+    /// excerpts a claim put in front of it.
+    #[derive(Default)]
+    struct ScriptedJudge {
+        verdicts: std::collections::BTreeMap<String, SupportVerdict>,
+        asked: std::sync::Mutex<Vec<(String, Vec<String>)>>,
+    }
+
+    #[async_trait]
+    impl EvidenceSupportJudgePort for ScriptedJudge {
+        async fn assess(
+            &self,
+            claim_text: &str,
+            evidence: &[EvidenceExcerpt],
+        ) -> Result<SupportVerdict, DomainError> {
+            self.asked.lock().unwrap().push((
+                claim_text.to_owned(),
+                evidence
+                    .iter()
+                    .map(|excerpt| excerpt.reference.clone())
+                    .collect(),
+            ));
+            self.verdicts
+                .get(claim_text)
+                .cloned()
+                .ok_or(DomainError::InvariantViolated {
+                    reason: "scripted judge: unexpected claim",
+                })
+        }
+    }
+
+    fn verdict(supported: bool, confidence: u8) -> SupportVerdict {
+        SupportVerdict {
+            supported,
+            confidence,
+            rationale: "scripted".to_owned(),
+        }
+    }
+
+    fn supported_constraints(min_confidence: u8) -> TaskConstraints {
+        let rule = choreo_core::value_objects::EvidenceGroundingRule::new(
+            "claims",
+            "evidence_refs",
+            ["ev-1", "ev-2"],
+        )
+        .unwrap()
+        .with_semantic_support(
+            SemanticSupportRule::new(
+                min_confidence,
+                [
+                    ("ev-1", "journalctl: typha (pid 4830) holds 0.0.0.0:5473"),
+                    ("ev-2", "crun state dir is scoped per runtime root"),
+                ],
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        TaskConstraints::default().with_output_contract(
+            OutputContract::json_object("support-contract", BTreeMap::new())
+                .unwrap()
+                .with_evidence_grounding(rule),
+        )
+    }
+
+    #[tokio::test]
+    async fn support_validator_passes_without_configuration() {
+        let v = ClaimsEvidenceSupportedValidator::new(None);
+        // No contract at all.
+        let r = v
+            .validate("free prose", &TaskConstraints::default())
+            .await
+            .unwrap();
+        assert!(r.passed());
+        assert_eq!(r.kind(), "claims-evidence-supported");
+        assert!(r.summary().contains("no semantic support configured"));
+        // A grounding rule without a semantic-support rule is also a no-op.
+        let r = v
+            .validate("free prose", &grounded_constraints())
+            .await
+            .unwrap();
+        assert!(r.passed());
+    }
+
+    #[tokio::test]
+    async fn support_demanded_without_a_judge_fails_the_step_loudly() {
+        let v = ClaimsEvidenceSupportedValidator::new(None);
+        let err = v
+            .validate(r#"{"claims":[]}"#, &supported_constraints(70))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, DomainError::InvariantViolated { reason }
+            if reason.contains("no evidence-support judge is wired")));
+    }
+
+    #[tokio::test]
+    async fn supported_claims_pass_and_verdicts_ride_the_details() {
+        let judge = ScriptedJudge {
+            verdicts: BTreeMap::from([("typha holds the port".to_owned(), verdict(true, 92))]),
+            ..Default::default()
+        };
+        let v = ClaimsEvidenceSupportedValidator::new(Some(Arc::new(judge)));
+        let content = r#"{"claims":[{"text":"typha holds the port","evidence_refs":["ev-1"]}]}"#;
+        let r = v
+            .validate(content, &supported_constraints(70))
+            .await
+            .unwrap();
+        assert!(r.passed(), "summary: {}", r.summary());
+        let details = serde_json::to_string(r.details()).unwrap();
+        assert!(details.contains("\"supported\":true"));
+        assert!(details.contains("\"confidence\":92"));
+        assert!(details.contains("scripted"));
+    }
+
+    #[tokio::test]
+    async fn unsupported_claim_fails_and_is_named() {
+        let judge = ScriptedJudge {
+            verdicts: BTreeMap::from([
+                ("grounded and true".to_owned(), verdict(true, 90)),
+                (
+                    "cites real refs, says nonsense".to_owned(),
+                    verdict(false, 88),
+                ),
+            ]),
+            ..Default::default()
+        };
+        let v = ClaimsEvidenceSupportedValidator::new(Some(Arc::new(judge)));
+        let content = r#"{"claims":[
+            {"text":"grounded and true","evidence_refs":["ev-1"]},
+            {"text":"cites real refs, says nonsense","evidence_refs":["ev-1","ev-2"]}
+        ]}"#;
+        let r = v
+            .validate(content, &supported_constraints(70))
+            .await
+            .unwrap();
+        assert!(!r.passed());
+        assert!(r.summary().contains("1 of 2 claims"));
+        let details = serde_json::to_string(r.details()).unwrap();
+        assert!(details.contains("does not support the claim"));
+    }
+
+    #[tokio::test]
+    async fn low_confidence_support_fails_under_the_threshold() {
+        let judge = ScriptedJudge {
+            verdicts: BTreeMap::from([("maybe".to_owned(), verdict(true, 55))]),
+            ..Default::default()
+        };
+        let v = ClaimsEvidenceSupportedValidator::new(Some(Arc::new(judge)));
+        let content = r#"{"claims":[{"text":"maybe","evidence_refs":["ev-1"]}]}"#;
+        let r = v
+            .validate(content, &supported_constraints(70))
+            .await
+            .unwrap();
+        assert!(!r.passed());
+        let details = serde_json::to_string(r.details()).unwrap();
+        assert!(details.contains("below min_confidence"));
+    }
+
+    #[tokio::test]
+    async fn judge_only_sees_the_evidence_the_claim_cited() {
+        let judge = Arc::new(ScriptedJudge {
+            verdicts: BTreeMap::from([("narrow".to_owned(), verdict(true, 95))]),
+            ..Default::default()
+        });
+        let v = ClaimsEvidenceSupportedValidator::new(Some(judge.clone()));
+        let content = r#"{"claims":[{"text":"narrow","evidence_refs":["ev-2"]}]}"#;
+        v.validate(content, &supported_constraints(70))
+            .await
+            .unwrap();
+        let asked = judge.asked.lock().unwrap();
+        assert_eq!(asked.len(), 1);
+        assert_eq!(asked[0].1, vec!["ev-2".to_owned()]);
+    }
+
+    #[tokio::test]
+    async fn claim_citing_only_orphan_refs_fails_without_a_judge_call() {
+        let judge = Arc::new(ScriptedJudge::default());
+        let v = ClaimsEvidenceSupportedValidator::new(Some(judge.clone()));
+        let content = r#"{"claims":[{"text":"invented","evidence_refs":["ev-999"]}]}"#;
+        let r = v
+            .validate(content, &supported_constraints(70))
+            .await
+            .unwrap();
+        assert!(!r.passed());
+        assert!(judge.asked.lock().unwrap().is_empty());
+        let details = serde_json::to_string(r.details()).unwrap();
+        assert!(details.contains("no evidence with a judgeable body"));
+    }
+
+    #[tokio::test]
+    async fn judge_failure_fails_the_step_closed() {
+        // Empty verdict table: any claim makes the scripted judge error.
+        let judge = Arc::new(ScriptedJudge::default());
+        let v = ClaimsEvidenceSupportedValidator::new(Some(judge));
+        let content = r#"{"claims":[{"text":"anything","evidence_refs":["ev-1"]}]}"#;
+        let err = v
+            .validate(content, &supported_constraints(70))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, DomainError::InvariantViolated { .. }));
+    }
+
+    #[tokio::test]
+    async fn empty_claims_array_passes_the_support_gate() {
+        let v = ClaimsEvidenceSupportedValidator::new(Some(Arc::new(ScriptedJudge::default())));
+        let r = v
+            .validate(r#"{"claims":[]}"#, &supported_constraints(70))
+            .await
+            .unwrap();
+        assert!(r.passed());
+    }
+
+    #[tokio::test]
+    async fn missing_claims_field_fails_the_support_gate() {
+        let v = ClaimsEvidenceSupportedValidator::new(Some(Arc::new(ScriptedJudge::default())));
+        let r = v
+            .validate(r#"{"decision":"accept"}"#, &supported_constraints(70))
+            .await
+            .unwrap();
+        assert!(!r.passed());
+        assert!(r.summary().contains("claims"));
     }
 
     #[tokio::test]

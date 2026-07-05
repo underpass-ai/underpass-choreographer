@@ -602,6 +602,183 @@ mod tests {
         ));
     }
 
+    /// Support judge that refutes every claim — the failure mode the
+    /// semantic gate exists for: a claim citing a *real* pack ref whose
+    /// body does not say what the claim says.
+    #[derive(Debug)]
+    struct RefutingJudge;
+
+    #[async_trait::async_trait]
+    impl choreo_core::ports::EvidenceSupportJudgePort for RefutingJudge {
+        async fn assess(
+            &self,
+            _claim_text: &str,
+            _evidence: &[choreo_core::ports::EvidenceExcerpt],
+        ) -> Result<choreo_core::ports::SupportVerdict, DomainError> {
+            Ok(choreo_core::ports::SupportVerdict {
+                supported: false,
+                confidence: 95,
+                rationale: "the cited excerpt does not state this".to_owned(),
+            })
+        }
+    }
+
+    /// Stub agent citing a *real* pack ref with a claim its body does
+    /// not support: past the grounding gate, dead at the semantic gate.
+    #[derive(Debug)]
+    struct GroundedNonsenseAgent {
+        id: AgentId,
+        specialty: Specialty,
+    }
+
+    #[async_trait::async_trait]
+    impl choreo_core::ports::AgentPort for GroundedNonsenseAgent {
+        fn id(&self) -> &AgentId {
+            &self.id
+        }
+
+        fn specialty(&self) -> &Specialty {
+            &self.specialty
+        }
+
+        async fn generate(
+            &self,
+            _request: choreo_core::ports::DraftRequest,
+        ) -> Result<choreo_core::ports::Revision, DomainError> {
+            Ok(choreo_core::ports::Revision {
+                content: json!({
+                    "claims": [
+                        {
+                            "text": "the journal proves the pod ran privileged",
+                            "evidence_refs": ["ev-journal-1"],
+                        },
+                    ],
+                    "decision": "accept",
+                })
+                .to_string(),
+            })
+        }
+
+        async fn critique(
+            &self,
+            _peer_content: &str,
+            _constraints: &choreo_core::entities::TaskConstraints,
+        ) -> Result<choreo_core::ports::Critique, DomainError> {
+            Ok(choreo_core::ports::Critique {
+                feedback: "looks fine".to_owned(),
+            })
+        }
+
+        async fn revise(
+            &self,
+            own_content: &str,
+            _critique: &choreo_core::ports::Critique,
+        ) -> Result<choreo_core::ports::Revision, DomainError> {
+            Ok(choreo_core::ports::Revision {
+                content: own_content.to_owned(),
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn semantic_gate_rejects_grounded_but_unsupported_claims_end_to_end() {
+        let specialty = Specialty::new("support_gate").unwrap();
+        let agent_id = AgentId::new("agent-support_gate-0").unwrap();
+        let agent_registry = Arc::new(InMemoryAgentRegistry::new());
+        agent_registry
+            .insert(Arc::new(GroundedNonsenseAgent {
+                id: agent_id.clone(),
+                specialty: specialty.clone(),
+            }))
+            .await
+            .unwrap();
+
+        let council_registry = Arc::new(InMemoryCouncilRegistry::new());
+        council_registry
+            .register(
+                Council::new(
+                    CouncilId::new("council-support_gate").unwrap(),
+                    specialty.clone(),
+                    vec![agent_id],
+                    SystemClock::new().now(),
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let deliberate = Arc::new(DeliberateUseCase::new(
+            Arc::new(SystemClock::new()),
+            council_registry,
+            agent_registry,
+            vec![
+                Arc::new(ContentNonEmptyValidator::new()),
+                Arc::new(JsonObjectOutputValidator::new()),
+                Arc::new(RequiredFieldsValidator::new()),
+                Arc::new(crate::validators::ClaimsEvidenceGroundedValidator::new()),
+                Arc::new(crate::validators::ClaimsEvidenceSupportedValidator::new(
+                    Some(Arc::new(RefutingJudge)),
+                )),
+            ],
+            Arc::new(UniformScoring::new()),
+            Arc::new(InMemoryDeliberationRepository::new()),
+            Arc::new(NoopMessaging::new()),
+            Arc::new(InMemoryStatistics::new()),
+            Arc::new(choreo_core::ports::NoopMetricsRecorder),
+            "ceremony-step-handler-test",
+        ));
+        let handler = DeliberatingCeremonyStepHandler::new(deliberate);
+
+        let request = CeremonyStepHandlerRequest::new(
+            CeremonyId::new("ceremony-1").unwrap(),
+            CeremonyName::new("evidence_review").unwrap(),
+            CeremonyVersion::v1(),
+            StateId::new("REVIEW").unwrap(),
+            StepId::new("evidence_review").unwrap(),
+            StepHandlerKind::new("support_gate").unwrap(),
+            StepHandlerConfig::new(
+                Attributes::new(BTreeMap::from([
+                    ("prompt".to_owned(), json!("Review the change")),
+                    ("num_agents".to_owned(), json!(1)),
+                    (
+                        "output_contract".to_owned(),
+                        json!({
+                            "contract_id": "evidence-bound-decision",
+                            "required_fields": ["claims", "decision"],
+                            "evidence": {
+                                "allowed_refs_from_context": "evidence_pack",
+                                "semantic_support": { "min_confidence": 70 },
+                            },
+                        }),
+                    ),
+                ]))
+                .unwrap(),
+            ),
+            CeremonyContext::new(
+                Attributes::new(BTreeMap::from([(
+                    "evidence_pack".to_owned(),
+                    json!([
+                        {"id": "ev-journal-1", "text": "typha (pid 4830) holds 0.0.0.0:5473"},
+                        {"id": "ev-trace-1", "text": "trace shows a clean shutdown"},
+                    ]),
+                )]))
+                .unwrap(),
+            ),
+            StepAttempt::FIRST,
+        );
+
+        let err = handler.execute(request).await.unwrap_err();
+
+        // The claim is grounded (cites a real pack ref) yet the
+        // refuting judge kills it — the proposal dies at the semantic
+        // gate through the real deliberation pipeline.
+        assert!(matches!(
+            err,
+            choreo_core::error::DomainError::NoValidProposal { ref contract_id }
+                if contract_id == "evidence-bound-decision"
+        ));
+    }
+
     #[test]
     fn description_without_role_or_transcript_is_well_formed() {
         let request = request_with_prompt();

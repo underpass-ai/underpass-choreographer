@@ -55,6 +55,14 @@ mod evidence_key {
     pub(super) const REFS_FIELD: &str = "refs_field";
     pub(super) const ALLOWED_REFS: &str = "allowed_refs";
     pub(super) const ALLOWED_REFS_FROM_CONTEXT: &str = "allowed_refs_from_context";
+    pub(super) const SEMANTIC_SUPPORT: &str = "semantic_support";
+}
+
+/// Keys recognised inside the `output_contract.evidence.semantic_support`
+/// block.
+mod semantic_key {
+    pub(super) const MIN_CONFIDENCE: &str = "min_confidence";
+    pub(super) const BODIES_FROM_CONTEXT: &str = "bodies_from_context";
 }
 
 /// Stable `DomainError` field names surfaced when a value is malformed.
@@ -82,6 +90,12 @@ mod field {
         "ceremony_step.config.output_contract.evidence.allowed_refs";
     pub(super) const EVIDENCE_CONTEXT_KEY: &str =
         "ceremony_step.config.output_contract.evidence.allowed_refs_from_context";
+    pub(super) const EVIDENCE_SEMANTIC: &str =
+        "ceremony_step.config.output_contract.evidence.semantic_support";
+    pub(super) const SEMANTIC_MIN_CONFIDENCE: &str =
+        "ceremony_step.config.output_contract.evidence.semantic_support.min_confidence";
+    pub(super) const SEMANTIC_BODIES_KEY: &str =
+        "ceremony_step.config.output_contract.evidence.semantic_support.bodies_from_context";
 }
 
 /// Default output field carrying the claims array.
@@ -99,6 +113,17 @@ pub(crate) struct EvidenceGroundingSpec {
     pub(crate) refs_field: String,
     pub(crate) static_refs: Vec<String>,
     pub(crate) context_key: Option<String>,
+    pub(crate) semantic: Option<SemanticSupportSpec>,
+}
+
+/// Declared semantic-support configuration for a step, before the
+/// context-borne evidence bodies are resolved. `bodies_context_key`
+/// defaults to the grounding spec's `context_key` when absent — the
+/// pack that names the refs usually also carries their text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SemanticSupportSpec {
+    pub(crate) min_confidence: Option<u8>,
+    pub(crate) bodies_context_key: Option<String>,
 }
 
 /// A validated, typed view over one ceremony step's handler configuration.
@@ -317,6 +342,9 @@ impl<'a> CeremonyStepConfig<'a> {
     ///     refs_field: evidence_refs               # optional, default "evidence_refs"
     ///     allowed_refs: [ev-static-1]             # optional, static pack entries
     ///     allowed_refs_from_context: evidence_pack # optional, ceremony-context key
+    ///     semantic_support:                        # optional, second gate
+    ///       min_confidence: 70                     # optional, percent 0-100
+    ///       bodies_from_context: evidence_pack     # optional, ceremony-context key
     /// ```
     ///
     /// At least one of `allowed_refs` / `allowed_refs_from_context` is
@@ -326,6 +354,14 @@ impl<'a> CeremonyStepConfig<'a> {
     /// time — the context entry must be an array of strings, or of
     /// objects each carrying a string `id` (the natural shape of an
     /// evidence pack).
+    ///
+    /// `semantic_support` (presence turns the gate on, `{}` is valid)
+    /// additionally demands that every claim's cited evidence
+    /// *supports* the claim, judged through the deployment's
+    /// evidence-support judge. Its bodies resolve from
+    /// `bodies_from_context` — defaulting to
+    /// `allowed_refs_from_context` — whose entries must be objects
+    /// carrying `id` and `text`.
     pub(crate) fn evidence_grounding_spec(
         &self,
     ) -> Result<Option<EvidenceGroundingSpec>, DomainError> {
@@ -353,6 +389,7 @@ impl<'a> CeremonyStepConfig<'a> {
             evidence_key::REFS_FIELD,
             evidence_key::ALLOWED_REFS,
             evidence_key::ALLOWED_REFS_FROM_CONTEXT,
+            evidence_key::SEMANTIC_SUPPORT,
         ];
         if evidence.keys().any(|key| !known.contains(&key.as_str())) {
             return Err(DomainError::InvalidCharacters {
@@ -401,13 +438,84 @@ impl<'a> CeremonyStepConfig<'a> {
             });
         }
 
+        let semantic = semantic_support_spec(evidence.get(evidence_key::SEMANTIC_SUPPORT))?;
+
         Ok(Some(EvidenceGroundingSpec {
             claims_field,
             refs_field,
             static_refs,
             context_key,
+            semantic,
         }))
     }
+}
+
+/// Parse the optional `semantic_support` block. Absent/null → `None`;
+/// anything but an object with the recognised keys is rejected.
+fn semantic_support_spec(
+    value: Option<&Value>,
+) -> Result<Option<SemanticSupportSpec>, DomainError> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    if value.is_null() {
+        return Ok(None);
+    }
+    let Some(block) = value.as_object() else {
+        return Err(DomainError::InvalidCharacters {
+            field: field::EVIDENCE_SEMANTIC,
+        });
+    };
+
+    let known = [
+        semantic_key::MIN_CONFIDENCE,
+        semantic_key::BODIES_FROM_CONTEXT,
+    ];
+    if block.keys().any(|key| !known.contains(&key.as_str())) {
+        return Err(DomainError::InvalidCharacters {
+            field: field::EVIDENCE_SEMANTIC,
+        });
+    }
+
+    let min_confidence = match block.get(semantic_key::MIN_CONFIDENCE) {
+        None => None,
+        Some(value) if value.is_null() => None,
+        Some(value) => {
+            let raw = value.as_u64().ok_or(DomainError::InvalidCharacters {
+                field: field::SEMANTIC_MIN_CONFIDENCE,
+            })?;
+            let percent = u8::try_from(raw).map_err(|_| DomainError::OutOfRange {
+                field: field::SEMANTIC_MIN_CONFIDENCE,
+                value: raw as f64,
+                min: 0.0,
+                max: 100.0,
+            })?;
+            if percent > 100 {
+                return Err(DomainError::OutOfRange {
+                    field: field::SEMANTIC_MIN_CONFIDENCE,
+                    value: f64::from(percent),
+                    min: 0.0,
+                    max: 100.0,
+                });
+            }
+            Some(percent)
+        }
+    };
+
+    if let Some(value) = block.get(semantic_key::BODIES_FROM_CONTEXT) {
+        if !value.is_null() && !value.is_string() {
+            return Err(DomainError::InvalidCharacters {
+                field: field::SEMANTIC_BODIES_KEY,
+            });
+        }
+    }
+    let bodies_context_key =
+        optional_string(block.get(semantic_key::BODIES_FROM_CONTEXT)).map(str::to_owned);
+
+    Ok(Some(SemanticSupportSpec {
+        min_confidence,
+        bodies_context_key,
+    }))
 }
 
 /// Parse a JSON value as a non-empty-string array (absent/null → empty).

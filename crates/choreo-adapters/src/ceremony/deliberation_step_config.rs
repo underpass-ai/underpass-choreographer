@@ -1,7 +1,8 @@
 use choreo_core::error::DomainError;
 use choreo_core::ports::CeremonyStepHandlerRequest;
 use choreo_core::value_objects::{
-    EvidenceGroundingRule, NumAgents, OutputContract, Rounds, Specialty, TaskDescription,
+    EvidenceGroundingRule, NumAgents, OutputContract, Rounds, SemanticSupportRule, Specialty,
+    TaskDescription, DEFAULT_SUPPORT_MIN_CONFIDENCE,
 };
 use serde_json::Value;
 
@@ -36,10 +37,29 @@ impl DeliberationStepConfig {
                 field: "ceremony_step.config.output_contract",
             })?;
             let mut refs = spec.static_refs;
-            if let Some(key) = spec.context_key {
-                refs.extend(context_refs(request, &key)?);
+            if let Some(key) = spec.context_key.as_deref() {
+                refs.extend(context_refs(request, key)?);
             }
-            let rule = EvidenceGroundingRule::new(spec.claims_field, spec.refs_field, refs)?;
+            let mut rule = EvidenceGroundingRule::new(spec.claims_field, spec.refs_field, refs)?;
+            // Resolve the semantic-support declaration the same way:
+            // the bodies live in the ceremony context, and a support
+            // gate whose bodies do not resolve fails loudly at wiring
+            // time instead of judging on nothing.
+            if let Some(semantic) = spec.semantic {
+                let bodies_key = semantic.bodies_context_key.or(spec.context_key).ok_or(
+                    DomainError::EmptyField {
+                        field: SEMANTIC_BODIES_FIELD,
+                    },
+                )?;
+                let bodies = context_bodies(request, &bodies_key)?;
+                let support = SemanticSupportRule::new(
+                    semantic
+                        .min_confidence
+                        .unwrap_or(DEFAULT_SUPPORT_MIN_CONFIDENCE),
+                    bodies,
+                )?;
+                rule = rule.with_semantic_support(support)?;
+            }
             output_contract = Some(contract.with_evidence_grounding(rule));
         }
 
@@ -92,6 +112,10 @@ impl DeliberationStepConfig {
 const CONTEXT_REFS_FIELD: &str =
     "ceremony_step.config.output_contract.evidence.allowed_refs_from_context";
 
+/// Stable error field for a malformed or missing context bodies pack.
+const SEMANTIC_BODIES_FIELD: &str =
+    "ceremony_step.config.output_contract.evidence.semantic_support.bodies_from_context";
+
 /// Resolve an evidence pack from the ceremony context. The entry must
 /// be an array of strings, or of objects each carrying a string `id`
 /// (the natural shape of an evidence pack: `[{id, kind, uri, …}, …]`).
@@ -126,6 +150,49 @@ fn context_refs(
             _ => Err(DomainError::InvalidCharacters {
                 field: CONTEXT_REFS_FIELD,
             }),
+        })
+        .collect()
+}
+
+/// Resolve evidence bodies from the ceremony context. The entry must
+/// be an array of objects each carrying a string `id` and a string
+/// `text` (the same pack shape [`context_refs`] reads ids from —
+/// plain-string entries carry no body and make a semantic-support
+/// gate fail loudly, because a gate that cannot read its evidence
+/// would be judging on nothing).
+fn context_bodies(
+    request: &CeremonyStepHandlerRequest,
+    key: &str,
+) -> Result<Vec<(String, String)>, DomainError> {
+    let Some(value) = request.context().attributes().get(key) else {
+        return Err(DomainError::EmptyField {
+            field: SEMANTIC_BODIES_FIELD,
+        });
+    };
+    let Some(items) = value.as_array() else {
+        return Err(DomainError::InvalidCharacters {
+            field: SEMANTIC_BODIES_FIELD,
+        });
+    };
+    items
+        .iter()
+        .map(|item| {
+            let entry = item.as_object().ok_or(DomainError::InvalidCharacters {
+                field: SEMANTIC_BODIES_FIELD,
+            })?;
+            let id =
+                entry
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .ok_or(DomainError::InvalidCharacters {
+                        field: SEMANTIC_BODIES_FIELD,
+                    })?;
+            let text = entry.get("text").and_then(Value::as_str).ok_or(
+                DomainError::InvalidCharacters {
+                    field: SEMANTIC_BODIES_FIELD,
+                },
+            )?;
+            Ok((id.to_owned(), text.to_owned()))
         })
         .collect()
 }
@@ -296,6 +363,152 @@ mod tests {
         assert_eq!(rule.refs_field(), "sources");
         assert!(rule.allowed_refs().contains("ev-static-1"));
         assert!(rule.allowed_refs().contains("ev-ctx-1"));
+    }
+
+    #[test]
+    fn resolves_semantic_support_bodies_from_ceremony_context() {
+        let config = DeliberationStepConfig::from_request(&request_with_context(
+            evidence_contract_config(&json!({
+                "allowed_refs_from_context": "evidence_pack",
+                "semantic_support": { "min_confidence": 80 },
+            })),
+            BTreeMap::from([(
+                "evidence_pack".to_owned(),
+                json!([
+                    {"id": "ev-trace-1", "kind": "trace", "text": "typha holds 0.0.0.0:5473"},
+                    {"id": "ev-metric-1", "kind": "metric", "text": "gauge went to zero"},
+                ]),
+            )]),
+        ))
+        .unwrap();
+
+        let support = config
+            .output_contract()
+            .unwrap()
+            .evidence_grounding()
+            .unwrap()
+            .semantic_support()
+            .unwrap();
+        assert_eq!(support.min_confidence(), 80);
+        assert_eq!(support.body("ev-trace-1"), Some("typha holds 0.0.0.0:5473"));
+        assert_eq!(support.body("ev-metric-1"), Some("gauge went to zero"));
+    }
+
+    #[test]
+    fn semantic_support_defaults_min_confidence() {
+        let config = DeliberationStepConfig::from_request(&request_with_context(
+            evidence_contract_config(&json!({
+                "allowed_refs_from_context": "evidence_pack",
+                "semantic_support": {},
+            })),
+            BTreeMap::from([(
+                "evidence_pack".to_owned(),
+                json!([{"id": "ev-1", "text": "body"}]),
+            )]),
+        ))
+        .unwrap();
+
+        let support = config
+            .output_contract()
+            .unwrap()
+            .evidence_grounding()
+            .unwrap()
+            .semantic_support()
+            .unwrap();
+        assert_eq!(support.min_confidence(), DEFAULT_SUPPORT_MIN_CONFIDENCE);
+    }
+
+    #[test]
+    fn semantic_support_fails_loudly_when_entries_carry_no_text() {
+        let err = DeliberationStepConfig::from_request(&request_with_context(
+            evidence_contract_config(&json!({
+                "allowed_refs_from_context": "evidence_pack",
+                "semantic_support": {},
+            })),
+            BTreeMap::from([(
+                "evidence_pack".to_owned(),
+                json!([{"id": "ev-1", "kind": "trace"}]),
+            )]),
+        ))
+        .unwrap_err();
+
+        assert!(matches!(
+            err,
+            DomainError::InvalidCharacters {
+                field: "ceremony_step.config.output_contract.evidence.semantic_support.bodies_from_context"
+            }
+        ));
+    }
+
+    #[test]
+    fn semantic_support_fails_loudly_when_a_static_ref_has_no_body() {
+        // Static refs have no context entry to read a body from — the
+        // coverage check in the domain rule must reject the wiring.
+        let err = DeliberationStepConfig::from_request(&request_with_context(
+            evidence_contract_config(&json!({
+                "allowed_refs": ["ev-static-1"],
+                "allowed_refs_from_context": "evidence_pack",
+                "semantic_support": {},
+            })),
+            BTreeMap::from([(
+                "evidence_pack".to_owned(),
+                json!([{"id": "ev-1", "text": "body"}]),
+            )]),
+        ))
+        .unwrap_err();
+
+        assert!(matches!(
+            err,
+            DomainError::EmptyField {
+                field: "output_contract.evidence.semantic_support.bodies"
+            }
+        ));
+    }
+
+    #[test]
+    fn semantic_support_with_unknown_key_is_rejected() {
+        let err = DeliberationStepConfig::from_request(&request_with_context(
+            evidence_contract_config(&json!({
+                "allowed_refs_from_context": "evidence_pack",
+                "semantic_support": { "min_confidnce": 80 },
+            })),
+            BTreeMap::from([(
+                "evidence_pack".to_owned(),
+                json!([{"id": "ev-1", "text": "body"}]),
+            )]),
+        ))
+        .unwrap_err();
+
+        assert!(matches!(
+            err,
+            DomainError::InvalidCharacters {
+                field: "ceremony_step.config.output_contract.evidence.semantic_support"
+            }
+        ));
+    }
+
+    #[test]
+    fn semantic_support_reads_bodies_from_a_dedicated_context_key() {
+        let config = DeliberationStepConfig::from_request(&request_with_context(
+            evidence_contract_config(&json!({
+                "allowed_refs": ["ev-1"],
+                "semantic_support": { "bodies_from_context": "evidence_bodies" },
+            })),
+            BTreeMap::from([(
+                "evidence_bodies".to_owned(),
+                json!([{"id": "ev-1", "text": "the excerpt"}]),
+            )]),
+        ))
+        .unwrap();
+
+        let support = config
+            .output_contract()
+            .unwrap()
+            .evidence_grounding()
+            .unwrap()
+            .semantic_support()
+            .unwrap();
+        assert_eq!(support.body("ev-1"), Some("the excerpt"));
     }
 
     #[test]

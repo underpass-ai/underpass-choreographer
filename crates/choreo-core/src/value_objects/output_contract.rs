@@ -26,6 +26,14 @@ const MAX_JSON_SCHEMA_LEN: usize = 256 * 1024;
 /// deliberation, not a corpus; anything larger belongs in an external
 /// store that the pack entries reference.
 const MAX_ALLOWED_EVIDENCE_REFS: usize = 1024;
+/// Cap on one evidence body a semantic-support rule may carry. Bodies
+/// are curated excerpts a judge reads per claim, not documents; a
+/// larger source belongs in an external store, with the excerpt that
+/// actually supports the claim quoted here.
+const MAX_EVIDENCE_BODY_LEN: usize = 16 * 1024;
+/// Default minimum confidence (percent) a support verdict must reach
+/// before a claim counts as semantically supported.
+pub const DEFAULT_SUPPORT_MIN_CONFIDENCE: u8 = 70;
 
 /// Wire- and storage-stable structured output format selector.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -93,6 +101,95 @@ impl OutputFieldRule {
     }
 }
 
+/// Semantic-support rule for one invocation: the evidence *bodies*
+/// (ref id → excerpt text) a support judge reads to decide whether a
+/// claim's cited evidence actually supports what the claim says, and
+/// the minimum confidence (percent, 0–100) a verdict must reach.
+///
+/// This is the second gate behind [`EvidenceGroundingRule`]: grounding
+/// checks that the citation *exists*; semantic support checks that the
+/// citation *holds*. The judgment itself comes from a wired
+/// `EvidenceSupportJudgePort` implementation — the rule only carries
+/// what the judge needs and the deterministic acceptance threshold, so
+/// the decision stays a rule even when the signal comes from a model.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SemanticSupportRule {
+    min_confidence: u8,
+    bodies: BTreeMap<String, String>,
+}
+
+impl SemanticSupportRule {
+    /// Build a semantic-support rule. `bodies` must be non-empty: a
+    /// support gate with nothing to read is a configuration error, not
+    /// a stricter gate (mirroring the grounding rule's posture on an
+    /// empty pack).
+    pub fn new(
+        min_confidence: u8,
+        bodies: impl IntoIterator<Item = (impl Into<String>, impl Into<String>)>,
+    ) -> Result<Self, DomainError> {
+        if min_confidence > 100 {
+            return Err(DomainError::OutOfRange {
+                field: "output_contract.evidence.semantic_support.min_confidence",
+                value: f64::from(min_confidence),
+                min: 0.0,
+                max: 100.0,
+            });
+        }
+        let bodies = bodies
+            .into_iter()
+            .map(|(reference, body)| {
+                let reference = validate_text(
+                    &reference.into(),
+                    "output_contract.evidence.semantic_support.body_ref",
+                    MAX_ALLOWED_VALUE_LEN,
+                )?;
+                let body = validate_text(
+                    &body.into(),
+                    "output_contract.evidence.semantic_support.body",
+                    MAX_EVIDENCE_BODY_LEN,
+                )?;
+                Ok::<_, DomainError>((reference, body))
+            })
+            .collect::<Result<BTreeMap<_, _>, _>>()?;
+        if bodies.is_empty() {
+            return Err(DomainError::EmptyField {
+                field: "output_contract.evidence.semantic_support.bodies",
+            });
+        }
+        if bodies.len() > MAX_ALLOWED_EVIDENCE_REFS {
+            return Err(DomainError::OutOfRange {
+                field: "output_contract.evidence.semantic_support.bodies",
+                value: bodies.len() as f64,
+                min: 1.0,
+                max: MAX_ALLOWED_EVIDENCE_REFS as f64,
+            });
+        }
+        Ok(Self {
+            min_confidence,
+            bodies,
+        })
+    }
+
+    /// Minimum confidence (percent, 0–100) a support verdict must
+    /// reach for the claim to count as supported.
+    #[must_use]
+    pub const fn min_confidence(&self) -> u8 {
+        self.min_confidence
+    }
+
+    /// Evidence bodies by reference id.
+    #[must_use]
+    pub fn bodies(&self) -> &BTreeMap<String, String> {
+        &self.bodies
+    }
+
+    /// The body for one evidence reference, when the rule carries it.
+    #[must_use]
+    pub fn body(&self, reference: &str) -> Option<&str> {
+        self.bodies.get(reference).map(String::as_str)
+    }
+}
+
 /// Evidence-grounding rule for one invocation: which output field
 /// carries the claims, which per-claim field carries the evidence
 /// references, and the closed set of reference ids that count as real
@@ -100,12 +197,20 @@ impl OutputFieldRule {
 ///
 /// The rule is deliberately shape-only: the core does not know what an
 /// evidence ref points at (a document, a trace, a metric snapshot) —
-/// only that a claim citing a ref outside the pack is ungrounded.
+/// only that a claim citing a ref outside the pack is ungrounded. When
+/// a [`SemanticSupportRule`] is attached the contract additionally
+/// demands that every claim's cited evidence *supports* the claim, as
+/// judged through the `EvidenceSupportJudgePort`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EvidenceGroundingRule {
     claims_field: String,
     refs_field: String,
     allowed_refs: BTreeSet<String>,
+    /// Optional second gate: semantic support of each claim by its
+    /// cited evidence bodies. `None` keeps the historical
+    /// citation-existence semantics (and the historical wire shape).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    semantic_support: Option<SemanticSupportRule>,
 }
 
 impl EvidenceGroundingRule {
@@ -155,7 +260,27 @@ impl EvidenceGroundingRule {
             claims_field,
             refs_field,
             allowed_refs,
+            semantic_support: None,
         })
+    }
+
+    /// Attach a semantic-support rule. Every allowed reference must
+    /// carry a body: a pack entry the judge cannot read would make the
+    /// gate's outcome depend on which ref a proposal happens to cite —
+    /// a config gap must fail loudly at wiring time, not at judgment
+    /// time.
+    pub fn with_semantic_support(mut self, rule: SemanticSupportRule) -> Result<Self, DomainError> {
+        if self
+            .allowed_refs
+            .iter()
+            .any(|reference| !rule.bodies.contains_key(reference))
+        {
+            return Err(DomainError::EmptyField {
+                field: "output_contract.evidence.semantic_support.bodies",
+            });
+        }
+        self.semantic_support = Some(rule);
+        Ok(self)
     }
 
     #[must_use]
@@ -171,6 +296,13 @@ impl EvidenceGroundingRule {
     #[must_use]
     pub fn allowed_refs(&self) -> &BTreeSet<String> {
         &self.allowed_refs
+    }
+
+    /// Semantic-support rule, when the contract demands one. `None`
+    /// means the support validator is a no-op for this invocation.
+    #[must_use]
+    pub fn semantic_support(&self) -> Option<&SemanticSupportRule> {
+        self.semantic_support.as_ref()
     }
 }
 
@@ -474,6 +606,95 @@ mod tests {
         let back: OutputContract = serde_json::from_str(&serialized).unwrap();
         assert_eq!(back, contract);
         assert_eq!(back.evidence_grounding().unwrap().claims_field(), "claims");
+    }
+
+    #[test]
+    fn semantic_support_rule_keeps_bodies_and_threshold() {
+        let rule =
+            SemanticSupportRule::new(80, [("ev-1", "typha held port 5473"), ("ev-2", "crun log")])
+                .unwrap();
+        assert_eq!(rule.min_confidence(), 80);
+        assert_eq!(rule.body("ev-1"), Some("typha held port 5473"));
+        assert_eq!(rule.bodies().len(), 2);
+    }
+
+    #[test]
+    fn semantic_support_rule_rejects_out_of_range_confidence() {
+        let err = SemanticSupportRule::new(101, [("ev-1", "body")]).unwrap_err();
+        assert!(matches!(
+            err,
+            DomainError::OutOfRange {
+                field: "output_contract.evidence.semantic_support.min_confidence",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn semantic_support_rule_rejects_empty_bodies() {
+        let err = SemanticSupportRule::new(70, Vec::<(String, String)>::new()).unwrap_err();
+        assert!(matches!(
+            err,
+            DomainError::EmptyField {
+                field: "output_contract.evidence.semantic_support.bodies"
+            }
+        ));
+    }
+
+    #[test]
+    fn semantic_support_rule_rejects_blank_body() {
+        let err = SemanticSupportRule::new(70, [("ev-1", "   ")]).unwrap_err();
+        assert!(matches!(
+            err,
+            DomainError::EmptyField {
+                field: "output_contract.evidence.semantic_support.body"
+            }
+        ));
+    }
+
+    #[test]
+    fn semantic_support_requires_a_body_for_every_allowed_ref() {
+        let grounding =
+            EvidenceGroundingRule::new("claims", "evidence_refs", ["ev-1", "ev-2"]).unwrap();
+        let partial = SemanticSupportRule::new(70, [("ev-1", "only one body")]).unwrap();
+        let err = grounding.with_semantic_support(partial).unwrap_err();
+        assert!(matches!(
+            err,
+            DomainError::EmptyField {
+                field: "output_contract.evidence.semantic_support.bodies"
+            }
+        ));
+    }
+
+    #[test]
+    fn grounding_with_semantic_support_roundtrips() {
+        let rule = EvidenceGroundingRule::new("claims", "evidence_refs", ["ev-1"])
+            .unwrap()
+            .with_semantic_support(SemanticSupportRule::new(70, [("ev-1", "body")]).unwrap())
+            .unwrap();
+        let contract = OutputContract::json_object("c1", BTreeMap::new())
+            .unwrap()
+            .with_evidence_grounding(rule);
+        let serialized = serde_json::to_string(&contract).unwrap();
+        let back: OutputContract = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(back, contract);
+        let support = back
+            .evidence_grounding()
+            .unwrap()
+            .semantic_support()
+            .unwrap();
+        assert_eq!(support.min_confidence(), 70);
+        assert_eq!(support.body("ev-1"), Some("body"));
+    }
+
+    #[test]
+    fn grounding_without_semantic_support_deserializes_from_legacy_wire_shape() {
+        // Grounding rules serialized before the semantic-support field
+        // existed must keep deserializing.
+        let legacy =
+            r#"{"claims_field":"claims","refs_field":"evidence_refs","allowed_refs":["ev-1"]}"#;
+        let back: EvidenceGroundingRule = serde_json::from_str(legacy).unwrap();
+        assert!(back.semantic_support().is_none());
     }
 
     #[test]
