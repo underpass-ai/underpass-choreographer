@@ -3,7 +3,7 @@
 Codex CLI reads MCP servers from its TOML config (usually
 `~/.codex/config.toml` or `~/.config/codex/config.toml`). The
 `choreo-mcp` adapter is added once; every Codex session can then call
-the 16 `choreo_*` tools.
+the 17 `choreo_*` tools.
 
 See the canonical UX reference at
 [`docs/operations/mcp-stdio.md`](../mcp-stdio.md) for the tool list,
@@ -72,7 +72,7 @@ command = "choreo-mcp"
 CHOREO_MCP_BACKEND = "fixture"
 ```
 
-The 16 `choreo_*` tools become callable; every call returns the
+The 17 `choreo_*` tools become callable; every call returns the
 deterministic canned response (no network).
 
 ## mTLS to a hardened deployment

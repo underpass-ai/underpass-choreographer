@@ -87,6 +87,11 @@ all that is injected via configuration and proto messages.
   between embedded and deployable distributions.
 - [`docs/operations/codex-plugin.md`](docs/operations/codex-plugin.md) —
   cumulative test ladder and local Codex plugin packaging.
+- [`docs/operations/ceremony-authoring-runbook.md`](docs/operations/ceremony-authoring-runbook.md)
+  — writing ceremony YAML: schema keys, rounds, sizing, output
+  contracts, and verification.
+- [`docs/operations/observability-runbook.md`](docs/operations/observability-runbook.md)
+  — wiring traces, metrics, and logs in a deployment.
 - [`docs/backlog.md`](docs/backlog.md) — epic-by-epic readiness
   status + session log.
 - `justfile` at the repo root — `just` lists every recipe.

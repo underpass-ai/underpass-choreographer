@@ -132,7 +132,9 @@ callers can use `Deliberate` or the buffered MCP wrapper today.
 ## Honest Current Position
 
 The Choreographer is now a real gRPC + NATS + persistence + Runtime
-executor + MCP application with structured-output validation and
+executor + MCP application with structured-output validation, a
+declarative ceremony engine, an optional LLM judge, deliberation-native
+observability (Prometheus metrics + OTel traces of the debate), and
 repo-owned stack E2E over stubs.
 
 It is not a product integration by itself. Downstream products still

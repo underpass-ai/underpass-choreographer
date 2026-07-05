@@ -1,5 +1,12 @@
 # Plan Para Tener El Producto Usable Y Publicable
 
+> **Archived 2026-07-05.** One-shot plan (2026-05-18) whose phases 1-4 were
+> fully executed (compose E2E, consumer smoke positive-path, Helm guide,
+> SECURITY/CHANGELOG/CONTRIBUTING, support matrix, runbooks). The remaining
+> release tail (RC tag, public beta) is governed by `docs/release.md` and
+> `CHANGELOG.md`. The "can promise / must not promise" section remains a
+> useful historical reference.
+
 Fecha: 2026-05-18
 
 Este plan asume que el producto a publicar es **Underpass

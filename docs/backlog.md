@@ -24,6 +24,16 @@ agent-facing surface (gRPC + MCP), and reproducible stack E2E.
 
 ## Executive summary
 
+> **Update 2026-07-05:** the table below is accurate as of 2026-05-14 and the
+> session log stops at 2026-05-12. Shipped since then, not yet reflected in
+> the epics: the observability suite (#102–#113: Prometheus `/metrics` with
+> deliberation/judge/provider/ceremony families, OTel deliberation traces,
+> meeting record in `CeremonyStepExecution.output` — see
+> `choreographer-observability-design.md`) and the evidence-gate work
+> (#115–#120: step-level `output_contract` in ceremony YAML, evidence
+> grounding validator, fenced-JSON tolerance, observability/authoring
+> runbooks, chart NOTES banner).
+
 As of 2026-05-14 the eight stack-readiness areas resolve as follows:
 
 | # | Area | State |

@@ -57,6 +57,7 @@ Supported selectors:
 | `cluster-connectivity` | 1-4 | gRPC, seeded council, delete-idempotence, NATS trigger/envelope smoke. |
 | `runtime-stub` | 5 | Runtime executor adapter against `stub-runtime`. |
 | `structured-output` | 6-9 | Strict schema rejection plus positive Report contracts through `stub-llm`. |
+| `vllm-real` / `council-vllm` / `vllm-real-multi-agent` | 10 | Council deliberation through `kind=vllm`; compose uses `stub-llm`, Kubernetes uses a real vLLM endpoint. |
 | `ceremony` / `ceremony-diagram` | 11 | YAML ceremony execution and Mermaid trace with deterministic agents. |
 | `ceremony-vllm` / `gemma-ceremony` | 12 | YAML ceremony execution through `kind=vllm`; compose uses `stub-llm`, Kubernetes uses the configured real vLLM/Gemma endpoint. |
 | `daily-standup` / `daily` / `standup` | 13 | Daily standup ceremony — multi-step, multi-agent panels through `kind=vllm`. |

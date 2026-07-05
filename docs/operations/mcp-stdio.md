@@ -360,6 +360,7 @@ The 17 MCP tools are 1:1 with the choreographer's gRPC service:
 | `choreo_unregister_agent`         | `UnregisterAgent`                     | Remove an agent. |
 | `choreo_process_trigger_event`    | `ProcessTriggerEvent`                 | Submit a domain event; fans out to deliberations. |
 | `choreo_run_council_decision`     | `RunCouncilDecision`                  | Run a council against a registered output contract; returns the validated winner plus per-candidate breakdown. |
+| `choreo_run_ceremony`             | `RunCeremony`                         | Execute a declarative ceremony YAML; returns final state, per-step winning contributions, and the Mermaid conversation diagram. |
 | `choreo_register_contract`        | `RegisterContract`                    | Register an `OutputContract` in the contract registry. |
 | `choreo_list_contracts`           | `ListContracts`                       | Enumerate registered contracts. |
 | `choreo_delete_contract`          | `DeleteContract`                      | Idempotent contract delete. |

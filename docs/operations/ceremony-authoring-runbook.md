@@ -27,7 +27,25 @@ steps:
       rounds: 3                      # adversarial peer-review rounds
       num_agents: 2                  # council size
       prompt: "..."
+      output_contract:               # optional deterministic policy gate (#118)
+        contract_id: my-contract     # unknown keys inside this block are rejected
+        format: json_object
+        required_fields: [claims, decision]
+        allowed_values:
+          decision: [accept, reject, request_changes, request_more_evidence]
+        json_schema: { ... }         # optional embedded JSON Schema
+        evidence:                    # optional grounding rule (#119): every claim
+          claims_field: claims       # object must cite refs that exist in the
+          refs_field: evidence_refs  # allowed set...
+          allowed_refs_from_context: evidence_pack   # ...resolved per-run from
+                                     # the RunCeremony context (or a static
+                                     # allowed_refs list)
 ```
+
+With an `output_contract` present, proposals that fail the gate are rejected
+deterministically (`NoValidProposal{contract_id}` fails the deliberation);
+with an `evidence` block, the `claims-evidence-grounded` validator enforces
+that no unsupported claim reaches the step's winning contribution.
 
 Facts that are easy to get wrong:
 

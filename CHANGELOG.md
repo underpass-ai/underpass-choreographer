@@ -34,6 +34,21 @@ operator command.
   incremental human-active operations, and no required gRPC, NATS or Postgres
   dependency. It uses the same domain and application use cases as the
   deployable binary and carries the same workspace release version.
+- Ceremony step `output_contract` (#118): declarative deterministic policy
+  gates in ceremony YAML — `contract_id`, `format`, `required_fields`,
+  `allowed_values`, optional embedded `json_schema`; unknown keys are
+  rejected. Proposals that fail the gate fail the deliberation as
+  `NoValidProposal{contract_id}`.
+- Evidence grounding rule (#119): optional `evidence` block on an
+  `OutputContract` — each claim object must cite `evidence_refs` that exist
+  in an allowed set, resolvable per-run from the `RunCeremony` context
+  (`allowed_refs_from_context`) or a static list; enforced by the
+  `claims-evidence-grounded` validator.
+- Helm chart NOTES banner (#115): `helm install` prints a loud warning when
+  trace export (OTLP endpoint) is not configured, so deliberations are never
+  silently run unobserved.
+- Operations runbooks: observability wiring (traces, metrics, logs) (#116)
+  and ceremony authoring (schema, rounds, sizing, verification) (#117).
 - Observability — Prometheus metrics: the binary exposes the operational
   metric families at `GET /metrics` (HTTP port `8080`) through a
   `MetricsRecorderPort` (core) and a `PrometheusMetricsRecorder` adapter
@@ -106,6 +121,11 @@ operator command.
   containment.
 
 ### Changed
+
+- Contract gate validators tolerate Markdown-fenced JSON payloads (#120):
+  a proposal that is *purely* a fenced JSON block is unwrapped before
+  validation, so the gate measures evidence quality, not transport
+  cosmetics. Mixed prose+fence payloads still fail.
 
 - Kubernetes E2E jobs default to cluster-connectivity scenarios instead
   of running fixture-only stub scenarios against real deployments.

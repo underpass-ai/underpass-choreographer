@@ -1,5 +1,11 @@
 # Checklist De Usabilidad Y Publicación
 
+> **Archived 2026-07-05.** Execution checklist for the usability plan;
+> phases 1-4 and 7 are done and verified in-repo. The open items (RC tag,
+> GHCR image, OCI chart, `choreo-mcp` publish, public beta) live on in
+> `docs/release.md` — this file is no longer tracked as living state and
+> does not cover the observability epic (#102-#120).
+
 Fecha de creación: 2026-05-18
 
 Documento vivo para ejecutar el plan de

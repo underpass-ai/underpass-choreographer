@@ -1,5 +1,10 @@
 # PIR ↔ Choreographer Integration Design
 
+> **Archived 2026-07-05.** Legacy case-study design for PIR, an external
+> paused product; never implemented here and explicitly out of scope. Its
+> report-materialization approach was superseded by the Epic 10 decision
+> (Report = output contract via JSON Schema, no dedicated entity).
+
 Snapshot date: 2026-04-25
 
 Historical status: this is a legacy PIR product-integration design.

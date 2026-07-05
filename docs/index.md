@@ -11,9 +11,10 @@ does not require KMP, PIR, or any downstream product to run:
   Memory Plane / Kernel Memory Protocol. Memory + context plane.
   Lives in the sibling repo `rehydration-kernel`; one possible producer
   of caller-supplied `ExternalContextBundle`s.
-- **Underpass Choreographer** — this repo. Coordination plane:
-  domain-agnostic deliberation, council orchestration, executor
-  hand-off, and MCP exposure of every RPC.
+- **Underpass Choreographer** — this repo. Event-driven coordination
+  plane for councils of specialist agents: structured deliberations,
+  declarative YAML ceremonies, output contracts, optional LLM judge,
+  executor hand-off — over gRPC and MCP.
 - **Underpass Runtime** — execution + governed-tools plane. Lives in
   the sibling repo `underpass-runtime`; the choreographer talks to
   it through `RuntimeExecutor` (Epic 1).
@@ -39,6 +40,9 @@ does not require KMP, PIR, or any downstream product to run:
 | [`operations/mcp/codex.md`](./operations/mcp/codex.md) | Codex CLI specifics: `codex mcp add`, dev-from-checkout, mTLS, fixture. |
 | [`operations/mcp/claude-desktop.md`](./operations/mcp/claude-desktop.md) | `claude_desktop_config.json` snippets, per-OS paths, troubleshooting. |
 | [`operations/support-matrix.md`](./operations/support-matrix.md) | Supported Rust toolchain and release-support rules. |
+| [`operations/ceremony-authoring-runbook.md`](./operations/ceremony-authoring-runbook.md) | Authoring ceremonies: schema, rounds, sizing, output contracts, verification. |
+| [`operations/observability-runbook.md`](./operations/observability-runbook.md) | Wiring traces, metrics and logs in a deployment. |
+| [`operations/consumer-smoke.md`](./operations/consumer-smoke.md) | Standalone NATS consumer smoke check (incl. positive-path chain). |
 
 ## Discipline — how this project decides what to ship
 
@@ -55,8 +59,7 @@ does not require KMP, PIR, or any downstream product to run:
 |---|---|
 | [`backlog.md`](./backlog.md) | Epic-by-epic readiness backlog + session log + gating rules. PIR framing was dropped 2026-05-12 — this is a generic stack-readiness backlog. |
 | [`stack-gap-analysis.md`](./stack-gap-analysis.md) | Current honest snapshot of what is wired, what remains product-owned, and what still needs downstream proof. |
-| [`product-usability-publication-plan.md`](./product-usability-publication-plan.md) | Spanish plan for making the Choreographer usable and publishable as a product surface. |
-| [`product-publication-checklist.md`](./product-publication-checklist.md) | Living checklist for tracking the usability and publication plan. |
+| [`_archive/`](./_archive/) | Executed one-shot plans and legacy designs (usability plan, publication checklist, PIR case study). Historical only. |
 
 ## Experiments — append-only lab notebook
 
@@ -75,7 +78,7 @@ does not require KMP, PIR, or any downstream product to run:
 
 | Doc | Purpose |
 |---|---|
-| [`pir-choreographer-integration-design.md`](./pir-choreographer-integration-design.md) | Legacy PIR case-study design. PIR is owned by a separate project; this file is retained only as a possible use-case study and is not load-bearing for this repo's backlog. |
+| [`_archive/pir-choreographer-integration-design.md`](./_archive/pir-choreographer-integration-design.md) | Legacy PIR case-study design (archived 2026-07-05). PIR is owned by a separate project; retained only as a use-case study. |
 
 ## Where API examples live
 
