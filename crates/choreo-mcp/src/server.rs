@@ -10,11 +10,13 @@ use std::time::Instant;
 
 use serde_json::Value;
 
-use crate::backend::{
-    ChoreoMcpGrpcTlsConfig, ChoreoMcpToolBackend, ChoreoMcpToolFuture, GRPC_ENDPOINT_ENV,
-    MCP_BACKEND_ENV,
-};
+#[cfg(feature = "grpc")]
+use crate::backend::{ChoreoMcpGrpcTlsConfig, GRPC_ENDPOINT_ENV};
+use crate::backend::{ChoreoMcpToolBackend, ChoreoMcpToolFuture, MCP_BACKEND_ENV};
+#[cfg(feature = "embedded")]
+use crate::embedded::EmbeddedChoreoMcpBackend;
 use crate::fixture::FixtureChoreoMcpBackend;
+#[cfg(feature = "grpc")]
 use crate::grpc::GrpcChoreoMcpBackend;
 use crate::observability::{record_tool_error, record_tool_success, ToolErrorKind};
 use crate::protocol::{
@@ -41,15 +43,24 @@ impl ChoreoMcpServer {
     }
 
     /// gRPC-backed server with TLS disabled.
+    #[cfg(feature = "grpc")]
     #[must_use]
     pub fn grpc(endpoint: impl Into<String>) -> Self {
         Self::grpc_with_tls(endpoint, ChoreoMcpGrpcTlsConfig::disabled())
     }
 
     /// gRPC-backed server with a caller-supplied TLS posture.
+    #[cfg(feature = "grpc")]
     #[must_use]
     pub fn grpc_with_tls(endpoint: impl Into<String>, tls: ChoreoMcpGrpcTlsConfig) -> Self {
         Self::with_backend(GrpcChoreoMcpBackend::new(endpoint, tls))
+    }
+
+    /// In-process ceremony engine with no network service dependency.
+    #[cfg(feature = "embedded")]
+    #[must_use]
+    pub fn embedded() -> Self {
+        Self::with_backend(EmbeddedChoreoMcpBackend::default())
     }
 
     /// Wrap an arbitrary backend.
@@ -61,19 +72,22 @@ impl ChoreoMcpServer {
 
     /// Read backend selection from environment.
     ///
-    /// Defaults to `grpc`; `CHOREO_MCP_BACKEND=fixture` opts in to
-    /// the fixture impl. When `grpc` is selected, the endpoint env
-    /// is mandatory — no silent fallback to fixtures.
+    /// Defaults to `grpc` when compiled, then `embedded`, then
+    /// `fixture`. When `grpc` is selected, the endpoint env is
+    /// mandatory — no silent fallback to another backend.
     pub fn try_from_env() -> Result<Self, String> {
         let backend = std::env::var(MCP_BACKEND_ENV)
             .ok()
             .map(|value| value.trim().to_ascii_lowercase())
             .filter(|value| !value.is_empty())
-            .unwrap_or_else(|| "grpc".to_string());
+            .unwrap_or_else(|| default_backend_name().to_owned());
+        #[cfg(feature = "grpc")]
         let endpoint = std::env::var(GRPC_ENDPOINT_ENV).ok();
+        #[cfg(feature = "grpc")]
         let tls = ChoreoMcpGrpcTlsConfig::from_env_for_endpoint(endpoint.as_deref());
 
         match backend.as_str() {
+            #[cfg(feature = "grpc")]
             "grpc" | "live" => {
                 let Some(endpoint) = endpoint.filter(|endpoint| !endpoint.trim().is_empty()) else {
                     return Err(format!(
@@ -82,9 +96,12 @@ impl ChoreoMcpServer {
                 };
                 Ok(Self::grpc_with_tls(endpoint, tls))
             }
+            #[cfg(feature = "embedded")]
+            "embedded" | "in-process" => Ok(Self::embedded()),
             "fixture" | "fixtures" => Ok(Self::fixture()),
             other => Err(format!(
-                "unsupported {MCP_BACKEND_ENV} value `{other}`; use `grpc` or `fixture`"
+                "unsupported {MCP_BACKEND_ENV} value `{other}`; compiled backends: {}",
+                compiled_backend_names()
             )),
         }
     }
@@ -128,7 +145,12 @@ impl ChoreoMcpServer {
                 )
             }),
             Some("notifications/initialized") => None,
-            Some("tools/list") => id.map(|id| jsonrpc_result(id, tools_list_result())),
+            Some("tools/list") => id.map(|id| {
+                jsonrpc_result(
+                    id,
+                    tools_list_result(|name| self.backend.supports_tool(name)),
+                )
+            }),
             Some("tools/call") => match id {
                 Some(id) => Some(self.handle_tool_call(id, request.get("params")).await),
                 None => None,
@@ -199,9 +221,34 @@ where
         self.as_ref().grpc_tls_mode_name()
     }
 
+    fn supports_tool(&self, name: &str) -> bool {
+        self.as_ref().supports_tool(name)
+    }
+
     fn call_tool<'a>(&'a self, name: &'a str, arguments: &'a Value) -> ChoreoMcpToolFuture<'a> {
         self.as_ref().call_tool(name, arguments)
     }
+}
+
+fn default_backend_name() -> &'static str {
+    if cfg!(feature = "grpc") {
+        "grpc"
+    } else if cfg!(feature = "embedded") {
+        "embedded"
+    } else {
+        "fixture"
+    }
+}
+
+fn compiled_backend_names() -> String {
+    let mut names = vec!["fixture"];
+    if cfg!(feature = "embedded") {
+        names.push("embedded");
+    }
+    if cfg!(feature = "grpc") {
+        names.push("grpc");
+    }
+    names.join(", ")
 }
 
 #[cfg(test)]

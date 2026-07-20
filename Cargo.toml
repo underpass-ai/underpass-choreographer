@@ -121,6 +121,7 @@ jsonschema = { version = "0.17", default-features = false }
 choreo-core = { path = "crates/choreo-core", version = "0.1.0" }
 choreo-app = { path = "crates/choreo-app", version = "0.1.0" }
 choreo-adapters = { path = "crates/choreo-adapters", version = "0.1.0", default-features = false }
+choreo-embedded = { path = "crates/choreo-embedded", version = "0.1.0" }
 choreo-proto = { path = "crates/choreo-proto", version = "0.1.0" }
 choreo-mcp-proto = { path = "crates/choreo-mcp-proto", version = "0.1.0" }
 choreo-tests-integration = { path = "crates/choreo-tests-integration", version = "0.1.0" }

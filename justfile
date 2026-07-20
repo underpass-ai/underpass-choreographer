@@ -38,6 +38,10 @@ fmt:
 embedded-boundary:
     bash scripts/ci/embedded-dependency-boundary.sh
 
+# Build and exercise the repo-local Codex plugin through its MCP launcher.
+embedded-plugin-smoke:
+    bash scripts/ci/choreographer-plugin-smoke.sh
+
 # Clippy on the full provider matrix, warnings-as-errors. Mirrors CI.
 clippy:
     cargo clippy --workspace --all-targets --locked {{provider_features}} -- -D warnings
@@ -51,7 +55,7 @@ bench-compile:
     bash scripts/ci/bench-compile.sh
 
 # Walk the entire fast-gate cascade locally. Use before opening a PR.
-check: contract fmt-check embedded-boundary clippy test bench-compile
+check: contract fmt-check embedded-boundary embedded-plugin-smoke clippy test bench-compile
 
 # -----------------------------------------------------------------------------
 # container-backed checks — need Docker or Podman running

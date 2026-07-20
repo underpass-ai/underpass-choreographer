@@ -601,6 +601,10 @@ name = "choreo-mcp"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "choreo-adapters",
+ "choreo-app",
+ "choreo-core",
+ "choreo-embedded",
  "choreo-mcp-proto",
  "futures",
  "opentelemetry",
@@ -613,6 +617,7 @@ dependencies = [
  "tonic",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]

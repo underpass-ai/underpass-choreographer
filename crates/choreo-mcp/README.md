@@ -1,7 +1,8 @@
 # choreo-mcp
 
 Hand-rolled stdio MCP (Model Context Protocol) adapter that exposes
-the Underpass Choreographer gRPC API to coding agents.
+Underpass Choreographer capabilities to coding agents. It can connect
+to the deployable gRPC service or run the ceremony engine in process.
 
 End-user installation, configuration snippets for Codex CLI / Claude
 Desktop, and the env-var reference live in
@@ -25,6 +26,10 @@ crates.io. The dev fallback against this repo's source tree is
 ```bash
 # fixture mode — no choreographer needed
 CHOREO_MCP_BACKEND=fixture cargo run -p choreo-mcp --locked
+
+# embedded ceremony mode — real engine, no external service
+CHOREO_MCP_BACKEND=embedded \
+  cargo run -p choreo-mcp --no-default-features --features embedded --locked
 
 # live mode against a local choreographer
 CHOREO_MCP_GRPC_ENDPOINT=http://127.0.0.1:50055 \
@@ -99,10 +104,10 @@ in `json_to_proto.rs`, add the response mapper in `proto_to_json.rs`.
    contract because the team owns every byte.
 
 2. **Backend trait as the single seam.** `ChoreoMcpToolBackend` has
-   exactly one impl in production (`GrpcChoreoMcpBackend`) and one
-   for tests (`FixtureChoreoMcpBackend`). Selection is env-driven,
-   fail-fast — there is no silent fallback to fixtures when the
-   gRPC endpoint is misconfigured.
+   live gRPC, embedded ceremony, and deterministic fixture adapters.
+   Each backend filters `tools/list` to operations it can honor.
+   Selection is env-driven and fail-fast — there is no silent fallback
+   when the requested backend is misconfigured or not compiled.
 
 3. **JSON-RPC stays sync.** MCP stdio is request/response; the
    adapter does not implement server progress notifications.

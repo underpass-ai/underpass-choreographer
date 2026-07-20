@@ -26,21 +26,41 @@ name = "choreo-mcp"
 path = "src/main.rs"
 
 [dependencies]
-choreo-mcp-proto = { workspace = true }
+choreo-adapters = { workspace = true, optional = true }
+choreo-app = { workspace = true, optional = true }
+choreo-core = { workspace = true, optional = true }
+choreo-embedded = { workspace = true, optional = true }
+choreo-mcp-proto = { workspace = true, optional = true }
 async-trait = { workspace = true }
-futures = { workspace = true }
-prost-types = { workspace = true }
+futures = { workspace = true, optional = true }
+prost-types = { workspace = true, optional = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
-time = { workspace = true }
+time = { workspace = true, optional = true }
 tokio = { workspace = true }
-tonic = { workspace = true }
+tonic = { workspace = true, optional = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 opentelemetry = { workspace = true }
+uuid = { workspace = true, optional = true }
 testcontainers = { version = "0.23", optional = true }
 
 [features]
+default = ["grpc"]
+embedded = [
+    "dep:choreo-adapters",
+    "dep:choreo-app",
+    "dep:choreo-core",
+    "dep:choreo-embedded",
+    "dep:uuid",
+]
+grpc = [
+    "dep:choreo-mcp-proto",
+    "dep:futures",
+    "dep:prost-types",
+    "dep:time",
+    "dep:tonic",
+]
 container-tests = ["dep:testcontainers"]
 
 [dev-dependencies]

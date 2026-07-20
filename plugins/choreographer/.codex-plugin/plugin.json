@@ -1,0 +1,30 @@
+{
+  "name": "choreographer",
+  "version": "0.1.0",
+  "description": "Run declarative Choreographer ceremonies locally from Codex.",
+  "author": {
+    "name": "Underpass AI"
+  },
+  "repository": "https://github.com/underpass-ai/underpass-choreographer",
+  "license": "Apache-2.0",
+  "keywords": [
+    "ceremonies",
+    "coordination",
+    "mcp"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Choreographer",
+    "shortDescription": "Run local declarative ceremonies",
+    "longDescription": "Embed the Choreographer ceremony engine in Codex through a local MCP stdio process, without requiring a deployed service.",
+    "developerName": "Underpass AI",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive"
+    ],
+    "defaultPrompt": [
+      "Run a local ceremony from this YAML definition."
+    ]
+  }
+}

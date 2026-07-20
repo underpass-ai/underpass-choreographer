@@ -75,6 +75,12 @@ jobs:
         run: bash scripts/ci/embedded-dependency-boundary.sh
       - name: Lint embedded feature boundary
         run: cargo clippy -p choreo-embedded --all-targets --locked -- -D warnings
+      - name: Lint embedded MCP backend
+        run: cargo clippy -p choreo-mcp --all-targets --no-default-features --features embedded --locked -- -D warnings
+      - name: Test embedded MCP stdio
+        run: cargo test -p choreo-mcp --all-targets --no-default-features --features embedded --locked
+      - name: Smoke-test Codex plugin bundle
+        run: bash scripts/ci/choreographer-plugin-smoke.sh
 
   clippy:
     runs-on: ubuntu-24.04

@@ -1,15 +1,18 @@
 //! Stdio MCP adapter for the Underpass Choreographer.
 //!
-//! Exposes every RPC in `underpass.choreo.v1` as an MCP tool over
-//! JSON-RPC 2.0 on stdin/stdout. Designed so coding agents (Codex,
-//! Claude Desktop) can talk to a running choreographer without
-//! re-implementing gRPC.
+//! Exposes Choreographer capabilities as MCP tools over JSON-RPC 2.0
+//! on stdin/stdout. The default backend maps every
+//! `underpass.choreo.v1` RPC to a running service; the optional
+//! `embedded` backend executes the ceremony engine in process.
 //!
 //! See `crates/choreo-mcp/README.md` for end-user installation, and
 //! `docs/operations/mcp-stdio.md` for the canonical UX.
 
 pub mod backend;
+#[cfg(feature = "embedded")]
+pub mod embedded;
 pub mod fixture;
+#[cfg(feature = "grpc")]
 pub mod grpc;
 pub mod observability;
 pub mod protocol;
@@ -20,6 +23,9 @@ pub use backend::{
     GRPC_TLS_CA_PATH_ENV, GRPC_TLS_CERT_PATH_ENV, GRPC_TLS_DOMAIN_NAME_ENV, GRPC_TLS_KEY_PATH_ENV,
     GRPC_TLS_MODE_ENV, MCP_BACKEND_ENV,
 };
+#[cfg(feature = "embedded")]
+pub use embedded::EmbeddedChoreoMcpBackend;
 pub use fixture::FixtureChoreoMcpBackend;
+#[cfg(feature = "grpc")]
 pub use grpc::GrpcChoreoMcpBackend;
 pub use server::ChoreoMcpServer;
