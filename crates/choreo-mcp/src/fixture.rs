@@ -25,6 +25,10 @@ impl ChoreoMcpToolBackend for FixtureChoreoMcpBackend {
         "fixture"
     }
 
+    fn supports_tool(&self, name: &str) -> bool {
+        crate::protocol::is_grpc_tool(name)
+    }
+
     fn call_tool<'a>(&'a self, name: &'a str, _arguments: &'a Value) -> ChoreoMcpToolFuture<'a> {
         Box::pin(async move {
             let structured = match name {
@@ -286,7 +290,7 @@ mod tests {
     #[tokio::test]
     async fn every_tool_has_a_fixture() {
         let backend = FixtureChoreoMcpBackend;
-        let catalog = crate::protocol::tools_list_result(|_| true);
+        let catalog = crate::protocol::tools_list_result(|name| backend.supports_tool(name));
         for tool in catalog["tools"]
             .as_array()
             .unwrap()

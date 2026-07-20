@@ -56,6 +56,10 @@ impl ChoreoMcpToolBackend for GrpcChoreoMcpBackend {
         self.tls.mode_name()
     }
 
+    fn supports_tool(&self, name: &str) -> bool {
+        crate::protocol::is_grpc_tool(name)
+    }
+
     fn call_tool<'a>(&'a self, name: &'a str, arguments: &'a Value) -> ChoreoMcpToolFuture<'a> {
         Box::pin(async move {
             debug!(

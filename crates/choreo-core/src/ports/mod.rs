@@ -34,6 +34,7 @@ mod evidence_support_judge;
 mod executor;
 mod messaging;
 mod metrics_recorder;
+mod noop_ceremony_context_store;
 mod scoring;
 mod statistics;
 mod validator;
@@ -58,6 +59,7 @@ pub use evidence_support_judge::{EvidenceExcerpt, EvidenceSupportJudgePort, Supp
 pub use executor::{ExecutionOutcome, ExecutorPort};
 pub use messaging::{DomainEvent, MessagingPort, SubscriptionHandler};
 pub use metrics_recorder::{MetricsRecorderPort, NoopMetricsRecorder};
+pub use noop_ceremony_context_store::NoopCeremonyContextStore;
 pub use scoring::ScoringPort;
 pub use statistics::StatisticsPort;
 pub use validator::ValidatorPort;

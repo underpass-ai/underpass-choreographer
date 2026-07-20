@@ -378,8 +378,10 @@ Backend selection is driven by `CHOREO_MCP_BACKEND`:
 - **`grpc`** (default) — talks to a real choreographer. The endpoint
   env var is mandatory; the binary exits with code 2 if it is missing.
 - **`embedded`** — executes the real ceremony engine in process. The isolated
-  build exposes `choreo_run_ceremony` and requires no Choreographer service,
-  gRPC, protobuf, NATS, or database.
+  build exposes one-shot execution plus persistent incremental controls for
+  starting, inspecting, stepping, explicitly approving a human guard, and
+  applying a transition. It requires no Choreographer service, gRPC, protobuf,
+  NATS, or database.
 - **`fixture`** — returns canned responses for every tool. Useful for
   client wiring, demos, and tool-choice validation **without** a
   running choreographer.
