@@ -12,32 +12,41 @@ bash scripts/plugin/build-local-choreographer-plugin.sh
 
 responses="$("${PLUGIN_DIR}/scripts/run-embedded-mcp.sh" <"${FIXTURE}")"
 
+response_contains() {
+  local needle="$1"
+  if command -v rg >/dev/null 2>&1; then
+    rg -Fq -- "${needle}"
+  else
+    grep -Fq -- "${needle}"
+  fi
+}
+
 if [[ "$(printf '%s\n' "${responses}" | wc -l)" -ne 3 ]]; then
   echo "choreographer plugin smoke expected three MCP responses" >&2
   exit 1
 fi
 
-if ! rg -q '"backend":"embedded"' <<<"${responses}"; then
+if ! response_contains '"backend":"embedded"' <<<"${responses}"; then
   echo "choreographer plugin smoke did not initialize the embedded backend" >&2
   exit 1
 fi
 
-if ! rg -q '"name":"choreo_run_ceremony"' <<<"${responses}"; then
+if ! response_contains '"name":"choreo_run_ceremony"' <<<"${responses}"; then
   echo "choreographer plugin smoke did not advertise the ceremony tool" >&2
   exit 1
 fi
 
-if ! rg -q '"name":"choreo_approve_ceremony_guard"' <<<"${responses}"; then
+if ! response_contains '"name":"choreo_approve_ceremony_guard"' <<<"${responses}"; then
   echo "choreographer plugin smoke did not advertise incremental authorization" >&2
   exit 1
 fi
 
-if ! rg -q '"name":"choreo_request_ceremony_intervention"' <<<"${responses}"; then
+if ! response_contains '"name":"choreo_request_ceremony_intervention"' <<<"${responses}"; then
   echo "choreographer plugin smoke did not advertise dynamic interventions" >&2
   exit 1
 fi
 
-if ! rg -q '"completed":true' <<<"${responses}"; then
+if ! response_contains '"completed":true' <<<"${responses}"; then
   echo "choreographer plugin smoke did not complete the ceremony" >&2
   exit 1
 fi
