@@ -172,6 +172,40 @@ roles:
     }
 
     #[test]
+    fn preserves_yaml_step_declaration_order() {
+        let yaml = r#"
+version: "1.0"
+name: "ordered_steps"
+states:
+  - id: WORKING
+    initial: true
+  - id: COMPLETED
+    terminal: true
+steps:
+  - id: write_plan
+    state: WORKING
+    handler: manual_review
+  - id: challenge_plan
+    state: WORKING
+    handler: manual_review
+  - id: archive_plan
+    state: WORKING
+    handler: manual_review
+"#;
+
+        let definition = CeremonyDefinitionYaml::parse_str(yaml).unwrap();
+        let step_ids = definition
+            .steps_for_state(&choreo_core::value_objects::StateId::new("WORKING").unwrap())
+            .map(|step| step.id().as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            step_ids,
+            vec!["write_plan", "challenge_plan", "archive_plan"]
+        );
+    }
+
+    #[test]
     fn invalid_yaml_is_rejected() {
         let err = CeremonyDefinitionYaml::parse_str("version: [").unwrap_err();
 

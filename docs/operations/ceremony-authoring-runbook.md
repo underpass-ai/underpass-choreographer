@@ -31,6 +31,10 @@ steps:
 
 Facts that are easy to get wrong:
 
+- **Steps in the same state run in YAML declaration order.** The step `id`
+  is an identity and lookup key; it does not determine execution priority.
+  Put dependent steps later in the list and use `see_prior: true` when they
+  must receive earlier contributions.
 - **`handler` is the specialty.** Agents and councils persist in the registry
   **by specialty id** for the lifetime of the pod (in-memory persistence).
   Re-running a ceremony with the same handler but a different `agent_kind`

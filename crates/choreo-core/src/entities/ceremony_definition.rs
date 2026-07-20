@@ -26,6 +26,7 @@ pub struct CeremonyDefinition {
     states: BTreeMap<StateId, CeremonyState>,
     transitions: Vec<CeremonyTransition>,
     steps: BTreeMap<StepId, CeremonyStep>,
+    step_order: Vec<StepId>,
     guards: BTreeMap<GuardName, CeremonyGuard>,
     roles: BTreeMap<RoleId, CeremonyRole>,
 }
@@ -47,7 +48,7 @@ impl CeremonyDefinition {
         let outputs = collect_outputs(outputs)?;
         let states = collect_states(states)?;
         let transitions = transitions.into_iter().collect::<Vec<_>>();
-        let steps = collect_steps(steps)?;
+        let (steps, step_order) = collect_steps(steps)?;
         let guards = collect_guards(guards)?;
         let roles = collect_roles(roles)?;
 
@@ -60,6 +61,7 @@ impl CeremonyDefinition {
             states,
             transitions,
             steps,
+            step_order,
             guards,
             roles,
         };
@@ -107,6 +109,18 @@ impl CeremonyDefinition {
         &self.steps
     }
 
+    /// Iterate over every step in its declaration order.
+    ///
+    /// Step identifiers remain indexed separately for efficient lookup;
+    /// execution order is an explicit part of the ceremony definition.
+    pub fn steps_in_declaration_order(&self) -> impl Iterator<Item = &CeremonyStep> + '_ {
+        self.step_order.iter().map(|step_id| {
+            self.steps
+                .get(step_id)
+                .expect("ceremony step order must reference an indexed step")
+        })
+    }
+
     #[must_use]
     pub fn guards(&self) -> &BTreeMap<GuardName, CeremonyGuard> {
         &self.guards
@@ -143,8 +157,7 @@ impl CeremonyDefinition {
 
     pub fn steps_for_state(&self, state_id: &StateId) -> impl Iterator<Item = &CeremonyStep> + '_ {
         let state_id = state_id.clone();
-        self.steps
-            .values()
+        self.steps_in_declaration_order()
             .filter(move |step| step.state_id() == &state_id)
     }
 
@@ -425,16 +438,19 @@ fn collect_states(
 
 fn collect_steps(
     steps: impl IntoIterator<Item = CeremonyStep>,
-) -> Result<BTreeMap<StepId, CeremonyStep>, DomainError> {
+) -> Result<(BTreeMap<StepId, CeremonyStep>, Vec<StepId>), DomainError> {
     let mut map = BTreeMap::new();
+    let mut order = Vec::new();
     for step in steps {
-        if map.insert(step.id().clone(), step).is_some() {
+        let step_id = step.id().clone();
+        if map.insert(step_id.clone(), step).is_some() {
             return Err(DomainError::AlreadyExists {
                 what: "ceremony_step",
             });
         }
+        order.push(step_id);
     }
-    Ok(map)
+    Ok((map, order))
 }
 
 fn collect_guards(
@@ -577,6 +593,40 @@ mod tests {
             &RoleId::new("facilitator").unwrap(),
             &RoleAction::transition(trigger("finish"))
         ));
+    }
+
+    #[test]
+    fn preserves_step_declaration_order_within_a_state() {
+        let definition = definition(
+            vec![
+                CeremonyState::initial(state_id("drafting")),
+                CeremonyState::terminal(state_id("done")),
+            ],
+            Vec::new(),
+            vec![
+                step("write_plan", "drafting"),
+                step("challenge_plan", "drafting"),
+                step("archive_plan", "drafting"),
+            ],
+            Vec::new(),
+            Vec::new(),
+        )
+        .unwrap();
+
+        let step_ids = definition
+            .steps_for_state(&state_id("drafting"))
+            .map(CeremonyStep::id)
+            .cloned()
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            step_ids,
+            vec![
+                step_id("write_plan"),
+                step_id("challenge_plan"),
+                step_id("archive_plan"),
+            ]
+        );
     }
 
     #[test]
