@@ -3,7 +3,8 @@
 //!
 //! The MCP layer talks to exactly one [`ChoreoMcpToolBackend`]; the
 //! production impl is gRPC against a running choreographer, the
-//! fixture impl reads canned responses for client-wiring smoke tests.
+//! embedded impl runs the ceremony engine in process, and the fixture
+//! impl reads canned responses for client-wiring smoke tests.
 //! Backend selection happens at startup from
 //! [`CHOREO_MCP_BACKEND`](MCP_BACKEND_ENV) — default `grpc`,
 //! fail-fast when the endpoint env is missing.
@@ -16,7 +17,7 @@ use serde_json::Value;
 
 /// Endpoint URL the MCP gRPC backend should connect to.
 pub const GRPC_ENDPOINT_ENV: &str = "CHOREO_MCP_GRPC_ENDPOINT";
-/// Backend selector: `grpc` (default) or `fixture`.
+/// Backend selector: `grpc` (default), `embedded`, or `fixture`.
 pub const MCP_BACKEND_ENV: &str = "CHOREO_MCP_BACKEND";
 /// TLS mode override for the gRPC client: `disabled`/`server`/`mutual`.
 pub const GRPC_TLS_MODE_ENV: &str = "CHOREO_MCP_GRPC_TLS_MODE";
@@ -46,6 +47,14 @@ pub trait ChoreoMcpToolBackend: Send + Sync {
     /// `initialize` response metadata.
     fn grpc_tls_mode_name(&self) -> &'static str {
         "disabled"
+    }
+
+    /// Whether this backend can execute a catalog tool.
+    ///
+    /// Full API backends use the default. Focused backends override it
+    /// so `tools/list` never advertises operations they cannot honor.
+    fn supports_tool(&self, _name: &str) -> bool {
+        true
     }
 
     /// Dispatch one MCP tool call.
@@ -202,6 +211,7 @@ impl ChoreoMcpGrpcTlsConfig {
 /// When TLS is enabled, automatically rewrite an `http://` endpoint to
 /// `https://` so callers can flip a single env var (the TLS knob)
 /// without having to also change the URL scheme.
+#[cfg(any(feature = "grpc", test))]
 pub(crate) fn endpoint_uri_for_tls_mode(endpoint: &str, mode: ChoreoMcpGrpcTlsMode) -> String {
     if mode == ChoreoMcpGrpcTlsMode::Disabled {
         return endpoint.to_string();

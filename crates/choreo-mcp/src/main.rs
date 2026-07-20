@@ -22,9 +22,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(server) => server,
         Err(message) => {
             eprintln!("choreo-mcp: {message}");
-            eprintln!(
-                "choreo-mcp: set {GRPC_ENDPOINT_ENV} for live gRPC, or set {MCP_BACKEND_ENV}=fixture explicitly for fixture mode"
-            );
+            eprintln!("choreo-mcp: select a compiled backend with {MCP_BACKEND_ENV}");
             std::process::exit(2);
         }
     };
@@ -42,6 +40,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "choreo-mcp: TLS envs: {GRPC_TLS_CA_PATH_ENV}, {GRPC_TLS_CERT_PATH_ENV}, {GRPC_TLS_KEY_PATH_ENV}, {GRPC_TLS_DOMAIN_NAME_ENV}"
             );
         }
+    } else if server.backend_name() == "embedded" {
+        eprintln!("choreo-mcp: using embedded in-process ceremony backend");
     } else {
         eprintln!("choreo-mcp: using explicit fixture backend");
     }

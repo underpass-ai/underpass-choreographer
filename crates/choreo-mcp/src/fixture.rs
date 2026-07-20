@@ -286,7 +286,7 @@ mod tests {
     #[tokio::test]
     async fn every_tool_has_a_fixture() {
         let backend = FixtureChoreoMcpBackend;
-        let catalog = crate::protocol::tools_list_result();
+        let catalog = crate::protocol::tools_list_result(|_| true);
         for tool in catalog["tools"]
             .as_array()
             .unwrap()

@@ -4,22 +4,36 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${ROOT_DIR}"
 
-forbidden=()
-while IFS= read -r package; do
-  name="${package%% *}"
-  case "${name}" in
-    async-nats|choreo-proto|sqlx|tonic)
-      forbidden+=("${name}")
-      ;;
-  esac
-done < <(cargo tree --locked -p choreo-embedded -e normal --prefix none --format '{p}')
+assert_embedded_boundary() {
+  local label="$1"
+  shift
+  local forbidden=()
+  local package
+  local name
 
-if ((${#forbidden[@]} > 0)); then
-  echo "choreo-embedded crosses the remote-infrastructure dependency boundary:" >&2
-  for name in "${forbidden[@]}"; do
-    echo "- ${name}" >&2
-  done
-  exit 1
-fi
+  while IFS= read -r package; do
+    name="${package%% *}"
+    case "${name}" in
+      async-nats|choreo-mcp-proto|choreo-proto|prost|prost-types|sqlx|tonic)
+        forbidden+=("${name}")
+        ;;
+    esac
+  done < <(cargo tree --locked "$@" -e normal --prefix none --format '{p}')
 
-echo "choreo-embedded dependency boundary passed"
+  if ((${#forbidden[@]} > 0)); then
+    echo "${label} crosses the remote-infrastructure dependency boundary:" >&2
+    for name in "${forbidden[@]}"; do
+      echo "- ${name}" >&2
+    done
+    exit 1
+  fi
+
+  echo "${label} dependency boundary passed"
+}
+
+assert_embedded_boundary "choreo-embedded" -p choreo-embedded
+assert_embedded_boundary \
+  "choreo-mcp embedded backend" \
+  -p choreo-mcp \
+  --no-default-features \
+  --features embedded

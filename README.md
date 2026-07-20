@@ -52,6 +52,8 @@ all that is injected via configuration and proto messages.
 - [`docs/embedded-choreographer.md`](docs/embedded-choreographer.md) —
   in-process ceremony engine, host adapter injection, and the boundary
   between embedded and deployable distributions.
+- [`docs/operations/codex-plugin.md`](docs/operations/codex-plugin.md) —
+  cumulative test ladder and local Codex plugin packaging.
 - [`docs/backlog.md`](docs/backlog.md) — epic-by-epic readiness
   status + session log.
 - `justfile` at the repo root — `just` lists every recipe.
@@ -84,6 +86,13 @@ That starts the stdio MCP adapter in fixture mode. See
 [`docs/operations/mcp-stdio.md`](docs/operations/mcp-stdio.md) for
 terminal smoke commands and live gRPC configuration.
 
+To execute the real ceremony engine over MCP without a service:
+
+```sh
+CHOREO_MCP_BACKEND=embedded \
+  cargo run --locked -p choreo-mcp --no-default-features --features embedded
+```
+
 To point MCP at the local Choreographer from a second terminal:
 
 ```sh
@@ -101,7 +110,7 @@ CHOREO_MCP_GRPC_ENDPOINT=http://127.0.0.1:50055 choreo-mcp
 | `choreo-proto` | Tonic-generated gRPC code (`underpass.choreo.v1`). |
 | `choreo-mcp-proto` | Vendored `underpass.choreo.v1` proto crate used to publish `choreo-mcp` independently. |
 | `choreo` | Binary: wires adapters, runs gRPC + NATS. |
-| `choreo-mcp` | Stdio MCP adapter that exposes every gRPC RPC as an MCP tool. |
+| `choreo-mcp` | Stdio MCP adapter with live-gRPC, embedded ceremony, and deterministic fixture backends. |
 | `choreo-e2e-runner` | Operator + E2E driver binaries (incl. `choreo-run-ceremony`) that exercise the service over its public gRPC surface. |
 | `choreo-tests-integration` | Integration tests backed by testcontainers-managed services. Not shipped. |
 | `choreo-consumer-smoke` | Standalone NATS consumer smoke check. Not shipped. |

@@ -14,6 +14,9 @@ provider_features=(
 bash scripts/ci/contract-gate.sh
 cargo fmt --all -- --check
 bash scripts/ci/embedded-dependency-boundary.sh
+cargo clippy -p choreo-mcp --all-targets --no-default-features --features embedded --locked -- -D warnings
+cargo test -p choreo-mcp --all-targets --no-default-features --features embedded --locked
+bash scripts/ci/choreographer-plugin-smoke.sh
 cargo clippy --workspace --all-targets --locked "${provider_features[@]}" -- -D warnings
 cargo test --workspace --locked "${provider_features[@]}"
 bash scripts/ci/bench-compile.sh

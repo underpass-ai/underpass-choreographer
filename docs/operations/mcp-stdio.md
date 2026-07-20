@@ -377,12 +377,18 @@ Backend selection is driven by `CHOREO_MCP_BACKEND`:
 
 - **`grpc`** (default) — talks to a real choreographer. The endpoint
   env var is mandatory; the binary exits with code 2 if it is missing.
+- **`embedded`** — executes the real ceremony engine in process. The isolated
+  build exposes `choreo_run_ceremony` and requires no Choreographer service,
+  gRPC, protobuf, NATS, or database.
 - **`fixture`** — returns canned responses for every tool. Useful for
   client wiring, demos, and tool-choice validation **without** a
   running choreographer.
 
 ```bash
 CHOREO_MCP_BACKEND=fixture cargo run -p choreo-mcp --locked
+
+CHOREO_MCP_BACKEND=embedded \
+  cargo run -p choreo-mcp --no-default-features --features embedded --locked
 ```
 
 ## Installation
@@ -454,7 +460,7 @@ CHOREO_MCP_GRPC_TLS_DOMAIN_NAME=choreographer-grpc \
 
 | Var                              | Purpose                                                                  |
 |----------------------------------|--------------------------------------------------------------------------|
-| `CHOREO_MCP_BACKEND`             | `grpc` (default) or `fixture`.                                           |
+| `CHOREO_MCP_BACKEND`             | `grpc` (default), `embedded`, or `fixture`; the selected backend must be compiled. |
 | `CHOREO_MCP_GRPC_ENDPOINT`       | URL the MCP connects to. Required when `BACKEND=grpc`.                   |
 | `CHOREO_MCP_GRPC_TLS_MODE`       | `disabled` / `server` / `mutual`. Auto-derived when omitted.             |
 | `CHOREO_MCP_GRPC_TLS_CA_PATH`    | PEM CA bundle. Implies `server` mode when set.                           |

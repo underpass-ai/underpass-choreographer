@@ -4,11 +4,9 @@
 //! adapter owns every byte that crosses stdio so it never drifts from
 //! the gRPC contract it wraps.
 //!
-//! Tool definitions are 1:1 with the `underpass.choreo.v1` gRPC
-//! service: 17 tools, one per RPC. The choreographer's API is
-//! respected verbatim — these schemas describe the same fields the
-//! caller would have passed over gRPC, only flattened into JSON shape
-//! suitable for an MCP `tools/call.arguments` object.
+//! The full catalog is 1:1 with the `underpass.choreo.v1` gRPC
+//! service: 17 tools, one per RPC. Focused backends can expose a
+//! supported subset without duplicating any tool schema.
 
 use serde_json::{json, Value};
 
@@ -39,9 +37,18 @@ pub(crate) fn initialize_result(backend: &str, grpc_tls: &str) -> Value {
     })
 }
 
-/// `tools/list` result. Every choreographer RPC has exactly one tool.
-pub(crate) fn tools_list_result() -> Value {
-    json!({ "tools": tool_catalog() })
+/// `tools/list` result filtered to capabilities honored by the active
+/// backend.
+pub(crate) fn tools_list_result(supports: impl Fn(&str) -> bool) -> Value {
+    let tools = tool_catalog()
+        .into_iter()
+        .filter(|tool| {
+            tool.get("name")
+                .and_then(Value::as_str)
+                .is_some_and(&supports)
+        })
+        .collect::<Vec<_>>();
+    json!({ "tools": tools })
 }
 
 #[allow(clippy::too_many_lines)] // 17 tool definitions; splitting just for the line count loses readability
@@ -676,7 +683,7 @@ mod tests {
     }
 
     fn catalog_tool_names() -> Vec<String> {
-        let tools = tools_list_result();
+        let tools = tools_list_result(|_| true);
         tools["tools"]
             .as_array()
             .unwrap()
