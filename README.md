@@ -49,6 +49,9 @@ all that is injected via configuration and proto messages.
 - [`docs/operations/mcp-stdio.md`](docs/operations/mcp-stdio.md) —
   installable stdio MCP adapter exposing the gRPC API to coding
   agents (Codex CLI, Claude Desktop).
+- [`docs/embedded-choreographer.md`](docs/embedded-choreographer.md) —
+  in-process ceremony engine, host adapter injection, and the boundary
+  between embedded and deployable distributions.
 - [`docs/backlog.md`](docs/backlog.md) — epic-by-epic readiness
   status + session log.
 - `justfile` at the repo root — `just` lists every recipe.
@@ -94,6 +97,7 @@ CHOREO_MCP_GRPC_ENDPOINT=http://127.0.0.1:50055 choreo-mcp
 | `choreo-core` | Domain types, ports, events. No IO. |
 | `choreo-app` | Use cases / application services. |
 | `choreo-adapters` | NATS, gRPC clients, config, external integrations. |
+| `choreo-embedded` | In-process ceremony facade with local defaults and injectable port adapters. |
 | `choreo-proto` | Tonic-generated gRPC code (`underpass.choreo.v1`). |
 | `choreo-mcp-proto` | Vendored `underpass.choreo.v1` proto crate used to publish `choreo-mcp` independently. |
 | `choreo` | Binary: wires adapters, runs gRPC + NATS. |

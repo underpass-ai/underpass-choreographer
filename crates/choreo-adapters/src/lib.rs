@@ -28,6 +28,7 @@
 //! |--------------------|---------------------------------------------|
 //! | `grpc` (default)   | Tonic gRPC server adapter (`grpc::*`)       |
 //! | `nats`             | NATS JetStream messaging adapter            |
+//! | `runtime-grpc`     | Outbound Underpass Runtime gRPC executor    |
 //! | `postgres`         | Postgres deliberation repository (sqlx)     |
 //! | `otel`             | gRPC W3C tracecontext → OpenTelemetry bridge |
 //! | `agent-vllm`       | vLLM / OpenAI-compatible local inference    |
@@ -46,6 +47,7 @@ pub mod memory;
 pub mod mermaid;
 pub mod metrics;
 pub mod noop;
+#[cfg(feature = "runtime-grpc")]
 pub mod runtime;
 pub mod scoring;
 pub mod validators;

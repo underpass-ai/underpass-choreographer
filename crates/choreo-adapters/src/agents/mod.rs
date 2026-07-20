@@ -75,6 +75,13 @@ use choreo_core::ports::{EvidenceSupportJudgePort, MetricsRecorderPort, Validato
 /// not compiled in). Returns `Err` — failing fast — when the judge is
 /// explicitly enabled but its endpoint/model/threshold are missing or
 /// invalid.
+// The Arc is consumed by the provider-backed branch. In a build without a
+// compatible provider that branch is compiled out, so Clippy cannot observe
+// the ownership transfer.
+#[cfg_attr(
+    not(any(feature = "agent-openai", feature = "agent-vllm")),
+    allow(clippy::needless_pass_by_value)
+)]
 pub fn judge_from_env(
     metrics: Arc<dyn MetricsRecorderPort>,
 ) -> Result<Option<Arc<dyn ValidatorPort>>, DomainError> {
@@ -125,6 +132,12 @@ fn env_flag_enabled(name: &str) -> bool {
 /// Returns `Ok(None)` when disabled, or when the binary was built
 /// without a Chat-Completions provider feature. Returns `Err` —
 /// failing fast — when explicitly enabled but misconfigured.
+// See `judge_from_env`: the no-provider feature set intentionally preserves
+// the same ownership-shaped public API as provider-enabled builds.
+#[cfg_attr(
+    not(any(feature = "agent-openai", feature = "agent-vllm")),
+    allow(clippy::needless_pass_by_value)
+)]
 pub fn support_judge_from_env(
     metrics: Arc<dyn MetricsRecorderPort>,
 ) -> Result<Option<Arc<dyn EvidenceSupportJudgePort>>, DomainError> {

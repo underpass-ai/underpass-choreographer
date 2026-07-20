@@ -16,6 +16,11 @@ operator command.
 
 ### Added
 
+- `choreo-embedded`, an in-process distribution of the ceremony engine with
+  local defaults, injectable domain ports, an async host-callback step adapter,
+  incremental human-active operations, and no required gRPC, NATS or Postgres
+  dependency. It uses the same domain and application use cases as the
+  deployable binary and carries the same workspace release version.
 - Observability — Prometheus metrics: the binary exposes the operational
   metric families at `GET /metrics` (HTTP port `8080`) through a
   `MetricsRecorderPort` (core) and a `PrometheusMetricsRecorder` adapter

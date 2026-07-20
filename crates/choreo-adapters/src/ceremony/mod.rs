@@ -8,4 +8,5 @@ pub use deliberating_ceremony_step_handler::DeliberatingCeremonyStepHandler;
 pub use deliberation_step_config::DeliberationStepConfig;
 
 pub(crate) use ceremony_step_config::CeremonyStepConfig;
+#[cfg(feature = "grpc")]
 pub(crate) use deliberating_ceremony_step_handler::WINNER_CONTENT_KEY;
