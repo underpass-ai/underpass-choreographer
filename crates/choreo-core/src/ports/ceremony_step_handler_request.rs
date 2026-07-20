@@ -1,5 +1,6 @@
 //! Request passed to ceremony step handler adapters.
 
+use crate::entities::CeremonyIntervention;
 use crate::value_objects::{
     CeremonyContext, CeremonyId, CeremonyName, CeremonyTranscript, CeremonyVersion, RoleId,
     StateId, StepAttempt, StepHandlerConfig, StepHandlerKind, StepId,
@@ -17,6 +18,7 @@ pub struct CeremonyStepHandlerRequest {
     context: CeremonyContext,
     attempt: StepAttempt,
     transcript: CeremonyTranscript,
+    interventions: Vec<CeremonyIntervention>,
     role_id: Option<RoleId>,
 }
 
@@ -44,6 +46,7 @@ impl CeremonyStepHandlerRequest {
             context,
             attempt,
             transcript: CeremonyTranscript::empty(),
+            interventions: Vec::new(),
             role_id: None,
         }
     }
@@ -54,6 +57,15 @@ impl CeremonyStepHandlerRequest {
     #[must_use]
     pub fn with_transcript(mut self, transcript: CeremonyTranscript) -> Self {
         self.transcript = transcript;
+        self
+    }
+
+    /// Attach the participant-created agenda accumulated by the running
+    /// ceremony. Declaration order is retained so handlers see the same
+    /// conversational sequence as the participants.
+    #[must_use]
+    pub fn with_interventions(mut self, interventions: Vec<CeremonyIntervention>) -> Self {
+        self.interventions = interventions;
         self
     }
 
@@ -115,6 +127,12 @@ impl CeremonyStepHandlerRequest {
     #[must_use]
     pub fn transcript(&self) -> &CeremonyTranscript {
         &self.transcript
+    }
+
+    /// Dynamic participant requests and responses known to the ceremony.
+    #[must_use]
+    pub fn interventions(&self) -> &[CeremonyIntervention] {
+        &self.interventions
     }
 
     /// The ceremony role this step is executed as, if set.

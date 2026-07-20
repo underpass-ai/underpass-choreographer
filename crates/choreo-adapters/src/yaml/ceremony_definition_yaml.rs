@@ -242,6 +242,20 @@ steps:
     }
 
     #[test]
+    fn dynamic_intervention_capabilities_are_valid_role_actions() {
+        let yaml = MULTI_STEP.replace(
+            "      - deliberation_done",
+            "      - deliberation_done\n      - request_intervention\n      - respond_to_intervention",
+        );
+
+        let definition = CeremonyDefinitionYaml::parse_str(&yaml).unwrap();
+        let role_id = RoleId::new("SYSTEM").unwrap();
+
+        assert!(definition.role_allows(&role_id, &RoleAction::request_intervention()));
+        assert!(definition.role_allows(&role_id, &RoleAction::respond_to_intervention()));
+    }
+
+    #[test]
     fn parse_path_reports_missing_file_as_domain_error() {
         let err =
             CeremonyDefinitionYaml::parse_path("/tmp/underpass-missing-ceremony.yaml").unwrap_err();

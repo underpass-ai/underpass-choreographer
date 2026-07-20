@@ -23,6 +23,10 @@ pub(crate) const RUN_CEREMONY_STEP_TOOL: &str = "choreo_run_ceremony_step";
 pub(crate) const APPROVE_CEREMONY_GUARD_TOOL: &str = "choreo_approve_ceremony_guard";
 pub(crate) const APPLY_CEREMONY_TRANSITION_TOOL: &str = "choreo_apply_ceremony_transition";
 pub(crate) const GET_CEREMONY_INSTANCE_TOOL: &str = "choreo_get_ceremony_instance";
+pub(crate) const REQUEST_CEREMONY_INTERVENTION_TOOL: &str = "choreo_request_ceremony_intervention";
+pub(crate) const RESPOND_TO_CEREMONY_INTERVENTION_TOOL: &str =
+    "choreo_respond_to_ceremony_intervention";
+pub(crate) const CLOSE_CEREMONY_INTERVENTION_TOOL: &str = "choreo_close_ceremony_intervention";
 
 const GRPC_TOOL_NAMES: [&str; 17] = [
     "choreo_deliberate",
@@ -310,6 +314,21 @@ fn embedded_incremental_tool_catalog() -> Vec<Value> {
             "Inspect a persistent ceremony instance, including step status and blocking guards.",
             ceremony_instance_schema(),
         ),
+        tool_def(
+            REQUEST_CEREMONY_INTERVENTION_TOOL,
+            "Open a participant-requested opinion, investigation, or action on the live ceremony table. This coordinates the request; it does not authorize external mutations.",
+            request_ceremony_intervention_schema(),
+        ),
+        tool_def(
+            RESPOND_TO_CEREMONY_INTERVENTION_TOOL,
+            "Record one targeted role's response to an open ceremony intervention.",
+            respond_to_ceremony_intervention_schema(),
+        ),
+        tool_def(
+            CLOSE_CEREMONY_INTERVENTION_TOOL,
+            "Close an open ceremony intervention as its requesting role.",
+            close_ceremony_intervention_schema(),
+        ),
     ]
 }
 
@@ -437,6 +456,69 @@ fn ceremony_instance_schema() -> Value {
         "properties": {
             "ceremony_id": string_schema("Started ceremony instance id.")
         }
+    })
+}
+
+fn request_ceremony_intervention_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ceremony_id", "role_id", "kind", "message"],
+        "properties": {
+            "ceremony_id": string_schema("Started ceremony instance id."),
+            "intervention_id": string_schema("Optional stable intervention id. The server mints one when omitted."),
+            "role_id": string_schema("Role requesting the intervention."),
+            "kind": {
+                "type": "string",
+                "enum": ["opinion", "investigation", "action"],
+                "description": "Intent of the participant-created agenda item."
+            },
+            "target_role_ids": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": { "type": "string", "minLength": 1 },
+                "description": "Optional responding roles. Omit to address the whole table."
+            },
+            "message": string_schema("Participant's request in their own words."),
+            "details": attributes_schema("Structured request context or evidence references.")
+        }
+    })
+}
+
+fn respond_to_ceremony_intervention_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ceremony_id", "intervention_id", "role_id", "message"],
+        "properties": {
+            "ceremony_id": string_schema("Started ceremony instance id."),
+            "intervention_id": string_schema("Open intervention id."),
+            "role_id": string_schema("Targeted role contributing this response."),
+            "message": string_schema("Role response, opinion, or result."),
+            "details": attributes_schema("Structured response context or evidence references.")
+        }
+    })
+}
+
+fn close_ceremony_intervention_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ceremony_id", "intervention_id", "role_id"],
+        "properties": {
+            "ceremony_id": string_schema("Started ceremony instance id."),
+            "intervention_id": string_schema("Open intervention id."),
+            "role_id": string_schema("Requesting role closing the intervention.")
+        }
+    })
+}
+
+fn attributes_schema(description: &str) -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": true,
+        "description": description
     })
 }
 
@@ -779,11 +861,14 @@ mod tests {
         let all_names = catalog_tool_names();
         let unique_names = all_names.iter().collect::<std::collections::BTreeSet<_>>();
 
-        assert_eq!(all_names.len(), 22);
+        assert_eq!(all_names.len(), 25);
         assert_eq!(unique_names.len(), all_names.len());
         assert!(all_names.contains(&START_CEREMONY_TOOL.to_owned()));
         assert!(all_names.contains(&APPROVE_CEREMONY_GUARD_TOOL.to_owned()));
         assert!(all_names.contains(&GET_CEREMONY_INSTANCE_TOOL.to_owned()));
+        assert!(all_names.contains(&REQUEST_CEREMONY_INTERVENTION_TOOL.to_owned()));
+        assert!(all_names.contains(&RESPOND_TO_CEREMONY_INTERVENTION_TOOL.to_owned()));
+        assert!(all_names.contains(&CLOSE_CEREMONY_INTERVENTION_TOOL.to_owned()));
     }
 
     #[test]

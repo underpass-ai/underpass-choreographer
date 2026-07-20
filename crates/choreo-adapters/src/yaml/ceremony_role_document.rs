@@ -36,14 +36,18 @@ fn to_role_action(
     let matches_transition = transition_triggers
         .iter()
         .any(|trigger| trigger.as_str() == raw);
+    let capability = RoleAction::from_capability_label(raw);
 
-    match (matches_step, matches_transition) {
-        (true, false) => Ok(RoleAction::step(StepId::new(raw)?)),
-        (false, true) => Ok(RoleAction::transition(TransitionTrigger::new(raw)?)),
-        (true, true) => Err(DomainError::InvariantViolated {
-            reason: "ceremony role action is ambiguous",
-        }),
-        (false, false) => speculative_role_action(raw),
+    match (matches_step, matches_transition, capability) {
+        (true, false, None) => Ok(RoleAction::step(StepId::new(raw)?)),
+        (false, true, None) => Ok(RoleAction::transition(TransitionTrigger::new(raw)?)),
+        (false, false, Some(capability)) => Ok(capability),
+        (true, true, _) | (true, false, Some(_)) | (false, true, Some(_)) => {
+            Err(DomainError::InvariantViolated {
+                reason: "ceremony role action is ambiguous",
+            })
+        }
+        (false, false, None) => speculative_role_action(raw),
     }
 }
 

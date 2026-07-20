@@ -44,3 +44,26 @@ Do not claim that a ceremony completed if the tool returned `isError: true` or
 If the user rejects or defers approval, leave the persistent ceremony paused
 and report its `ceremony_id`, current state, and blocking guard. Do not convert
 a refusal into a tool error or silently choose another transition.
+
+## Dynamic participant interventions
+
+When a participant asks the meeting for an opinion or asks a role to inspect
+something, keep the ceremony instance active and use
+`choreo_request_ceremony_intervention`:
+
+1. Preserve the participant's own request in `message`. Use `opinion`,
+   `investigation`, or `action` for `kind`.
+2. Omit `target_role_ids` when addressing the whole table. Supply explicit
+   role ids when the participant named a specialist.
+3. Obtain the actual opinion, evidence, or action result with the host's
+   available capabilities, then record each targeted role's contribution with
+   `choreo_respond_to_ceremony_intervention`.
+4. Leave the intervention open until the requesting participant explicitly
+   says they are satisfied or asks to close it. Only then call
+   `choreo_close_ceremony_intervention` as that requesting role.
+
+An `action` intervention is not human authorization and never bypasses a
+ceremony guard or host permission. Resolve ambiguous operational requests to
+the safe read-only meaning: inspect logs, query a database without writes, and
+peek at queue metadata without consuming messages. Ask for explicit approval
+before any consequential mutation.

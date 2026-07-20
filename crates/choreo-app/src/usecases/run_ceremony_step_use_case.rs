@@ -99,6 +99,7 @@ impl RunCeremonyStepUseCase {
             attempt,
         )
         .with_transcript(transcript)
+        .with_interventions(instance.interventions().to_vec())
         .with_role(input.role_id.clone());
         let result = self.execute_handler(request).await?;
 
@@ -198,6 +199,7 @@ mod tests {
         assert_eq!(requests[0].handler_kind().as_str(), "multiagent_round");
         assert_eq!(requests[0].role_id(), Some(&role_id()));
         assert!(requests[0].transcript().is_empty());
+        assert!(requests[0].interventions().is_empty());
         let transcript = context_store.transcript(&ceremony_id()).await.unwrap();
         assert_eq!(transcript.len(), 1);
         assert_eq!(transcript.contributions()[0].step_id(), &step_id());

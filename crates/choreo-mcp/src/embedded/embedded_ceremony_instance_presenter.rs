@@ -1,4 +1,5 @@
-use choreo_core::value_objects::{CeremonyId, GuardCondition};
+use choreo_core::entities::CeremonyInstance;
+use choreo_core::value_objects::{CeremonyId, GuardCondition, RoleId};
 use choreo_embedded::EmbeddedChoreographer;
 use serde_json::{json, Value};
 
@@ -81,6 +82,8 @@ impl EmbeddedCeremonyInstancePresenter {
                     .is_some_and(|record| !record.status().is_success())
             })
             .map(|step| step.id().as_str());
+        let interventions = intervention_values(&instance);
+        let open_intervention_ids = open_intervention_ids(&instance);
 
         Ok(json!({
             "ceremony_id": instance.id().as_str(),
@@ -92,7 +95,63 @@ impl EmbeddedCeremonyInstancePresenter {
             "waiting_for_human": waiting_for_human,
             "transitions": transitions,
             "steps": steps,
+            "interventions": interventions,
+            "open_intervention_ids": open_intervention_ids,
             "context": instance.context(),
         }))
     }
+}
+
+fn intervention_values(instance: &CeremonyInstance) -> Vec<Value> {
+    instance
+        .interventions()
+        .iter()
+        .map(|intervention| {
+            let target = intervention.target().role_ids().map_or_else(
+                || json!({ "kind": "table" }),
+                |role_ids| {
+                    json!({
+                        "kind": "roles",
+                        "role_ids": role_ids.iter().map(RoleId::as_str).collect::<Vec<_>>(),
+                    })
+                },
+            );
+            let responses = intervention
+                .responses()
+                .iter()
+                .map(|response| {
+                    json!({
+                        "role_id": response.role_id().as_str(),
+                        "message": response.content().message(),
+                        "details": response.content().details().as_map(),
+                        "responded_at": response.responded_at(),
+                    })
+                })
+                .collect::<Vec<_>>();
+            json!({
+                "intervention_id": intervention.id().as_str(),
+                "kind": intervention.kind().as_label(),
+                "status": intervention.status().as_label(),
+                "requested_by": intervention.requested_by().as_str(),
+                "target": target,
+                "request": {
+                    "message": intervention.request().message(),
+                    "details": intervention.request().details().as_map(),
+                },
+                "responses": responses,
+                "created_at": intervention.created_at(),
+                "updated_at": intervention.updated_at(),
+                "closed_at": intervention.closed_at(),
+            })
+        })
+        .collect()
+}
+
+fn open_intervention_ids(instance: &CeremonyInstance) -> Vec<&str> {
+    instance
+        .interventions()
+        .iter()
+        .filter(|intervention| intervention.status().is_open())
+        .map(|intervention| intervention.id().as_str())
+        .collect()
 }

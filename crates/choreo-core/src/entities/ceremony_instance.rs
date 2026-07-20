@@ -9,12 +9,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-use super::ceremony_definition::CeremonyDefinition;
+use super::{ceremony_definition::CeremonyDefinition, CeremonyIntervention};
 use crate::error::DomainError;
 use crate::value_objects::{
-    CeremonyContext, CeremonyId, CeremonyName, CeremonyVersion, IdempotencyKey, RoleAction, RoleId,
-    StateId, StepAttempt, StepExecutionRecord, StepId, StepLease, StepResult, StepStatus,
-    TransitionTrigger,
+    CeremonyContext, CeremonyId, CeremonyInterventionContent, CeremonyInterventionId,
+    CeremonyInterventionKind, CeremonyInterventionTarget, CeremonyName, CeremonyVersion,
+    IdempotencyKey, RoleAction, RoleId, StateId, StepAttempt, StepExecutionRecord, StepId,
+    StepLease, StepResult, StepStatus, TransitionTrigger,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -24,6 +25,8 @@ pub struct CeremonyInstance {
     definition_version: CeremonyVersion,
     current_state: StateId,
     step_records: BTreeMap<StepId, StepExecutionRecord>,
+    #[serde(default)]
+    interventions: Vec<CeremonyIntervention>,
     context: CeremonyContext,
     idempotency_keys: BTreeSet<IdempotencyKey>,
     #[serde(with = "time::serde::rfc3339")]
@@ -54,6 +57,7 @@ impl CeremonyInstance {
             definition_version: definition.version().clone(),
             current_state: definition.initial_state_id().clone(),
             step_records,
+            interventions: Vec::new(),
             context,
             idempotency_keys: BTreeSet::new(),
             created_at: now,
@@ -90,6 +94,21 @@ impl CeremonyInstance {
     #[must_use]
     pub fn step_record(&self, step_id: &StepId) -> Option<&StepExecutionRecord> {
         self.step_records.get(step_id)
+    }
+
+    #[must_use]
+    pub fn interventions(&self) -> &[CeremonyIntervention] {
+        &self.interventions
+    }
+
+    #[must_use]
+    pub fn intervention(
+        &self,
+        intervention_id: &CeremonyInterventionId,
+    ) -> Option<&CeremonyIntervention> {
+        self.interventions
+            .iter()
+            .find(|intervention| intervention.id() == intervention_id)
     }
 
     #[must_use]
@@ -244,6 +263,86 @@ impl CeremonyInstance {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub fn request_intervention_as(
+        &mut self,
+        definition: &CeremonyDefinition,
+        intervention_id: CeremonyInterventionId,
+        role_id: RoleId,
+        kind: CeremonyInterventionKind,
+        target: CeremonyInterventionTarget,
+        content: CeremonyInterventionContent,
+        now: OffsetDateTime,
+    ) -> Result<(), DomainError> {
+        self.require_active(
+            definition,
+            "terminal ceremony instances cannot accept interventions",
+        )?;
+        self.require_role(definition, &role_id, &RoleAction::request_intervention())?;
+        Self::require_intervention_target(definition, &target)?;
+        if self
+            .interventions
+            .iter()
+            .any(|intervention| intervention.id() == &intervention_id)
+        {
+            return Err(DomainError::AlreadyExists {
+                what: "ceremony_intervention",
+            });
+        }
+        let intervention =
+            CeremonyIntervention::open(intervention_id, kind, role_id, target, content, now);
+        self.interventions.push(intervention);
+        self.updated_at = now;
+        Ok(())
+    }
+
+    pub fn respond_to_intervention_as(
+        &mut self,
+        definition: &CeremonyDefinition,
+        intervention_id: &CeremonyInterventionId,
+        role_id: RoleId,
+        content: CeremonyInterventionContent,
+        now: OffsetDateTime,
+    ) -> Result<(), DomainError> {
+        self.require_active(
+            definition,
+            "terminal ceremony instances cannot receive intervention responses",
+        )?;
+        self.require_role(definition, &role_id, &RoleAction::respond_to_intervention())?;
+        self.interventions
+            .iter_mut()
+            .find(|intervention| intervention.id() == intervention_id)
+            .ok_or(DomainError::NotFound {
+                what: "ceremony_intervention",
+            })?
+            .respond(role_id, content, now)?;
+        self.updated_at = now;
+        Ok(())
+    }
+
+    pub fn close_intervention_as(
+        &mut self,
+        definition: &CeremonyDefinition,
+        intervention_id: &CeremonyInterventionId,
+        role_id: &RoleId,
+        now: OffsetDateTime,
+    ) -> Result<(), DomainError> {
+        self.require_active(
+            definition,
+            "terminal ceremony instances cannot close interventions",
+        )?;
+        self.require_role(definition, role_id, &RoleAction::request_intervention())?;
+        self.interventions
+            .iter_mut()
+            .find(|intervention| intervention.id() == intervention_id)
+            .ok_or(DomainError::NotFound {
+                what: "ceremony_intervention",
+            })?
+            .close(role_id, now)?;
+        self.updated_at = now;
+        Ok(())
+    }
+
     pub fn apply_transition_as(
         &mut self,
         definition: &CeremonyDefinition,
@@ -307,6 +406,43 @@ impl CeremonyInstance {
         }
     }
 
+    fn require_active(
+        &self,
+        definition: &CeremonyDefinition,
+        terminal_reason: &'static str,
+    ) -> Result<(), DomainError> {
+        self.require_definition(definition)?;
+        if self.is_terminal(definition) {
+            Err(DomainError::InvariantViolated {
+                reason: terminal_reason,
+            })
+        } else {
+            Ok(())
+        }
+    }
+
+    fn require_intervention_target(
+        definition: &CeremonyDefinition,
+        target: &CeremonyInterventionTarget,
+    ) -> Result<(), DomainError> {
+        let Some(role_ids) = target.role_ids() else {
+            return Ok(());
+        };
+        for role_id in role_ids {
+            if definition.role(role_id).is_none() {
+                return Err(DomainError::NotFound {
+                    what: "ceremony_intervention.target_role",
+                });
+            }
+            if !definition.role_allows(role_id, &RoleAction::respond_to_intervention()) {
+                return Err(DomainError::InvariantViolated {
+                    reason: "target role cannot respond to ceremony interventions",
+                });
+            }
+        }
+        Ok(())
+    }
+
     fn require_role(
         &self,
         definition: &CeremonyDefinition,
@@ -336,8 +472,8 @@ fn next_attempt_for_start(record: &StepExecutionRecord) -> Result<StepAttempt, D
 mod tests {
     use super::*;
     use crate::value_objects::{
-        CeremonyGuard, CeremonyState, CeremonyStep, CeremonyTransition, GuardCondition, GuardName,
-        LeaseOwnerId, RetryPolicy, StepHandlerConfig, StepHandlerKind, StepOutput,
+        Attributes, CeremonyGuard, CeremonyState, CeremonyStep, CeremonyTransition, GuardCondition,
+        GuardName, LeaseOwnerId, RetryPolicy, StepHandlerConfig, StepHandlerKind, StepOutput,
     };
     use time::macros::datetime;
 
@@ -431,7 +567,13 @@ mod tests {
         let role = role(vec![
             RoleAction::step(step_id("plan")),
             RoleAction::transition(finish.trigger().clone()),
+            RoleAction::request_intervention(),
         ]);
+        let observer = crate::value_objects::CeremonyRole::new(
+            role_id("observer"),
+            vec![RoleAction::respond_to_intervention()],
+        )
+        .unwrap();
 
         CeremonyDefinition::new(
             crate::value_objects::CeremonyName::new("planning_ceremony").unwrap(),
@@ -447,7 +589,7 @@ mod tests {
             vec![finish],
             steps,
             vec![plan_done],
-            vec![role],
+            vec![role, observer],
         )
         .unwrap()
     }
@@ -485,6 +627,72 @@ mod tests {
                 .status(),
             StepStatus::Pending
         );
+    }
+
+    #[test]
+    fn dynamic_intervention_collects_role_scoped_response_and_requester_closes_it() {
+        let definition = definition();
+        let mut instance = instance(&definition);
+        let intervention_id = CeremonyInterventionId::new("queue-check").unwrap();
+        let facilitator = role_id("facilitator");
+        let observer = role_id("observer");
+
+        instance
+            .request_intervention_as(
+                &definition,
+                intervention_id.clone(),
+                facilitator.clone(),
+                CeremonyInterventionKind::Investigation,
+                CeremonyInterventionTarget::roles([observer.clone()]).unwrap(),
+                CeremonyInterventionContent::new(
+                    "Inspect the queue without consuming messages.",
+                    Attributes::empty(),
+                )
+                .unwrap(),
+                now(),
+            )
+            .unwrap();
+        instance
+            .respond_to_intervention_as(
+                &definition,
+                &intervention_id,
+                observer,
+                CeremonyInterventionContent::new("Queue depth is stable.", Attributes::empty())
+                    .unwrap(),
+                now(),
+            )
+            .unwrap();
+        instance
+            .close_intervention_as(&definition, &intervention_id, &facilitator, now())
+            .unwrap();
+
+        let intervention = instance.intervention(&intervention_id).unwrap();
+        assert_eq!(intervention.responses().len(), 1);
+        assert_eq!(
+            intervention.status(),
+            crate::value_objects::CeremonyInterventionStatus::Closed
+        );
+    }
+
+    #[test]
+    fn intervention_rejects_roles_without_the_required_capability() {
+        let definition = definition();
+        let mut instance = instance(&definition);
+
+        let error = instance
+            .request_intervention_as(
+                &definition,
+                CeremonyInterventionId::new("not-allowed").unwrap(),
+                role_id("observer"),
+                CeremonyInterventionKind::Opinion,
+                CeremonyInterventionTarget::table(),
+                CeremonyInterventionContent::new("What do you think?", Attributes::empty())
+                    .unwrap(),
+                now(),
+            )
+            .unwrap_err();
+
+        assert!(matches!(error, DomainError::InvariantViolated { .. }));
     }
 
     #[test]

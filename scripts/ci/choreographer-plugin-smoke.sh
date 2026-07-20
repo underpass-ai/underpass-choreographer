@@ -41,6 +41,11 @@ if ! response_contains '"name":"choreo_approve_ceremony_guard"' <<<"${responses}
   exit 1
 fi
 
+if ! response_contains '"name":"choreo_request_ceremony_intervention"' <<<"${responses}"; then
+  echo "choreographer plugin smoke did not advertise dynamic interventions" >&2
+  exit 1
+fi
+
 if ! response_contains '"completed":true' <<<"${responses}"; then
   echo "choreographer plugin smoke did not complete the ceremony" >&2
   exit 1

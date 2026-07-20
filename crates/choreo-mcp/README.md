@@ -94,10 +94,16 @@ that intentionally have no gRPC mapping:
 | `choreo_approve_ceremony_guard` | Record an explicit human approval for a currently relevant human guard. |
 | `choreo_apply_ceremony_transition` | Apply one enabled transition. |
 | `choreo_get_ceremony_instance` | Inspect steps, transitions, and blocking human guards. |
+| `choreo_request_ceremony_intervention` | Open an opinion, investigation, or action requested by a ceremony participant. |
+| `choreo_respond_to_ceremony_intervention` | Record one targeted role's response. |
+| `choreo_close_ceremony_intervention` | Let the requesting role close its intervention. |
 
 These calls allow the host to pause between actions. Human guard approval is
 never inferred by the server; the client must obtain the person's decision
-before it invokes the approval tool.
+before it invokes the approval tool. Dynamic interventions likewise coordinate
+the live agenda without bypassing host permissions or ceremony guards. Omitting
+`target_role_ids` addresses the whole table; supplying it scopes the request to
+those roles. Responses and interventions retain insertion order in the instance.
 
 Mappings live in `src/grpc/{json_to_proto.rs,proto_to_json.rs}` —
 **hand-written field-by-field**. A new proto field is a one-PR

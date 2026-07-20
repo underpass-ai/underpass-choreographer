@@ -6,6 +6,7 @@
 
 mod ceremony_definition;
 mod ceremony_instance;
+mod ceremony_intervention;
 mod council;
 mod deliberation;
 mod external_context;
@@ -16,6 +17,7 @@ mod validation;
 
 pub use ceremony_definition::CeremonyDefinition;
 pub use ceremony_instance::CeremonyInstance;
+pub use ceremony_intervention::CeremonyIntervention;
 pub use council::Council;
 pub use deliberation::{Deliberation, DeliberationPhase, RankedOutcome};
 pub use external_context::{ContextItem, ContextReference, ContextSummary, ExternalContextBundle};
