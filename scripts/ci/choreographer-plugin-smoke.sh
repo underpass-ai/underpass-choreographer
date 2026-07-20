@@ -27,6 +27,11 @@ if ! rg -q '"name":"choreo_run_ceremony"' <<<"${responses}"; then
   exit 1
 fi
 
+if ! rg -q '"name":"choreo_approve_ceremony_guard"' <<<"${responses}"; then
+  echo "choreographer plugin smoke did not advertise incremental authorization" >&2
+  exit 1
+fi
+
 if ! rg -q '"completed":true' <<<"${responses}"; then
   echo "choreographer plugin smoke did not complete the ceremony" >&2
   exit 1

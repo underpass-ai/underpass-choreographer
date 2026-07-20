@@ -4,10 +4,12 @@ use std::sync::Arc;
 
 use choreo_core::error::DomainError;
 use choreo_core::ports::{
-    CeremonyDefinitionRepositoryPort, CeremonyInstanceRepositoryPort, CeremonyStepHandlerPort,
-    CeremonyStepHandlerRequest, ClockPort,
+    CeremonyContextStorePort, CeremonyDefinitionRepositoryPort, CeremonyInstanceRepositoryPort,
+    CeremonyStepHandlerPort, CeremonyStepHandlerRequest, ClockPort, NoopCeremonyContextStore,
 };
-use choreo_core::value_objects::{StepErrorMessage, StepLease, StepResult};
+use choreo_core::value_objects::{
+    CeremonyStepContribution, StepErrorMessage, StepLease, StepResult,
+};
 
 use super::run_ceremony_step_input::RunCeremonyStepInput;
 use super::run_ceremony_step_output::RunCeremonyStepOutput;
@@ -16,6 +18,7 @@ pub struct RunCeremonyStepUseCase {
     definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
     instances: Arc<dyn CeremonyInstanceRepositoryPort>,
     handler: Arc<dyn CeremonyStepHandlerPort>,
+    context_store: Arc<dyn CeremonyContextStorePort>,
     clock: Arc<dyn ClockPort>,
 }
 
@@ -37,8 +40,18 @@ impl RunCeremonyStepUseCase {
             definitions,
             instances,
             handler,
+            context_store: Arc::new(NoopCeremonyContextStore),
             clock,
         }
+    }
+
+    /// Attach transcript persistence for hosts that execute steps
+    /// incrementally. The default no-op preserves the original constructor
+    /// contract for callers that do not need cross-step context.
+    #[must_use]
+    pub fn with_context_store(mut self, context_store: Arc<dyn CeremonyContextStorePort>) -> Self {
+        self.context_store = context_store;
+        self
     }
 
     #[tracing::instrument(
@@ -73,6 +86,7 @@ impl RunCeremonyStepUseCase {
             instance.start_step_as(&definition, &input.role_id, &input.step_id, lease, now)?;
         self.instances.save(&instance).await?;
 
+        let transcript = self.context_store.transcript(instance.id()).await?;
         let request = CeremonyStepHandlerRequest::new(
             instance.id().clone(),
             instance.definition_name().clone(),
@@ -83,7 +97,9 @@ impl RunCeremonyStepUseCase {
             step.handler_config().clone(),
             instance.context().clone(),
             attempt,
-        );
+        )
+        .with_transcript(transcript)
+        .with_role(input.role_id.clone());
         let result = self.execute_handler(request).await?;
 
         let mut refreshed = self.instances.get(instance.id()).await?;
@@ -94,6 +110,18 @@ impl RunCeremonyStepUseCase {
             self.clock.now(),
         )?;
         self.instances.save(&refreshed).await?;
+        if result.is_success() {
+            self.context_store
+                .append(
+                    refreshed.id(),
+                    CeremonyStepContribution::new(
+                        input.step_id.clone(),
+                        input.role_id,
+                        result.output().clone(),
+                    ),
+                )
+                .await?;
+        }
 
         Ok(RunCeremonyStepOutput::new(refreshed, attempt, result))
     }
@@ -123,8 +151,8 @@ mod tests {
     use super::*;
     use crate::usecases::ceremony_test_support::{
         ceremony_id, definition, definition_name, idempotency_key, lease_owner, lease_ttl, now,
-        role_id, started_instance, step_id, version, DefinitionRepositoryFake, FixedClock,
-        InstanceRepositoryFake, StepHandlerFake,
+        role_id, started_instance, step_id, version, ContextStoreFake, DefinitionRepositoryFake,
+        FixedClock, InstanceRepositoryFake, StepHandlerFake,
     };
 
     #[tokio::test]
@@ -139,12 +167,14 @@ mod tests {
         let handler = Arc::new(StepHandlerFake::succeeding(
             StepResult::completed(StepOutput::empty()).unwrap(),
         ));
+        let context_store = Arc::new(ContextStoreFake::default());
         let usecase = RunCeremonyStepUseCase::new(
             definitions,
             instances.clone(),
             handler.clone(),
             Arc::new(FixedClock::new(now())),
-        );
+        )
+        .with_context_store(context_store.clone());
 
         let output = usecase
             .execute(RunCeremonyStepInput::new(
@@ -166,6 +196,11 @@ mod tests {
         assert_eq!(requests.len(), 1);
         assert_eq!(requests[0].step_id(), &step_id());
         assert_eq!(requests[0].handler_kind().as_str(), "multiagent_round");
+        assert_eq!(requests[0].role_id(), Some(&role_id()));
+        assert!(requests[0].transcript().is_empty());
+        let transcript = context_store.transcript(&ceremony_id()).await.unwrap();
+        assert_eq!(transcript.len(), 1);
+        assert_eq!(transcript.contributions()[0].step_id(), &step_id());
         assert_eq!(
             instances
                 .saved(&ceremony_id())

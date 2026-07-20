@@ -172,6 +172,7 @@ impl EmbeddedChoreographer {
             self.step_handler.clone(),
             self.clock.clone(),
         )
+        .with_context_store(self.context_store.clone())
         .execute(input)
         .await
     }

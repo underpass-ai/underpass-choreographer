@@ -51,10 +51,11 @@ pub trait ChoreoMcpToolBackend: Send + Sync {
 
     /// Whether this backend can execute a catalog tool.
     ///
-    /// Full API backends use the default. Focused backends override it
-    /// so `tools/list` never advertises operations they cannot honor.
-    fn supports_tool(&self, _name: &str) -> bool {
-        true
+    /// Remote-compatible backends inherit the base gRPC catalog. Focused or
+    /// extended backends override it so `tools/list` never advertises an
+    /// operation they cannot honor.
+    fn supports_tool(&self, name: &str) -> bool {
+        crate::protocol::is_grpc_tool(name)
     }
 
     /// Dispatch one MCP tool call.

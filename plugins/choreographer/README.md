@@ -7,4 +7,9 @@ database.
 The repository packaging script places the isolated embedded binary at
 `bin/choreo-mcp`. Codex starts it through `scripts/run-embedded-mcp.sh`.
 
-Current executable scope: `choreo_run_ceremony`.
+Executable scope:
+
+- `choreo_run_ceremony` for one-shot terminal execution;
+- `choreo_start_ceremony`, `choreo_run_ceremony_step`,
+  `choreo_approve_ceremony_guard`, `choreo_apply_ceremony_transition`, and
+  `choreo_get_ceremony_instance` for persistent, human-authorized flows.

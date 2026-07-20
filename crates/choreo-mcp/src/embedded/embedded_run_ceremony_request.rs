@@ -1,8 +1,12 @@
 use choreo_app::usecases::{RunCeremonyInput, RunCeremonyOutput};
 use choreo_core::value_objects::{CeremonyContext, CeremonyId, DurationMs, LeaseOwnerId};
 use choreo_embedded::EmbeddedChoreographer;
-use serde_json::{Map, Value};
+use serde_json::Value;
 use uuid::Uuid;
+
+use super::embedded_request_fields::{
+    context_from_json, optional_string, optional_u64, required_string,
+};
 
 const DEFAULT_LEASE_OWNER_ID: &str = "choreo-mcp-embedded";
 const DEFAULT_LEASE_TTL_MS: u64 = 30_000;
@@ -74,37 +78,4 @@ impl TryFrom<&Value> for EmbeddedRunCeremonyRequest {
             }),
         })
     }
-}
-
-fn required_string(object: &Map<String, Value>, field: &str) -> Result<String, String> {
-    optional_string(object, field)?.ok_or_else(|| format!("missing required field `{field}`"))
-}
-
-fn optional_string(object: &Map<String, Value>, field: &str) -> Result<Option<String>, String> {
-    let Some(value) = object.get(field) else {
-        return Ok(None);
-    };
-    let value = value
-        .as_str()
-        .ok_or_else(|| format!("field `{field}` must be a string"))?
-        .trim();
-    if value.is_empty() {
-        return Err(format!("field `{field}` must not be blank"));
-    }
-    Ok(Some(value.to_owned()))
-}
-
-fn optional_u64(object: &Map<String, Value>, field: &str) -> Result<Option<u64>, String> {
-    object
-        .get(field)
-        .map(|value| {
-            value
-                .as_u64()
-                .ok_or_else(|| format!("field `{field}` must be a non-negative integer"))
-        })
-        .transpose()
-}
-
-fn context_from_json(value: &Value) -> Result<CeremonyContext, String> {
-    serde_json::from_value(value.clone()).map_err(|error| format!("invalid `context`: {error}"))
 }

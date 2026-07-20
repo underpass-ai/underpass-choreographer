@@ -4,9 +4,9 @@
 //! adapter owns every byte that crosses stdio so it never drifts from
 //! the gRPC contract it wraps.
 //!
-//! The full catalog is 1:1 with the `underpass.choreo.v1` gRPC
-//! service: 17 tools, one per RPC. Focused backends can expose a
-//! supported subset without duplicating any tool schema.
+//! The base catalog is 1:1 with the `underpass.choreo.v1` gRPC
+//! service: 17 tools, one per RPC. Backend-specific adapters may add
+//! capabilities that have no remote transport equivalent.
 
 use serde_json::{json, Value};
 
@@ -16,6 +16,33 @@ pub(crate) const PROTOCOL_VERSION: &str = "2024-11-05";
 pub(crate) const SERVER_NAME: &str = "underpass-choreo-mcp";
 /// `serverInfo.version` — pulled from the crate version at build time.
 pub(crate) const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+pub(crate) const RUN_CEREMONY_TOOL: &str = "choreo_run_ceremony";
+pub(crate) const START_CEREMONY_TOOL: &str = "choreo_start_ceremony";
+pub(crate) const RUN_CEREMONY_STEP_TOOL: &str = "choreo_run_ceremony_step";
+pub(crate) const APPROVE_CEREMONY_GUARD_TOOL: &str = "choreo_approve_ceremony_guard";
+pub(crate) const APPLY_CEREMONY_TRANSITION_TOOL: &str = "choreo_apply_ceremony_transition";
+pub(crate) const GET_CEREMONY_INSTANCE_TOOL: &str = "choreo_get_ceremony_instance";
+
+const GRPC_TOOL_NAMES: [&str; 17] = [
+    "choreo_deliberate",
+    "choreo_stream_deliberation",
+    "choreo_get_deliberation_result",
+    "choreo_orchestrate",
+    "choreo_create_council",
+    "choreo_list_councils",
+    "choreo_delete_council",
+    "choreo_register_agent",
+    "choreo_unregister_agent",
+    "choreo_process_trigger_event",
+    "choreo_run_council_decision",
+    "choreo_register_contract",
+    "choreo_list_contracts",
+    "choreo_delete_contract",
+    RUN_CEREMONY_TOOL,
+    "choreo_get_status",
+    "choreo_get_metrics",
+];
 
 /// Build the `initialize` result. Includes adapter-side metadata so
 /// the client can record which backend + TLS posture it negotiated
@@ -51,8 +78,14 @@ pub(crate) fn tools_list_result(supports: impl Fn(&str) -> bool) -> Value {
     json!({ "tools": tools })
 }
 
-#[allow(clippy::too_many_lines)] // 17 tool definitions; splitting just for the line count loses readability
 fn tool_catalog() -> Vec<Value> {
+    let mut tools = grpc_tool_catalog();
+    tools.extend(embedded_incremental_tool_catalog());
+    tools
+}
+
+#[allow(clippy::too_many_lines)] // 17 gRPC tool definitions form one auditable transport contract
+fn grpc_tool_catalog() -> Vec<Value> {
     vec![
         tool_def(
             "choreo_deliberate",
@@ -220,7 +253,7 @@ fn tool_catalog() -> Vec<Value> {
             }),
         ),
         tool_def(
-            "choreo_run_ceremony",
+            RUN_CEREMONY_TOOL,
             "Execute a declarative ceremony YAML definition and return final state, step trace, and Mermaid sequence diagram.",
             run_ceremony_schema(),
         ),
@@ -248,6 +281,40 @@ fn tool_catalog() -> Vec<Value> {
             }),
         ),
     ]
+}
+
+fn embedded_incremental_tool_catalog() -> Vec<Value> {
+    vec![
+        tool_def(
+            START_CEREMONY_TOOL,
+            "Mount a ceremony YAML definition and start a persistent in-process instance without advancing it.",
+            start_ceremony_schema(),
+        ),
+        tool_def(
+            RUN_CEREMONY_STEP_TOOL,
+            "Execute one declared step on a started ceremony instance and persist its result.",
+            run_ceremony_step_schema(),
+        ),
+        tool_def(
+            APPROVE_CEREMONY_GUARD_TOOL,
+            "Record an explicit human approval for a currently-blocking human guard. Call only after the human has authorized it.",
+            ceremony_guard_approval_schema(),
+        ),
+        tool_def(
+            APPLY_CEREMONY_TRANSITION_TOOL,
+            "Apply one enabled ceremony transition and return the updated persistent instance.",
+            ceremony_transition_schema(),
+        ),
+        tool_def(
+            GET_CEREMONY_INSTANCE_TOOL,
+            "Inspect a persistent ceremony instance, including step status and blocking guards.",
+            ceremony_instance_schema(),
+        ),
+    ]
+}
+
+pub(crate) fn is_grpc_tool(name: &str) -> bool {
+    GRPC_TOOL_NAMES.contains(&name)
 }
 
 fn run_council_decision_schema() -> Value {
@@ -298,6 +365,77 @@ fn run_ceremony_schema() -> Value {
                 "minimum": 0,
                 "description": "Step lease TTL in milliseconds. Zero or omitted uses the server default."
             }
+        }
+    })
+}
+
+fn start_ceremony_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["definition_yaml"],
+        "properties": {
+            "ceremony_id": string_schema("Optional stable ceremony instance id. The server mints one when omitted."),
+            "definition_yaml": string_schema("Declarative ceremony YAML definition."),
+            "context": {
+                "type": "object",
+                "additionalProperties": true,
+                "description": "Opaque initial ceremony context forwarded to guards and handlers."
+            }
+        }
+    })
+}
+
+fn run_ceremony_step_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ceremony_id", "step_id"],
+        "properties": {
+            "ceremony_id": string_schema("Started ceremony instance id."),
+            "step_id": string_schema("Step declared in the instance's current state."),
+            "lease_owner_id": string_schema("Optional logical runner acquiring the step lease."),
+            "idempotency_key": string_schema("Optional unique execution key. The server mints one when omitted."),
+            "lease_ttl_ms": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Step lease TTL in milliseconds. Zero or omitted uses the server default."
+            }
+        }
+    })
+}
+
+fn ceremony_guard_approval_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ceremony_id", "guard_name"],
+        "properties": {
+            "ceremony_id": string_schema("Started ceremony instance id."),
+            "guard_name": string_schema("Currently-blocking human guard explicitly approved by the human participant.")
+        }
+    })
+}
+
+fn ceremony_transition_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ceremony_id", "trigger"],
+        "properties": {
+            "ceremony_id": string_schema("Started ceremony instance id."),
+            "trigger": string_schema("Transition trigger declared from the instance's current state.")
+        }
+    })
+}
+
+fn ceremony_instance_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ceremony_id"],
+        "properties": {
+            "ceremony_id": string_schema("Started ceremony instance id.")
         }
     })
 }
@@ -604,12 +742,14 @@ mod tests {
 
     #[test]
     fn tools_catalog_is_derived_one_for_one_from_grpc_service() {
-        let catalog_names = catalog_tool_names();
+        let catalog_names = grpc_catalog_tool_names();
         let proto_tool_names: Vec<String> = proto_rpc_names()
             .into_iter()
             .map(rpc_name_to_tool_name)
             .collect();
+        let supported_tool_names = GRPC_TOOL_NAMES.map(str::to_owned).to_vec();
 
+        assert_eq!(catalog_names, supported_tool_names);
         assert_eq!(
             catalog_names, proto_tool_names,
             "every underpass.choreo.v1 gRPC RPC must have exactly one MCP tool"
@@ -621,7 +761,7 @@ mod tests {
         let grpc_dispatch_source = include_str!("grpc/tools.rs");
         let fixture_source = include_str!("fixture.rs");
 
-        for tool in catalog_tool_names() {
+        for tool in grpc_catalog_tool_names() {
             let dispatch_arm = format!("\"{tool}\" =>");
             assert!(
                 grpc_dispatch_source.contains(&dispatch_arm),
@@ -632,6 +772,18 @@ mod tests {
                 "fixture backend is missing a canned response for {tool}"
             );
         }
+    }
+
+    #[test]
+    fn incremental_ceremony_tools_are_unique_catalog_extensions() {
+        let all_names = catalog_tool_names();
+        let unique_names = all_names.iter().collect::<std::collections::BTreeSet<_>>();
+
+        assert_eq!(all_names.len(), 22);
+        assert_eq!(unique_names.len(), all_names.len());
+        assert!(all_names.contains(&START_CEREMONY_TOOL.to_owned()));
+        assert!(all_names.contains(&APPROVE_CEREMONY_GUARD_TOOL.to_owned()));
+        assert!(all_names.contains(&GET_CEREMONY_INSTANCE_TOOL.to_owned()));
     }
 
     #[test]
@@ -689,6 +841,13 @@ mod tests {
             .unwrap()
             .iter()
             .map(|t| t["name"].as_str().unwrap().to_owned())
+            .collect()
+    }
+
+    fn grpc_catalog_tool_names() -> Vec<String> {
+        grpc_tool_catalog()
+            .iter()
+            .map(|tool| tool["name"].as_str().unwrap().to_owned())
             .collect()
     }
 
