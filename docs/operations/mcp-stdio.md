@@ -345,7 +345,7 @@ takes precedence over overlapping execution-profile metadata.
 
 ## Tools
 
-The 16 MCP tools are 1:1 with the choreographer's gRPC service:
+The 17 MCP tools are 1:1 with the choreographer's gRPC service:
 
 | MCP tool                          | gRPC RPC                              | Purpose |
 |-----------------------------------|---------------------------------------|---------|
@@ -363,6 +363,7 @@ The 16 MCP tools are 1:1 with the choreographer's gRPC service:
 | `choreo_register_contract`        | `RegisterContract`                    | Register an `OutputContract` in the contract registry. |
 | `choreo_list_contracts`           | `ListContracts`                       | Enumerate registered contracts. |
 | `choreo_delete_contract`          | `DeleteContract`                      | Idempotent contract delete. |
+| `choreo_run_ceremony`             | `RunCeremony`                         | Run a declarative YAML ceremony to a terminal state. |
 | `choreo_get_status`               | `GetStatus`                           | Service health, version, uptime, optional stats. |
 | `choreo_get_metrics`              | `GetMetrics`                          | Statistics snapshot. |
 
@@ -380,8 +381,10 @@ Backend selection is driven by `CHOREO_MCP_BACKEND`:
 - **`embedded`** — executes the real ceremony engine in process. The isolated
   build exposes one-shot execution plus persistent incremental controls for
   starting, inspecting, stepping, explicitly approving a human guard, and
-  applying a transition. It requires no Choreographer service, gRPC, protobuf,
-  NATS, or database.
+  applying a transition. Participants can also open, answer, and close dynamic
+  opinion, investigation, or action requests while the ceremony remains
+  active. It requires no Choreographer service, gRPC, protobuf, NATS, or
+  database.
 - **`fixture`** — returns canned responses for every tool. Useful for
   client wiring, demos, and tool-choice validation **without** a
   running choreographer.
@@ -392,6 +395,21 @@ CHOREO_MCP_BACKEND=fixture cargo run -p choreo-mcp --locked
 CHOREO_MCP_BACKEND=embedded \
   cargo run -p choreo-mcp --no-default-features --features embedded --locked
 ```
+
+The embedded-only intervention tools are:
+
+- `choreo_request_ceremony_intervention`: the requesting role opens a live
+  agenda item. Omit `target_role_ids` for the whole table or provide one or
+  more role ids for a scoped request.
+- `choreo_respond_to_ceremony_intervention`: a targeted role records one
+  response, with optional structured `details`.
+- `choreo_close_ceremony_intervention`: only the requesting role can close
+  the item.
+
+The YAML must grant `request_intervention` and `respond_to_intervention` in
+the relevant roles' `allowed_actions`. An `action` intervention coordinates a
+request; it is not approval to mutate an external system. Host policy and any
+human ceremony guards still apply.
 
 ## Installation
 

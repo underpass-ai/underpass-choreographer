@@ -30,6 +30,8 @@ pub use agent_kind::AgentKind;
 pub use attributes::Attributes;
 pub use ceremony::{
     CeremonyContext, CeremonyDescription, CeremonyGuard, CeremonyId, CeremonyInputDefinition,
+    CeremonyInterventionContent, CeremonyInterventionId, CeremonyInterventionKind,
+    CeremonyInterventionResponse, CeremonyInterventionStatus, CeremonyInterventionTarget,
     CeremonyName, CeremonyOutputDefinition, CeremonyRole, CeremonyState, CeremonyStateKind,
     CeremonyStep, CeremonyStepContribution, CeremonyTranscript, CeremonyTransition,
     CeremonyVersion, GuardCondition, GuardName, IdempotencyKey, InputName, InputRequirement,

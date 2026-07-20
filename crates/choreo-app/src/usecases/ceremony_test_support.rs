@@ -217,6 +217,10 @@ pub(super) fn role_id() -> RoleId {
     RoleId::new("FACILITATOR").unwrap()
 }
 
+pub(super) fn respondent_role_id() -> RoleId {
+    RoleId::new("TABLE_MEMBER").unwrap()
+}
+
 pub(super) fn step_id() -> StepId {
     StepId::new("roundtable").unwrap()
 }
@@ -265,7 +269,13 @@ pub(super) fn definition() -> CeremonyDefinition {
         vec![
             RoleAction::step(step.id().clone()),
             RoleAction::transition(transition.trigger().clone()),
+            RoleAction::request_intervention(),
         ],
+    )
+    .unwrap();
+    let respondent = CeremonyRole::new(
+        respondent_role_id(),
+        vec![RoleAction::respond_to_intervention()],
     )
     .unwrap();
 
@@ -282,7 +292,7 @@ pub(super) fn definition() -> CeremonyDefinition {
         vec![transition],
         vec![step],
         vec![guard],
-        vec![role],
+        vec![role, respondent],
     )
     .unwrap()
 }

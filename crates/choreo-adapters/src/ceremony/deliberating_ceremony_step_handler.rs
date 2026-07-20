@@ -7,7 +7,9 @@ use choreo_app::usecases::DeliberateUseCase;
 use choreo_core::entities::{Task, TaskConstraints};
 use choreo_core::error::DomainError;
 use choreo_core::ports::{CeremonyStepHandlerPort, CeremonyStepHandlerRequest};
-use choreo_core::value_objects::{Attributes, StepOutput, StepResult, TaskDescription, TaskId};
+use choreo_core::value_objects::{
+    Attributes, RoleId, StepOutput, StepResult, TaskDescription, TaskId,
+};
 use serde_json::{json, Value};
 use tracing::info;
 
@@ -146,6 +148,8 @@ fn build_description(
         }
     }
 
+    text.push_str(&render_interventions(request));
+
     let _ = write!(
         text,
         "\nYour task now: {}",
@@ -153,6 +157,70 @@ fn build_description(
     );
 
     TaskDescription::new(text)
+}
+
+/// Render participant-created agenda items visible to the executing role.
+/// Scoped interventions remain private to the requester and their targets;
+/// table-wide interventions are visible to every role.
+fn render_interventions(request: &CeremonyStepHandlerRequest) -> String {
+    let mut out = String::new();
+    for intervention in request.interventions().iter().filter(|intervention| {
+        request.role_id().is_none_or(|role_id| {
+            intervention.requested_by() == role_id || intervention.target().accepts(role_id)
+        })
+    }) {
+        if out.is_empty() {
+            out.push_str("\nLive participant requests:\n");
+        }
+        let target = intervention.target().role_ids().map_or_else(
+            || "the whole table".to_owned(),
+            |role_ids| {
+                role_ids
+                    .iter()
+                    .map(RoleId::as_str)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            },
+        );
+        let _ = writeln!(
+            out,
+            "- [{status}] {kind} requested by {requester} for {target}: {message}",
+            status = intervention.status().as_label(),
+            kind = intervention.kind().as_label(),
+            requester = intervention.requested_by().as_str(),
+            message = truncate(
+                intervention.request().message(),
+                MAX_RENDERED_CONTRIBUTION_LEN
+            ),
+        );
+        render_intervention_details(
+            &mut out,
+            "request details",
+            intervention.request().details(),
+        );
+        for response in intervention.responses() {
+            let _ = writeln!(
+                out,
+                "  - {role} responded: {message}",
+                role = response.role_id().as_str(),
+                message = truncate(response.content().message(), MAX_RENDERED_CONTRIBUTION_LEN),
+            );
+            render_intervention_details(&mut out, "response details", response.content().details());
+        }
+    }
+    out
+}
+
+fn render_intervention_details(out: &mut String, label: &str, details: &Attributes) {
+    if details.as_map().is_empty() {
+        return;
+    }
+    let rendered = serde_json::to_string(details.as_map()).unwrap_or_else(|_| "{}".to_owned());
+    let _ = writeln!(
+        out,
+        "    {label}: {}",
+        truncate(&rendered, MAX_RENDERED_CONTRIBUTION_LEN)
+    );
 }
 
 /// Render the ceremony context as the mission brief shown to every
@@ -271,12 +339,14 @@ mod tests {
     use std::sync::Arc;
 
     use choreo_app::usecases::DeliberateUseCase;
-    use choreo_core::entities::Council;
+    use choreo_core::entities::{CeremonyIntervention, Council};
     use choreo_core::ports::{ClockPort, CouncilRegistryPort, StatisticsPort};
     use choreo_core::value_objects::{
-        AgentId, Attributes, CeremonyContext, CeremonyId, CeremonyName, CeremonyStepContribution,
-        CeremonyTranscript, CeremonyVersion, CouncilId, RoleId, Specialty, StateId, StepAttempt,
-        StepHandlerConfig, StepHandlerKind, StepId, StepOutput, StepStatus,
+        AgentId, Attributes, CeremonyContext, CeremonyId, CeremonyInterventionContent,
+        CeremonyInterventionId, CeremonyInterventionKind, CeremonyInterventionTarget, CeremonyName,
+        CeremonyStepContribution, CeremonyTranscript, CeremonyVersion, CouncilId, RoleId,
+        Specialty, StateId, StepAttempt, StepHandlerConfig, StepHandlerKind, StepId, StepOutput,
+        StepStatus,
     };
     use serde_json::json;
 
@@ -818,6 +888,56 @@ mod tests {
         assert!(text
             .contains("FACILITATOR (open_room): Restating the brief and inviting perspectives."));
         assert!(text.contains("Your task now: Open the meeting"));
+    }
+
+    #[test]
+    fn description_renders_live_intervention_for_targeted_role() {
+        let intervention = CeremonyIntervention::open(
+            CeremonyInterventionId::new("inspect-queue").unwrap(),
+            CeremonyInterventionKind::Investigation,
+            RoleId::new("ENGINEER").unwrap(),
+            CeremonyInterventionTarget::roles([RoleId::new("QUEUE_SPECIALIST").unwrap()]).unwrap(),
+            CeremonyInterventionContent::new(
+                "Inspect queue depth without consuming messages.",
+                Attributes::new(BTreeMap::from([("queue".to_owned(), json!("orders"))])).unwrap(),
+            )
+            .unwrap(),
+            time::OffsetDateTime::UNIX_EPOCH,
+        );
+        let request = request_with_prompt()
+            .with_role(RoleId::new("QUEUE_SPECIALIST").unwrap())
+            .with_interventions(vec![intervention]);
+        let config = DeliberationStepConfig::from_request(&request).unwrap();
+
+        let text = build_description(&request, &config).unwrap();
+        let text = text.as_str();
+
+        assert!(text.contains("Live participant requests:"));
+        assert!(text.contains("[open] investigation requested by ENGINEER"));
+        assert!(text.contains("Inspect queue depth without consuming messages."));
+        assert!(text.contains("request details: {\"queue\":\"orders\"}"));
+    }
+
+    #[test]
+    fn description_hides_scoped_intervention_from_unrelated_role() {
+        let intervention = CeremonyIntervention::open(
+            CeremonyInterventionId::new("inspect-database").unwrap(),
+            CeremonyInterventionKind::Investigation,
+            RoleId::new("ENGINEER").unwrap(),
+            CeremonyInterventionTarget::roles([RoleId::new("DATABASE_SPECIALIST").unwrap()])
+                .unwrap(),
+            CeremonyInterventionContent::new("Inspect connection saturation.", Attributes::empty())
+                .unwrap(),
+            time::OffsetDateTime::UNIX_EPOCH,
+        );
+        let request = request_with_prompt()
+            .with_role(RoleId::new("QUEUE_SPECIALIST").unwrap())
+            .with_interventions(vec![intervention]);
+        let config = DeliberationStepConfig::from_request(&request).unwrap();
+
+        let text = build_description(&request, &config).unwrap();
+
+        assert!(!text.as_str().contains("Inspect connection saturation."));
     }
 
     #[test]

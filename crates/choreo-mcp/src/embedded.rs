@@ -3,8 +3,11 @@
 mod embedded_apply_ceremony_transition_request;
 mod embedded_approve_ceremony_guard_request;
 mod embedded_ceremony_instance_presenter;
+mod embedded_close_ceremony_intervention_request;
 mod embedded_get_ceremony_instance_request;
+mod embedded_request_ceremony_intervention_request;
 mod embedded_request_fields;
+mod embedded_respond_to_ceremony_intervention_request;
 mod embedded_run_ceremony_presenter;
 mod embedded_run_ceremony_request;
 mod embedded_run_ceremony_step_request;
@@ -17,13 +20,18 @@ use serde_json::Value;
 use crate::backend::{ChoreoMcpToolBackend, ChoreoMcpToolFuture};
 use crate::protocol::{
     tool_success_result, APPLY_CEREMONY_TRANSITION_TOOL, APPROVE_CEREMONY_GUARD_TOOL,
-    GET_CEREMONY_INSTANCE_TOOL, RUN_CEREMONY_STEP_TOOL, RUN_CEREMONY_TOOL, START_CEREMONY_TOOL,
+    CLOSE_CEREMONY_INTERVENTION_TOOL, GET_CEREMONY_INSTANCE_TOOL,
+    REQUEST_CEREMONY_INTERVENTION_TOOL, RESPOND_TO_CEREMONY_INTERVENTION_TOOL,
+    RUN_CEREMONY_STEP_TOOL, RUN_CEREMONY_TOOL, START_CEREMONY_TOOL,
 };
 
 use self::embedded_apply_ceremony_transition_request::EmbeddedApplyCeremonyTransitionRequest;
 use self::embedded_approve_ceremony_guard_request::EmbeddedApproveCeremonyGuardRequest;
 use self::embedded_ceremony_instance_presenter::EmbeddedCeremonyInstancePresenter;
+use self::embedded_close_ceremony_intervention_request::EmbeddedCloseCeremonyInterventionRequest;
 use self::embedded_get_ceremony_instance_request::EmbeddedGetCeremonyInstanceRequest;
+use self::embedded_request_ceremony_intervention_request::EmbeddedRequestCeremonyInterventionRequest;
+use self::embedded_respond_to_ceremony_intervention_request::EmbeddedRespondToCeremonyInterventionRequest;
 use self::embedded_run_ceremony_presenter::EmbeddedRunCeremonyPresenter;
 use self::embedded_run_ceremony_request::EmbeddedRunCeremonyRequest;
 use self::embedded_run_ceremony_step_request::EmbeddedRunCeremonyStepRequest;
@@ -62,6 +70,9 @@ impl ChoreoMcpToolBackend for EmbeddedChoreoMcpBackend {
                 | APPROVE_CEREMONY_GUARD_TOOL
                 | APPLY_CEREMONY_TRANSITION_TOOL
                 | GET_CEREMONY_INSTANCE_TOOL
+                | REQUEST_CEREMONY_INTERVENTION_TOOL
+                | RESPOND_TO_CEREMONY_INTERVENTION_TOOL
+                | CLOSE_CEREMONY_INTERVENTION_TOOL
         )
     }
 
@@ -98,6 +109,22 @@ impl ChoreoMcpToolBackend for EmbeddedChoreoMcpBackend {
                 GET_CEREMONY_INSTANCE_TOOL => {
                     let request = EmbeddedGetCeremonyInstanceRequest::try_from(arguments)?;
                     let ceremony_id = request.into_ceremony_id();
+                    self.present_instance(&ceremony_id).await
+                }
+                REQUEST_CEREMONY_INTERVENTION_TOOL => {
+                    let request = EmbeddedRequestCeremonyInterventionRequest::try_from(arguments)?;
+                    let ceremony_id = request.execute(&self.choreographer).await?;
+                    self.present_instance(&ceremony_id).await
+                }
+                RESPOND_TO_CEREMONY_INTERVENTION_TOOL => {
+                    let request =
+                        EmbeddedRespondToCeremonyInterventionRequest::try_from(arguments)?;
+                    let ceremony_id = request.execute(&self.choreographer).await?;
+                    self.present_instance(&ceremony_id).await
+                }
+                CLOSE_CEREMONY_INTERVENTION_TOOL => {
+                    let request = EmbeddedCloseCeremonyInterventionRequest::try_from(arguments)?;
+                    let ceremony_id = request.execute(&self.choreographer).await?;
                     self.present_instance(&ceremony_id).await
                 }
                 _ => Err(format!("embedded backend: unsupported tool `{name}`")),

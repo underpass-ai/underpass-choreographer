@@ -117,3 +117,39 @@ investigation fail?"* with 3 peer-review rounds each:
    (Loki), and read the deliberation spans (Tempo) — see the
    [observability runbook](./observability-runbook.md). If `rounds` was
    silently no-opped (§2), this is where you notice.
+
+## 6. Dynamic participant interventions
+
+An embedded incremental ceremony can accept new agenda items after it starts;
+the YAML remains the stable frame while the running `CeremonyInstance` owns
+the ordered conversation. Declare capabilities on roles rather than inventing
+placeholder steps for every possible question:
+
+```yaml
+roles:
+  - id: ENGINEER
+    allowed_actions:
+      - request_intervention
+  - id: OBSERVER
+    allowed_actions:
+      - respond_to_intervention
+  - id: DATABASE_SPECIALIST
+    allowed_actions:
+      - respond_to_intervention
+  - id: QUEUE_SPECIALIST
+    allowed_actions:
+      - respond_to_intervention
+```
+
+The host opens an `opinion`, `investigation`, or `action` with
+`choreo_request_ceremony_intervention`. With no `target_role_ids`, every role
+with response capability may answer; a non-empty list scopes the request.
+Each targeted role can answer once, and only the requesting role can close the
+intervention. Relevant requests and accumulated responses are passed into
+later deliberating step handlers as live participant language, so the meeting
+can react without rewriting its definition.
+
+Treat `action` as coordination, not authority. “Look at the queue” should be
+implemented as read-only observation or peek, never consuming messages; any
+external mutation still requires the host's permissions and the ceremony's
+explicit human guards.
