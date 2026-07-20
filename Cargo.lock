@@ -482,7 +482,6 @@ dependencies = [
  "opentelemetry",
  "opentelemetry_sdk",
  "prometheus",
- "prost",
  "prost-types",
  "reqwest",
  "serde",
@@ -584,6 +583,17 @@ dependencies = [
  "tower 0.5.3",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "choreo-embedded"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "choreo-adapters",
+ "choreo-app",
+ "choreo-core",
+ "tokio",
 ]
 
 [[package]]

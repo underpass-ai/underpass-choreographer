@@ -51,7 +51,7 @@ path = "src/bin/run_ceremony_file.rs"
 [dependencies]
 choreo-proto = { workspace = true }
 choreo-core = { workspace = true }
-choreo-adapters = { workspace = true, features = ["agent-vllm"] }
+choreo-adapters = { workspace = true, features = ["agent-vllm", "grpc", "nats", "runtime-grpc"] }
 tokio = { workspace = true }
 tonic = { workspace = true }
 prost-types = { workspace = true }

@@ -15,11 +15,13 @@ workspace = true
 # particular LLM vendor, transport, or message bus; concrete integrations
 # live behind features so that consumers pick what they need.
 [features]
-default = ["grpc", "nats"]
+default = ["grpc", "nats", "runtime-grpc"]
 
-# Transports / infra
-grpc = ["dep:prost-types"]
-nats = ["dep:async-nats"]
+# Transports / infra. `grpc` is the inbound Choreographer service;
+# `runtime-grpc` is the independent outbound Runtime executor adapter.
+grpc = ["dep:choreo-proto", "dep:prost-types", "dep:tokio-stream", "dep:tonic"]
+nats = ["dep:async-nats", "dep:futures"]
+runtime-grpc = ["dep:choreo-proto", "dep:tokio-stream", "dep:tonic"]
 
 # Persistence. Postgres adapter for DeliberationRepositoryPort.
 # Other registries (councils, agents, statistics) remain in-memory
@@ -49,15 +51,14 @@ _http = ["dep:reqwest", "dep:url"]
 [dependencies]
 choreo-core = { workspace = true }
 choreo-app = { workspace = true }
-choreo-proto = { workspace = true }
+choreo-proto = { workspace = true, optional = true }
 async-trait = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 tokio = { workspace = true }
-tokio-stream = { workspace = true }
-futures = { workspace = true }
-tonic = { workspace = true }
-prost = { workspace = true }
+tokio-stream = { workspace = true, optional = true }
+futures = { workspace = true, optional = true }
+tonic = { workspace = true, optional = true }
 tracing = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

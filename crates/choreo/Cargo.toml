@@ -38,7 +38,7 @@ otel = [
 [dependencies]
 choreo-core = { workspace = true }
 choreo-app = { workspace = true }
-choreo-adapters = { workspace = true, features = ["grpc", "nats", "postgres"] }
+choreo-adapters = { workspace = true, features = ["grpc", "nats", "postgres", "runtime-grpc"] }
 choreo-proto = { workspace = true }
 
 opentelemetry = { workspace = true, optional = true }

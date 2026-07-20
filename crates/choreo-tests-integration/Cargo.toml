@@ -21,7 +21,7 @@ container-tests = ["dep:testcontainers"]
 [dependencies]
 choreo-core = { workspace = true }
 choreo-app = { workspace = true }
-choreo-adapters = { workspace = true, features = ["grpc", "nats", "postgres"] }
+choreo-adapters = { workspace = true, features = ["grpc", "nats", "postgres", "runtime-grpc"] }
 choreo-proto = { workspace = true }
 # Tokio is always required for the in-process gRPC fixture; the
 # postgres_fixture additionally needs testcontainers when the
