@@ -95,7 +95,7 @@ that intentionally have no gRPC mapping:
 | `choreo_defer_ceremony_guard` | Preserve an explicit human deferral without satisfying the guard. |
 | `choreo_apply_ceremony_transition` | Apply one enabled transition. |
 | `choreo_get_ceremony_instance` | Inspect steps, transitions, and blocking human guards. |
-| `choreo_request_ceremony_intervention` | Open an opinion, investigation, or action requested by a ceremony participant. |
+| `choreo_request_ceremony_intervention` | Open a participant request, optionally linked to the table response it selects. |
 | `choreo_respond_to_ceremony_intervention` | Record one targeted role's response. |
 | `choreo_close_ceremony_intervention` | Let the requesting role close its intervention. |
 

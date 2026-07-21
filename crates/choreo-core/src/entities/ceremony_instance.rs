@@ -14,9 +14,9 @@ use crate::error::DomainError;
 use crate::value_objects::{
     CeremonyContext, CeremonyGuardDeferral, CeremonyGuardDeferralContent, CeremonyId,
     CeremonyInterventionContent, CeremonyInterventionId, CeremonyInterventionKind,
-    CeremonyInterventionTarget, CeremonyName, CeremonyVersion, GuardCondition, GuardName,
-    IdempotencyKey, RoleAction, RoleId, StateId, StepAttempt, StepExecutionRecord, StepId,
-    StepLease, StepResult, StepStatus, TransitionTrigger,
+    CeremonyInterventionProvenance, CeremonyInterventionTarget, CeremonyName, CeremonyVersion,
+    GuardCondition, GuardName, IdempotencyKey, RoleAction, RoleId, StateId, StepAttempt,
+    StepExecutionRecord, StepId, StepLease, StepResult, StepStatus, TransitionTrigger,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -325,12 +325,39 @@ impl CeremonyInstance {
         content: CeremonyInterventionContent,
         now: OffsetDateTime,
     ) -> Result<(), DomainError> {
+        self.request_intervention_with_provenance_as(
+            definition,
+            intervention_id,
+            role_id,
+            kind,
+            target,
+            content,
+            None,
+            now,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn request_intervention_with_provenance_as(
+        &mut self,
+        definition: &CeremonyDefinition,
+        intervention_id: CeremonyInterventionId,
+        role_id: RoleId,
+        kind: CeremonyInterventionKind,
+        target: CeremonyInterventionTarget,
+        content: CeremonyInterventionContent,
+        provenance: Option<CeremonyInterventionProvenance>,
+        now: OffsetDateTime,
+    ) -> Result<(), DomainError> {
         self.require_active(
             definition,
             "terminal ceremony instances cannot accept interventions",
         )?;
         self.require_role(definition, &role_id, &RoleAction::request_intervention())?;
         Self::require_intervention_target(definition, &target)?;
+        if let Some(provenance) = provenance.as_ref() {
+            self.require_intervention_provenance(definition, &role_id, &target, provenance)?;
+        }
         if self
             .interventions
             .iter()
@@ -340,8 +367,15 @@ impl CeremonyInstance {
                 what: "ceremony_intervention",
             });
         }
-        let intervention =
-            CeremonyIntervention::open(intervention_id, kind, role_id, target, content, now);
+        let intervention = CeremonyIntervention::open_with_provenance(
+            intervention_id,
+            kind,
+            role_id,
+            target,
+            content,
+            provenance,
+            now,
+        );
         self.interventions.push(intervention);
         self.updated_at = now;
         Ok(())
@@ -490,6 +524,53 @@ impl CeremonyInstance {
                     reason: "target role cannot respond to ceremony interventions",
                 });
             }
+        }
+        Ok(())
+    }
+
+    fn require_intervention_provenance(
+        &self,
+        definition: &CeremonyDefinition,
+        requested_by: &RoleId,
+        target: &CeremonyInterventionTarget,
+        provenance: &CeremonyInterventionProvenance,
+    ) -> Result<(), DomainError> {
+        let source = self
+            .intervention(provenance.source_intervention_id())
+            .ok_or(DomainError::NotFound {
+                what: "ceremony_intervention.provenance_source",
+            })?;
+        if source.requested_by() != requested_by {
+            return Err(DomainError::InvariantViolated {
+                reason: "only the source requester can select an intervention response",
+            });
+        }
+        if !source
+            .responses()
+            .iter()
+            .any(|response| response.role_id() == provenance.source_response_role_id())
+        {
+            return Err(DomainError::NotFound {
+                what: "ceremony_intervention.provenance_response",
+            });
+        }
+        if definition.role(provenance.selected_role_id()).is_none() {
+            return Err(DomainError::NotFound {
+                what: "ceremony_intervention.provenance_selected_role",
+            });
+        }
+        if !definition.role_allows(
+            provenance.selected_role_id(),
+            &RoleAction::respond_to_intervention(),
+        ) {
+            return Err(DomainError::InvariantViolated {
+                reason: "selected intervention role cannot respond",
+            });
+        }
+        if !target.accepts(provenance.selected_role_id()) {
+            return Err(DomainError::InvariantViolated {
+                reason: "intervention target does not include the selected role",
+            });
         }
         Ok(())
     }
@@ -707,9 +788,30 @@ mod tests {
             .respond_to_intervention_as(
                 &definition,
                 &intervention_id,
-                observer,
+                observer.clone(),
                 CeremonyInterventionContent::new("Queue depth is stable.", Attributes::empty())
                     .unwrap(),
+                now(),
+            )
+            .unwrap();
+        let selected_intervention_id = CeremonyInterventionId::new("selected-check").unwrap();
+        instance
+            .request_intervention_with_provenance_as(
+                &definition,
+                selected_intervention_id.clone(),
+                facilitator.clone(),
+                CeremonyInterventionKind::Investigation,
+                CeremonyInterventionTarget::roles([observer.clone()]).unwrap(),
+                CeremonyInterventionContent::new(
+                    "Inspect the proposed signal.",
+                    Attributes::empty(),
+                )
+                .unwrap(),
+                Some(CeremonyInterventionProvenance::selected_from(
+                    intervention_id.clone(),
+                    observer.clone(),
+                    observer.clone(),
+                )),
                 now(),
             )
             .unwrap();
@@ -723,6 +825,13 @@ mod tests {
             intervention.status(),
             crate::value_objects::CeremonyInterventionStatus::Closed
         );
+        let provenance = instance
+            .intervention(&selected_intervention_id)
+            .unwrap()
+            .provenance()
+            .unwrap();
+        assert_eq!(provenance.source_intervention_id(), &intervention_id);
+        assert_eq!(provenance.selected_role_id(), &observer);
     }
 
     #[test]

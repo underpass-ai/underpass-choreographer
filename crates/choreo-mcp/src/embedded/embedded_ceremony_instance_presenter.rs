@@ -154,6 +154,13 @@ fn intervention_values(instance: &CeremonyInstance) -> Vec<Value> {
                     })
                 })
                 .collect::<Vec<_>>();
+            let provenance = intervention.provenance().map(|provenance| {
+                json!({
+                    "source_intervention_id": provenance.source_intervention_id().as_str(),
+                    "source_response_role_id": provenance.source_response_role_id().as_str(),
+                    "selected_role_id": provenance.selected_role_id().as_str(),
+                })
+            });
             json!({
                 "intervention_id": intervention.id().as_str(),
                 "kind": intervention.kind().as_label(),
@@ -164,6 +171,7 @@ fn intervention_values(instance: &CeremonyInstance) -> Vec<Value> {
                     "message": intervention.request().message(),
                     "details": intervention.request().details().as_map(),
                 },
+                "provenance": provenance,
                 "responses": responses,
                 "created_at": intervention.created_at(),
                 "updated_at": intervention.updated_at(),

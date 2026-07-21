@@ -59,10 +59,14 @@ something, keep the ceremony instance active and use
    `investigation`, or `action` for `kind`.
 2. Omit `target_role_ids` when addressing the whole table. Supply explicit
    role ids when the participant named a specialist.
-3. Obtain the actual opinion, evidence, or action result with the host's
+3. When the participant selects an option proposed in an earlier intervention,
+   include `provenance` with the source intervention, the role whose response
+   proposed it, and the selected role. Preserve the participant's specific
+   wording; a selection is still not authorization for a consequential action.
+4. Obtain the actual opinion, evidence, or action result with the host's
    available capabilities, then record each targeted role's contribution with
    `choreo_respond_to_ceremony_intervention`.
-4. Leave the intervention open until the requesting participant explicitly
+5. Leave the intervention open until the requesting participant explicitly
    says they are satisfied or asks to close it. Only then call
    `choreo_close_ceremony_intervention` as that requesting role.
 

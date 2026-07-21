@@ -160,6 +160,7 @@ async fn complete_table_opinion(server: &ChoreoMcpServer, ceremony_id: &str) {
             None,
             "What failure mode best explains the current symptoms?",
             &json!({"incident_ref": "INC-42"}),
+            None,
         ),
     )
     .await;
@@ -179,7 +180,7 @@ async fn complete_table_opinion(server: &ChoreoMcpServer, ceremony_id: &str) {
             ceremony_id,
             "table-opinion",
             "OBSERVER",
-            "The timing suggests downstream saturation.",
+            "The timing suggests downstream saturation; ask the queue specialist to inspect depth.",
             &json!({"confidence": 65}),
         ),
     )
@@ -238,16 +239,41 @@ async fn complete_table_opinion(server: &ChoreoMcpServer, ceremony_id: &str) {
 }
 
 async fn inspect_queue_as_targeted_role(server: &ChoreoMcpServer, ceremony_id: &str) {
-    let queue_request = send(
+    let ungrounded_request = send(
         server,
         request_intervention_call(
             8,
+            ceremony_id,
+            "inspect-queue-ungrounded",
+            "investigation",
+            Some(&["QUEUE_SPECIALIST"]),
+            "Inspect queue depth without consuming messages.",
+            &json!({"queue": "orders"}),
+            Some(&json!({
+                "source_intervention_id": "table-opinion",
+                "source_response_role_id": "QUEUE_SPECIALIST",
+                "selected_role_id": "QUEUE_SPECIALIST",
+            })),
+        ),
+    )
+    .await;
+    assert_eq!(ungrounded_request["result"]["isError"], true);
+
+    let queue_request = send(
+        server,
+        request_intervention_call(
+            9,
             ceremony_id,
             "inspect-queue",
             "investigation",
             Some(&["QUEUE_SPECIALIST"]),
             "Inspect queue depth without consuming messages.",
             &json!({"queue": "orders"}),
+            Some(&json!({
+                "source_intervention_id": "table-opinion",
+                "source_response_role_id": "OBSERVER",
+                "selected_role_id": "QUEUE_SPECIALIST",
+            })),
         ),
     )
     .await;
@@ -255,11 +281,19 @@ async fn inspect_queue_as_targeted_role(server: &ChoreoMcpServer, ceremony_id: &
         structured(&queue_request)["interventions"][1]["target"]["role_ids"],
         json!(["QUEUE_SPECIALIST"])
     );
+    assert_eq!(
+        structured(&queue_request)["interventions"][1]["provenance"],
+        json!({
+            "source_intervention_id": "table-opinion",
+            "source_response_role_id": "OBSERVER",
+            "selected_role_id": "QUEUE_SPECIALIST",
+        })
+    );
 
     let unrelated = send(
         server,
         respond_intervention_call(
-            9,
+            10,
             ceremony_id,
             "inspect-queue",
             "OBSERVER",
@@ -273,7 +307,7 @@ async fn inspect_queue_as_targeted_role(server: &ChoreoMcpServer, ceremony_id: &
     let queue_response = send(
         server,
         respond_intervention_call(
-            10,
+            11,
             ceremony_id,
             "inspect-queue",
             "QUEUE_SPECIALIST",
@@ -487,6 +521,7 @@ fn request_intervention_call(
     target_role_ids: Option<&[&str]>,
     message: &str,
     details: &Value,
+    provenance: Option<&Value>,
 ) -> Value {
     let mut arguments = json!({
         "ceremony_id": ceremony_id,
@@ -498,6 +533,9 @@ fn request_intervention_call(
     });
     if let Some(target_role_ids) = target_role_ids {
         arguments["target_role_ids"] = json!(target_role_ids);
+    }
+    if let Some(provenance) = provenance {
+        arguments["provenance"] = provenance.clone();
     }
     tool_call(id, "choreo_request_ceremony_intervention", &arguments)
 }

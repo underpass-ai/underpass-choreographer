@@ -508,7 +508,22 @@ fn request_ceremony_intervention_schema() -> Value {
                 "description": "Optional responding roles. Omit to address the whole table."
             },
             "message": string_schema("Participant's request in their own words."),
-            "details": attributes_schema("Structured request context or evidence references.")
+            "details": attributes_schema("Structured request context or evidence references."),
+            "provenance": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "source_intervention_id",
+                    "source_response_role_id",
+                    "selected_role_id"
+                ],
+                "properties": {
+                    "source_intervention_id": string_schema("Earlier intervention containing the selected proposal."),
+                    "source_response_role_id": string_schema("Role whose response contained the selected proposal."),
+                    "selected_role_id": string_schema("Role selected to handle the new intervention.")
+                },
+                "description": "Optional trace from a table proposal to the intervention created from it."
+            }
         }
     })
 }

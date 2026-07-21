@@ -6,7 +6,8 @@ use time::OffsetDateTime;
 use crate::error::DomainError;
 use crate::value_objects::{
     CeremonyInterventionContent, CeremonyInterventionId, CeremonyInterventionKind,
-    CeremonyInterventionResponse, CeremonyInterventionStatus, CeremonyInterventionTarget, RoleId,
+    CeremonyInterventionProvenance, CeremonyInterventionResponse, CeremonyInterventionStatus,
+    CeremonyInterventionTarget, RoleId,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -16,6 +17,8 @@ pub struct CeremonyIntervention {
     requested_by: RoleId,
     target: CeremonyInterventionTarget,
     request: CeremonyInterventionContent,
+    #[serde(default)]
+    provenance: Option<CeremonyInterventionProvenance>,
     responses: Vec<CeremonyInterventionResponse>,
     status: CeremonyInterventionStatus,
     #[serde(with = "time::serde::rfc3339")]
@@ -36,12 +39,27 @@ impl CeremonyIntervention {
         request: CeremonyInterventionContent,
         now: OffsetDateTime,
     ) -> Self {
+        Self::open_with_provenance(id, kind, requested_by, target, request, None, now)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[must_use]
+    pub fn open_with_provenance(
+        id: CeremonyInterventionId,
+        kind: CeremonyInterventionKind,
+        requested_by: RoleId,
+        target: CeremonyInterventionTarget,
+        request: CeremonyInterventionContent,
+        provenance: Option<CeremonyInterventionProvenance>,
+        now: OffsetDateTime,
+    ) -> Self {
         Self {
             id,
             kind,
             requested_by,
             target,
             request,
+            provenance,
             responses: Vec::new(),
             status: CeremonyInterventionStatus::Open,
             created_at: now,
@@ -121,6 +139,11 @@ impl CeremonyIntervention {
     #[must_use]
     pub fn request(&self) -> &CeremonyInterventionContent {
         &self.request
+    }
+
+    #[must_use]
+    pub fn provenance(&self) -> Option<&CeremonyInterventionProvenance> {
+        self.provenance.as_ref()
     }
 
     #[must_use]

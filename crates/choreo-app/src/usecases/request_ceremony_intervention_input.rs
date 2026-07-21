@@ -1,6 +1,7 @@
 use choreo_core::value_objects::{
     CeremonyId, CeremonyInterventionContent, CeremonyInterventionId, CeremonyInterventionKind,
-    CeremonyInterventionTarget, CeremonyName, CeremonyVersion, RoleId,
+    CeremonyInterventionProvenance, CeremonyInterventionTarget, CeremonyName, CeremonyVersion,
+    RoleId,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -13,6 +14,7 @@ pub struct RequestCeremonyInterventionInput {
     pub(crate) kind: CeremonyInterventionKind,
     pub(crate) target: CeremonyInterventionTarget,
     pub(crate) content: CeremonyInterventionContent,
+    pub(crate) provenance: Option<CeremonyInterventionProvenance>,
 }
 
 impl RequestCeremonyInterventionInput {
@@ -37,6 +39,13 @@ impl RequestCeremonyInterventionInput {
             kind,
             target,
             content,
+            provenance: None,
         }
+    }
+
+    #[must_use]
+    pub fn with_provenance(mut self, provenance: CeremonyInterventionProvenance) -> Self {
+        self.provenance = Some(provenance);
+        self
     }
 }

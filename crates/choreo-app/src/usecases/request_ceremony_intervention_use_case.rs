@@ -56,13 +56,14 @@ impl RequestCeremonyInterventionUseCase {
             .get(&input.definition_name, &input.definition_version)
             .await?;
         let mut instance = self.instances.get(&input.instance_id).await?;
-        instance.request_intervention_as(
+        instance.request_intervention_with_provenance_as(
             &definition,
             input.intervention_id,
             input.role_id,
             input.kind,
             input.target,
             input.content,
+            input.provenance,
             self.clock.now(),
         )?;
         self.instances.save(&instance).await?;
