@@ -28,6 +28,7 @@ pub(crate) const REQUEST_CEREMONY_INTERVENTION_TOOL: &str = "choreo_request_cere
 pub(crate) const RESPOND_TO_CEREMONY_INTERVENTION_TOOL: &str =
     "choreo_respond_to_ceremony_intervention";
 pub(crate) const CLOSE_CEREMONY_INTERVENTION_TOOL: &str = "choreo_close_ceremony_intervention";
+pub(crate) const COLLECT_CEREMONY_EVIDENCE_TOOL: &str = "choreo_collect_ceremony_evidence";
 
 const GRPC_TOOL_NAMES: [&str; 17] = [
     "choreo_deliberate",
@@ -335,6 +336,11 @@ fn embedded_incremental_tool_catalog() -> Vec<Value> {
             "Close an open ceremony intervention as its requesting role.",
             close_ceremony_intervention_schema(),
         ),
+        tool_def(
+            COLLECT_CEREMONY_EVIDENCE_TOOL,
+            "Collect a non-empty evidence pack through the configured read-only host source and attach it to an open intervention.",
+            collect_ceremony_evidence_schema(),
+        ),
     ]
 }
 
@@ -552,6 +558,22 @@ fn close_ceremony_intervention_schema() -> Value {
             "ceremony_id": string_schema("Started ceremony instance id."),
             "intervention_id": string_schema("Open intervention id."),
             "role_id": string_schema("Requesting role closing the intervention.")
+        }
+    })
+}
+
+fn collect_ceremony_evidence_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ceremony_id", "intervention_id", "role_id", "source_id", "query"],
+        "properties": {
+            "ceremony_id": string_schema("Started ceremony instance id."),
+            "intervention_id": string_schema("Open investigation or action intervention receiving the evidence."),
+            "role_id": string_schema("Targeted role represented by the configured evidence source."),
+            "source_id": string_schema("Host-configured evidence source, such as observability."),
+            "query": string_schema("Specific read-only evidence request in the participant's words."),
+            "details": attributes_schema("Structured query parameters such as time window or service identity.")
         }
     })
 }
@@ -903,7 +925,7 @@ mod tests {
         let all_names = catalog_tool_names();
         let unique_names = all_names.iter().collect::<std::collections::BTreeSet<_>>();
 
-        assert_eq!(all_names.len(), 26);
+        assert_eq!(all_names.len(), 27);
         assert_eq!(unique_names.len(), all_names.len());
         assert!(all_names.contains(&START_CEREMONY_TOOL.to_owned()));
         assert!(all_names.contains(&APPROVE_CEREMONY_GUARD_TOOL.to_owned()));
@@ -912,6 +934,7 @@ mod tests {
         assert!(all_names.contains(&REQUEST_CEREMONY_INTERVENTION_TOOL.to_owned()));
         assert!(all_names.contains(&RESPOND_TO_CEREMONY_INTERVENTION_TOOL.to_owned()));
         assert!(all_names.contains(&CLOSE_CEREMONY_INTERVENTION_TOOL.to_owned()));
+        assert!(all_names.contains(&COLLECT_CEREMONY_EVIDENCE_TOOL.to_owned()));
     }
 
     #[test]

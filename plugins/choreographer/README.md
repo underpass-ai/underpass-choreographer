@@ -15,6 +15,7 @@ Executable scope:
   `choreo_apply_ceremony_transition`, and
   `choreo_get_ceremony_instance` for persistent, human-authorized flows;
 - `choreo_request_ceremony_intervention`,
-  `choreo_respond_to_ceremony_intervention`, and
+  `choreo_respond_to_ceremony_intervention`,
+  `choreo_collect_ceremony_evidence`, and
   `choreo_close_ceremony_intervention` for participant-created live agenda
   items controlled by the requesting role.

@@ -2,6 +2,7 @@
 
 mod ceremony_context;
 mod ceremony_description;
+mod ceremony_evidence_source_id;
 mod ceremony_guard;
 mod ceremony_guard_deferral;
 mod ceremony_guard_deferral_content;
@@ -50,6 +51,7 @@ mod transition_trigger;
 
 pub use ceremony_context::CeremonyContext;
 pub use ceremony_description::CeremonyDescription;
+pub use ceremony_evidence_source_id::CeremonyEvidenceSourceId;
 pub use ceremony_guard::CeremonyGuard;
 pub use ceremony_guard_deferral::CeremonyGuardDeferral;
 pub use ceremony_guard_deferral_content::CeremonyGuardDeferralContent;

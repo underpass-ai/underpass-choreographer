@@ -11,9 +11,10 @@ use time::OffsetDateTime;
 
 use super::{ceremony_definition::CeremonyDefinition, CeremonyIntervention};
 use crate::error::DomainError;
+use crate::ports::CeremonyEvidenceRequest;
 use crate::value_objects::{
-    CeremonyContext, CeremonyGuardDeferral, CeremonyGuardDeferralContent, CeremonyId,
-    CeremonyInterventionContent, CeremonyInterventionId, CeremonyInterventionKind,
+    CeremonyContext, CeremonyEvidenceSourceId, CeremonyGuardDeferral, CeremonyGuardDeferralContent,
+    CeremonyId, CeremonyInterventionContent, CeremonyInterventionId, CeremonyInterventionKind,
     CeremonyInterventionProvenance, CeremonyInterventionTarget, CeremonyName, CeremonyVersion,
     GuardCondition, GuardName, IdempotencyKey, RoleAction, RoleId, StateId, StepAttempt,
     StepExecutionRecord, StepId, StepLease, StepResult, StepStatus, TransitionTrigger,
@@ -401,6 +402,58 @@ impl CeremonyInstance {
                 what: "ceremony_intervention",
             })?
             .respond(role_id, content, now)?;
+        self.updated_at = now;
+        Ok(())
+    }
+
+    pub fn prepare_evidence_request_as(
+        &self,
+        definition: &CeremonyDefinition,
+        intervention_id: CeremonyInterventionId,
+        role_id: RoleId,
+        source_id: CeremonyEvidenceSourceId,
+        query: CeremonyInterventionContent,
+    ) -> Result<CeremonyEvidenceRequest, DomainError> {
+        self.require_active(
+            definition,
+            "terminal ceremony instances cannot collect intervention evidence",
+        )?;
+        self.require_role(definition, &role_id, &RoleAction::respond_to_intervention())?;
+        self.intervention(&intervention_id)
+            .ok_or(DomainError::NotFound {
+                what: "ceremony_intervention",
+            })?
+            .ensure_can_respond(&role_id)?;
+        Ok(CeremonyEvidenceRequest::new(
+            self.id.clone(),
+            intervention_id,
+            role_id,
+            source_id,
+            query,
+            self.context.clone(),
+        ))
+    }
+
+    pub fn respond_to_intervention_with_evidence_as(
+        &mut self,
+        definition: &CeremonyDefinition,
+        intervention_id: &CeremonyInterventionId,
+        role_id: RoleId,
+        evidence_pack: super::CeremonyEvidencePack,
+        now: OffsetDateTime,
+    ) -> Result<(), DomainError> {
+        self.require_active(
+            definition,
+            "terminal ceremony instances cannot receive intervention evidence",
+        )?;
+        self.require_role(definition, &role_id, &RoleAction::respond_to_intervention())?;
+        self.interventions
+            .iter_mut()
+            .find(|intervention| intervention.id() == intervention_id)
+            .ok_or(DomainError::NotFound {
+                what: "ceremony_intervention",
+            })?
+            .respond_with_evidence(role_id, evidence_pack, now)?;
         self.updated_at = now;
         Ok(())
     }

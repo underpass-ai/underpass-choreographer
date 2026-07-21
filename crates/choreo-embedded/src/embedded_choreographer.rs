@@ -4,9 +4,10 @@ use std::sync::Arc;
 use choreo_app::usecases::{
     ApplyCeremonyTransitionInput, ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardInput,
     ApproveCeremonyGuardUseCase, CloseCeremonyInterventionInput, CloseCeremonyInterventionUseCase,
-    CompleteCeremonyStepInput, CompleteCeremonyStepUseCase, DeferCeremonyGuardInput,
-    DeferCeremonyGuardUseCase, GetCeremonyDefinitionUseCase, GetCeremonyInstanceUseCase,
-    GetCeremonyTranscriptUseCase, ListCeremonyDefinitionsUseCase, MountCeremonyDefinitionsOutput,
+    CollectCeremonyEvidenceInput, CollectCeremonyEvidenceUseCase, CompleteCeremonyStepInput,
+    CompleteCeremonyStepUseCase, DeferCeremonyGuardInput, DeferCeremonyGuardUseCase,
+    GetCeremonyDefinitionUseCase, GetCeremonyInstanceUseCase, GetCeremonyTranscriptUseCase,
+    ListCeremonyDefinitionsUseCase, MountCeremonyDefinitionsOutput,
     MountCeremonyDefinitionsUseCase, RequestCeremonyInterventionInput,
     RequestCeremonyInterventionUseCase, RespondToCeremonyInterventionInput,
     RespondToCeremonyInterventionUseCase, RunCeremonyInput, RunCeremonyOutput,
@@ -16,8 +17,8 @@ use choreo_app::usecases::{
 use choreo_core::entities::{CeremonyDefinition, CeremonyInstance};
 use choreo_core::error::DomainError;
 use choreo_core::ports::{
-    CeremonyContextStorePort, CeremonyDefinitionRepositoryPort, CeremonyInstanceRepositoryPort,
-    CeremonyStepHandlerPort, ClockPort, MetricsRecorderPort,
+    CeremonyContextStorePort, CeremonyDefinitionRepositoryPort, CeremonyEvidenceSourcePort,
+    CeremonyInstanceRepositoryPort, CeremonyStepHandlerPort, ClockPort, MetricsRecorderPort,
 };
 use choreo_core::value_objects::{
     CeremonyId, CeremonyName, CeremonyTranscript, CeremonyVersion, StepAttempt,
@@ -32,6 +33,7 @@ pub struct EmbeddedChoreographer {
     instances: Arc<dyn CeremonyInstanceRepositoryPort>,
     context_store: Arc<dyn CeremonyContextStorePort>,
     step_handler: Arc<dyn CeremonyStepHandlerPort>,
+    evidence_source: Arc<dyn CeremonyEvidenceSourcePort>,
     clock: Arc<dyn ClockPort>,
     metrics: Arc<dyn MetricsRecorderPort>,
 }
@@ -42,6 +44,7 @@ impl EmbeddedChoreographer {
         instances: Arc<dyn CeremonyInstanceRepositoryPort>,
         context_store: Arc<dyn CeremonyContextStorePort>,
         step_handler: Arc<dyn CeremonyStepHandlerPort>,
+        evidence_source: Arc<dyn CeremonyEvidenceSourcePort>,
         clock: Arc<dyn ClockPort>,
         metrics: Arc<dyn MetricsRecorderPort>,
     ) -> Self {
@@ -50,6 +53,7 @@ impl EmbeddedChoreographer {
             instances,
             context_store,
             step_handler,
+            evidence_source,
             clock,
             metrics,
         }
@@ -185,6 +189,20 @@ impl EmbeddedChoreographer {
         RespondToCeremonyInterventionUseCase::new(
             self.definitions.clone(),
             self.instances.clone(),
+            self.clock.clone(),
+        )
+        .execute(input)
+        .await
+    }
+
+    pub async fn collect_evidence(
+        &self,
+        input: CollectCeremonyEvidenceInput,
+    ) -> Result<CeremonyInstance, DomainError> {
+        CollectCeremonyEvidenceUseCase::new(
+            self.definitions.clone(),
+            self.instances.clone(),
+            self.evidence_source.clone(),
             self.clock.clone(),
         )
         .execute(input)

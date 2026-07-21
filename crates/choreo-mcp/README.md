@@ -98,6 +98,7 @@ that intentionally have no gRPC mapping:
 | `choreo_request_ceremony_intervention` | Open a participant request, optionally linked to the table response it selects. |
 | `choreo_respond_to_ceremony_intervention` | Record one targeted role's response. |
 | `choreo_close_ceremony_intervention` | Let the requesting role close its intervention. |
+| `choreo_collect_ceremony_evidence` | Collect a typed evidence pack through a host-provided read-only source. |
 
 These calls allow the host to pause between actions. Human guard approval is
 never inferred by the server; the client must obtain the person's decision

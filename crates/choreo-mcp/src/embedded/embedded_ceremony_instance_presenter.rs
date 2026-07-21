@@ -150,6 +150,7 @@ fn intervention_values(instance: &CeremonyInstance) -> Vec<Value> {
                         "role_id": response.role_id().as_str(),
                         "message": response.content().message(),
                         "details": response.content().details().as_map(),
+                        "evidence_pack": response.evidence_pack(),
                         "responded_at": response.responded_at(),
                     })
                 })

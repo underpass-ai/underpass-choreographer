@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
+use crate::entities::CeremonyEvidencePack;
 use crate::error::DomainError;
 use crate::value_objects::{
     CeremonyInterventionContent, CeremonyInterventionId, CeremonyInterventionKind,
@@ -74,12 +75,37 @@ impl CeremonyIntervention {
         content: CeremonyInterventionContent,
         now: OffsetDateTime,
     ) -> Result<(), DomainError> {
+        self.ensure_can_respond(&role_id)?;
+        self.responses
+            .push(CeremonyInterventionResponse::new(role_id, content, now));
+        self.updated_at = now;
+        Ok(())
+    }
+
+    pub fn respond_with_evidence(
+        &mut self,
+        role_id: RoleId,
+        evidence_pack: CeremonyEvidencePack,
+        now: OffsetDateTime,
+    ) -> Result<(), DomainError> {
+        self.ensure_can_respond(&role_id)?;
+        self.responses
+            .push(CeremonyInterventionResponse::from_evidence(
+                role_id,
+                evidence_pack,
+                now,
+            )?);
+        self.updated_at = now;
+        Ok(())
+    }
+
+    pub(crate) fn ensure_can_respond(&self, role_id: &RoleId) -> Result<(), DomainError> {
         if !self.status.is_open() {
             return Err(DomainError::InvariantViolated {
                 reason: "closed ceremony interventions cannot receive responses",
             });
         }
-        if !self.target.accepts(&role_id) {
+        if !self.target.accepts(role_id) {
             return Err(DomainError::InvariantViolated {
                 reason: "ceremony intervention does not target responding role",
             });
@@ -87,15 +113,12 @@ impl CeremonyIntervention {
         if self
             .responses
             .iter()
-            .any(|response| response.role_id() == &role_id)
+            .any(|response| response.role_id() == role_id)
         {
             return Err(DomainError::AlreadyExists {
                 what: "ceremony_intervention.response_role",
             });
         }
-        self.responses
-            .push(CeremonyInterventionResponse::new(role_id, content, now));
-        self.updated_at = now;
         Ok(())
     }
 

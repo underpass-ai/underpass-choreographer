@@ -3,8 +3,14 @@
 use std::process::Stdio;
 use std::time::Duration;
 
-use choreo_mcp::ChoreoMcpServer;
+use choreo_core::entities::{
+    CeremonyEvidencePack, ContextItem, ContextSummary, ExternalContextBundle,
+};
+use choreo_core::value_objects::Attributes;
+use choreo_embedded::EmbeddedChoreographer;
+use choreo_mcp::{ChoreoMcpServer, EmbeddedChoreoMcpBackend};
 use serde_json::{json, Value};
+use time::OffsetDateTime;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 use tokio::time::timeout;
@@ -130,11 +136,147 @@ async fn embedded_server_advertises_only_executable_tools() {
             "choreo_request_ceremony_intervention",
             "choreo_respond_to_ceremony_intervention",
             "choreo_close_ceremony_intervention",
+            "choreo_collect_ceremony_evidence",
         ]
     );
 
     let completed = send(&server, run_ceremony_call(3, "embedded-direct-smoke")).await;
     assert_completed(&completed);
+}
+
+#[tokio::test]
+async fn host_evidence_source_attaches_a_typed_pack_to_the_open_intervention() {
+    let embedded = EmbeddedChoreographer::builder()
+        .with_evidence_source_callback(|request| async move {
+            assert_eq!(request.instance_id().as_str(), "embedded-evidence-source");
+            assert_eq!(request.intervention_id().as_str(), "inspect-observability");
+            assert_eq!(request.role_id().as_str(), "OBSERVER");
+            assert_eq!(request.source_id().as_str(), "observability");
+            assert_eq!(
+                request.query().message(),
+                "Inspect checkout errors during the last five minutes."
+            );
+            assert_eq!(request.query().details().as_map()["window_minutes"], 5);
+            assert_eq!(
+                request.context().attributes().as_map()["incident_ref"],
+                "INC-42"
+            );
+
+            let item = ContextItem::new(
+                "checkout-error-rate",
+                "metric",
+                "Checkout error rate",
+                Some("Error rate is 18%, up from 0.4%.".to_owned()),
+                Attributes::empty(),
+                Vec::new(),
+            )?;
+            let bundle = ExternalContextBundle::new(
+                "checkout-observability",
+                "1.0",
+                Some(ContextSummary::new(
+                    "Checkout errors increased sharply.",
+                    Attributes::empty(),
+                )?),
+                vec![item],
+                Vec::new(),
+                Attributes::empty(),
+            )?;
+            CeremonyEvidencePack::new(
+                request.source_id().clone(),
+                bundle,
+                OffsetDateTime::now_utc(),
+            )
+        })
+        .build();
+    let server = ChoreoMcpServer::with_backend(EmbeddedChoreoMcpBackend::new(embedded));
+    let ceremony_id = "embedded-evidence-source";
+
+    send(&server, start_collaborative_ceremony_call(1, ceremony_id)).await;
+    send(
+        &server,
+        request_intervention_call(
+            2,
+            ceremony_id,
+            "inspect-observability",
+            "investigation",
+            Some(&["OBSERVER"]),
+            "Inspect observability.",
+            &json!({}),
+            None,
+        ),
+    )
+    .await;
+    let collected = send(
+        &server,
+        collect_evidence_call(
+            3,
+            ceremony_id,
+            "inspect-observability",
+            "OBSERVER",
+            "observability",
+            "Inspect checkout errors during the last five minutes.",
+            &json!({"window_minutes": 5}),
+        ),
+    )
+    .await;
+
+    let response = &structured(&collected)["interventions"][0]["responses"][0];
+    assert_eq!(response["message"], "Checkout errors increased sharply.");
+    assert_eq!(response["evidence_pack"]["source_id"], "observability");
+    assert_eq!(
+        response["evidence_pack"]["bundle"]["items"][0]["narrative"],
+        "Error rate is 18%, up from 0.4%."
+    );
+    assert_eq!(
+        response["details"]["evidence_pack"],
+        response["evidence_pack"]
+    );
+}
+
+#[tokio::test]
+async fn evidence_collection_without_a_configured_source_fails_and_keeps_request_open() {
+    let server = ChoreoMcpServer::embedded();
+    let ceremony_id = "embedded-missing-evidence-source";
+
+    send(&server, start_collaborative_ceremony_call(1, ceremony_id)).await;
+    send(
+        &server,
+        request_intervention_call(
+            2,
+            ceremony_id,
+            "inspect-observability",
+            "investigation",
+            Some(&["OBSERVER"]),
+            "Inspect observability.",
+            &json!({}),
+            None,
+        ),
+    )
+    .await;
+    let failed = send(
+        &server,
+        collect_evidence_call(
+            3,
+            ceremony_id,
+            "inspect-observability",
+            "OBSERVER",
+            "observability",
+            "Inspect checkout errors.",
+            &json!({}),
+        ),
+    )
+    .await;
+    assert_eq!(failed["result"]["isError"], true);
+
+    let inspected = send(&server, instance_call(4, ceremony_id)).await;
+    assert_eq!(
+        structured(&inspected)["open_intervention_ids"],
+        json!(["inspect-observability"])
+    );
+    assert_eq!(
+        structured(&inspected)["interventions"][0]["responses"],
+        json!([])
+    );
 }
 
 #[tokio::test]
@@ -435,7 +577,7 @@ async fn embedded_binary_completes_incremental_human_authorization_over_stdio() 
     let completed = read_response(&mut lines).await;
 
     assert_eq!(initialized["result"]["metadata"]["backend"], "embedded");
-    assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 10);
+    assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 11);
     assert_eq!(structured(&started)["next_step_id"], "investigate");
     assert_eq!(
         structured(&stepped)["waiting_for_human"],
@@ -574,6 +716,30 @@ fn close_intervention_call(
             "ceremony_id": ceremony_id,
             "intervention_id": intervention_id,
             "role_id": role_id,
+        }),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn collect_evidence_call(
+    id: u64,
+    ceremony_id: &str,
+    intervention_id: &str,
+    role_id: &str,
+    source_id: &str,
+    query: &str,
+    details: &Value,
+) -> Value {
+    tool_call(
+        id,
+        "choreo_collect_ceremony_evidence",
+        &json!({
+            "ceremony_id": ceremony_id,
+            "intervention_id": intervention_id,
+            "role_id": role_id,
+            "source_id": source_id,
+            "query": query,
+            "details": details,
         }),
     )
 }

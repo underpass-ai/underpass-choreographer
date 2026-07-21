@@ -52,6 +52,7 @@ embedded = [
     "dep:choreo-app",
     "dep:choreo-core",
     "dep:choreo-embedded",
+    "dep:time",
     "dep:uuid",
 ]
 grpc = [

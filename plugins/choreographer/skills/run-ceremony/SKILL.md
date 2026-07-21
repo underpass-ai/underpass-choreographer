@@ -63,10 +63,18 @@ something, keep the ceremony instance active and use
    include `provenance` with the source intervention, the role whose response
    proposed it, and the selected role. Preserve the participant's specific
    wording; a selection is still not authorization for a consequential action.
-4. Obtain the actual opinion, evidence, or action result with the host's
-   available capabilities, then record each targeted role's contribution with
-   `choreo_respond_to_ceremony_intervention`.
-5. Leave the intervention open until the requesting participant explicitly
+4. For a read-only evidence request, call
+   `choreo_collect_ceremony_evidence` when the embedded host configured the
+   requested `source_id`. Preserve the participant's exact request in `query`
+   and put safe structured selectors, such as the service and time window, in
+   `details`. The returned non-empty evidence pack is recorded as that role's
+   response.
+5. Otherwise obtain the actual opinion, evidence, or action result with the
+   host's available capabilities, then record each targeted role's contribution
+   with `choreo_respond_to_ceremony_intervention`. Never turn an absent source
+   or empty result into evidence; report the block and leave the intervention
+   open.
+6. Leave the intervention open until the requesting participant explicitly
    says they are satisfied or asks to close it. Only then call
    `choreo_close_ceremony_intervention` as that requesting role.
 

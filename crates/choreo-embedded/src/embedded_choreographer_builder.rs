@@ -7,16 +7,17 @@ use choreo_adapters::memory::{
     InMemoryCeremonyContextStore, InMemoryCeremonyDefinitionRepository,
     InMemoryCeremonyInstanceRepository,
 };
-use choreo_adapters::noop::NoopCeremonyStepHandler;
+use choreo_adapters::noop::{NoopCeremonyEvidenceSource, NoopCeremonyStepHandler};
+use choreo_core::entities::CeremonyEvidencePack;
 use choreo_core::error::DomainError;
 use choreo_core::ports::{
-    CeremonyContextStorePort, CeremonyDefinitionRepositoryPort, CeremonyInstanceRepositoryPort,
-    CeremonyStepHandlerPort, CeremonyStepHandlerRequest, ClockPort, MetricsRecorderPort,
-    NoopMetricsRecorder,
+    CeremonyContextStorePort, CeremonyDefinitionRepositoryPort, CeremonyEvidenceRequest,
+    CeremonyEvidenceSourcePort, CeremonyInstanceRepositoryPort, CeremonyStepHandlerPort,
+    CeremonyStepHandlerRequest, ClockPort, MetricsRecorderPort, NoopMetricsRecorder,
 };
 use choreo_core::value_objects::StepResult;
 
-use crate::{CallbackCeremonyStepHandler, EmbeddedChoreographer};
+use crate::{CallbackCeremonyEvidenceSource, CallbackCeremonyStepHandler, EmbeddedChoreographer};
 
 /// Builder for an in-process Choreographer with replaceable adapters.
 #[derive(Default)]
@@ -25,6 +26,7 @@ pub struct EmbeddedChoreographerBuilder {
     instances: Option<Arc<dyn CeremonyInstanceRepositoryPort>>,
     context_store: Option<Arc<dyn CeremonyContextStorePort>>,
     step_handler: Option<Arc<dyn CeremonyStepHandlerPort>>,
+    evidence_source: Option<Arc<dyn CeremonyEvidenceSourcePort>>,
     clock: Option<Arc<dyn ClockPort>>,
     metrics: Option<Arc<dyn MetricsRecorderPort>>,
 }
@@ -75,6 +77,21 @@ impl EmbeddedChoreographerBuilder {
     }
 
     #[must_use]
+    pub fn with_evidence_source(mut self, adapter: Arc<dyn CeremonyEvidenceSourcePort>) -> Self {
+        self.evidence_source = Some(adapter);
+        self
+    }
+
+    #[must_use]
+    pub fn with_evidence_source_callback<F, Fut>(self, callback: F) -> Self
+    where
+        F: Fn(CeremonyEvidenceRequest) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<CeremonyEvidencePack, DomainError>> + Send + 'static,
+    {
+        self.with_evidence_source(Arc::new(CallbackCeremonyEvidenceSource::new(callback)))
+    }
+
+    #[must_use]
     pub fn with_clock(mut self, adapter: Arc<dyn ClockPort>) -> Self {
         self.clock = Some(adapter);
         self
@@ -104,6 +121,9 @@ impl EmbeddedChoreographerBuilder {
         let step_handler = self.step_handler.unwrap_or_else(|| {
             Arc::new(NoopCeremonyStepHandler::new()) as Arc<dyn CeremonyStepHandlerPort>
         });
+        let evidence_source = self.evidence_source.unwrap_or_else(|| {
+            Arc::new(NoopCeremonyEvidenceSource::new()) as Arc<dyn CeremonyEvidenceSourcePort>
+        });
         let clock = self
             .clock
             .unwrap_or_else(|| Arc::new(SystemClock::new()) as Arc<dyn ClockPort>);
@@ -116,6 +136,7 @@ impl EmbeddedChoreographerBuilder {
             instances,
             context_store,
             step_handler,
+            evidence_source,
             clock,
             metrics,
         )
@@ -130,6 +151,7 @@ impl fmt::Debug for EmbeddedChoreographerBuilder {
             .field("has_instance_repository", &self.instances.is_some())
             .field("has_context_store", &self.context_store.is_some())
             .field("has_step_handler", &self.step_handler.is_some())
+            .field("has_evidence_source", &self.evidence_source.is_some())
             .field("has_clock", &self.clock.is_some())
             .field("has_metrics", &self.metrics.is_some())
             .finish()

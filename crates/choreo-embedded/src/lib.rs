@@ -7,11 +7,13 @@
 
 #![deny(missing_debug_implementations)]
 
+mod callback_ceremony_evidence_source;
 mod callback_ceremony_step_handler;
 mod embedded_choreographer;
 mod embedded_choreographer_builder;
 mod in_process_ceremony_definition_source;
 
+pub use callback_ceremony_evidence_source::CallbackCeremonyEvidenceSource;
 pub use callback_ceremony_step_handler::CallbackCeremonyStepHandler;
 pub use embedded_choreographer::EmbeddedChoreographer;
 pub use embedded_choreographer_builder::EmbeddedChoreographerBuilder;
