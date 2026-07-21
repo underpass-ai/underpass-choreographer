@@ -6,6 +6,31 @@ pub(super) fn required_string(object: &Map<String, Value>, field: &str) -> Resul
     optional_string(object, field)?.ok_or_else(|| format!("missing required field `{field}`"))
 }
 
+pub(super) fn required_strings(
+    object: &Map<String, Value>,
+    field: &str,
+) -> Result<Vec<String>, String> {
+    let value = object
+        .get(field)
+        .ok_or_else(|| format!("missing required field `{field}`"))?;
+    let values = value
+        .as_array()
+        .ok_or_else(|| format!("field `{field}` must be an array of strings"))?;
+    values
+        .iter()
+        .map(|value| {
+            let value = value
+                .as_str()
+                .ok_or_else(|| format!("field `{field}` must contain only strings"))?;
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
+                return Err(format!("field `{field}` must not contain blank strings"));
+            }
+            Ok(trimmed.to_owned())
+        })
+        .collect()
+}
+
 pub(super) fn optional_string(
     object: &Map<String, Value>,
     field: &str,

@@ -29,15 +29,16 @@ mod validation_mode;
 pub use agent_kind::AgentKind;
 pub use attributes::Attributes;
 pub use ceremony::{
-    CeremonyContext, CeremonyDescription, CeremonyGuard, CeremonyId, CeremonyInputDefinition,
-    CeremonyInterventionContent, CeremonyInterventionId, CeremonyInterventionKind,
-    CeremonyInterventionResponse, CeremonyInterventionStatus, CeremonyInterventionTarget,
-    CeremonyName, CeremonyOutputDefinition, CeremonyRole, CeremonyState, CeremonyStateKind,
-    CeremonyStep, CeremonyStepContribution, CeremonyTranscript, CeremonyTransition,
-    CeremonyVersion, GuardCondition, GuardName, IdempotencyKey, InputName, InputRequirement,
-    LeaseOwnerId, OutputName, RetryPolicy, RoleAction, RoleId, StateId, StepAttempt,
-    StepErrorMessage, StepExecutionRecord, StepHandlerConfig, StepHandlerKind, StepId, StepLease,
-    StepOutput, StepResult, StepStatus, StepTimeout, TransitionTrigger,
+    CeremonyContext, CeremonyDescription, CeremonyGuard, CeremonyGuardDeferral,
+    CeremonyGuardDeferralContent, CeremonyId, CeremonyInputDefinition, CeremonyInterventionContent,
+    CeremonyInterventionId, CeremonyInterventionKind, CeremonyInterventionResponse,
+    CeremonyInterventionStatus, CeremonyInterventionTarget, CeremonyName, CeremonyOutputDefinition,
+    CeremonyRole, CeremonyState, CeremonyStateKind, CeremonyStep, CeremonyStepContribution,
+    CeremonyTranscript, CeremonyTransition, CeremonyVersion, GuardCondition, GuardName,
+    IdempotencyKey, InputName, InputRequirement, LeaseOwnerId, OutputName, RetryPolicy, RoleAction,
+    RoleId, StateId, StepAttempt, StepErrorMessage, StepExecutionRecord, StepHandlerConfig,
+    StepHandlerKind, StepId, StepLease, StepOutput, StepResult, StepStatus, StepTimeout,
+    TransitionTrigger,
 };
 pub use ceremony_outcome::CeremonyOutcome;
 pub use council_selector::CouncilSelector;

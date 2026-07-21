@@ -41,9 +41,13 @@ Do not claim that a ceremony completed if the tool returned `isError: true` or
    `choreo_get_ceremony_instance` whenever state must be refreshed without a
    mutation.
 
-If the user rejects or defers approval, leave the persistent ceremony paused
-and report its `ceremony_id`, current state, and blocking guard. Do not convert
-a refusal into a tool error or silently choose another transition.
+If the user is uncertain or defers approval, call
+`choreo_defer_ceremony_guard`. Preserve their own words in `statement`, state
+why the decision remains unclear in `reason`, and record concrete
+`reconsider_when` conditions. Leave the persistent ceremony paused and report
+its `ceremony_id`, current state, and blocking guard. A deferral never satisfies
+the guard. Do not convert a refusal into a tool error or silently choose another
+transition.
 
 ## Dynamic participant interventions
 

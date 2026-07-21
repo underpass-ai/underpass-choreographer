@@ -70,6 +70,14 @@ impl EmbeddedCeremonyInstancePresenter {
             .collect::<Vec<_>>();
         let waiting_for_human = transitions
             .iter()
+            .filter(|transition| {
+                transition["guards"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter(|guard| guard["kind"] == "automated")
+                    .all(|guard| guard["satisfied"] == true)
+            })
             .flat_map(|transition| transition["guards"].as_array().into_iter().flatten())
             .filter(|guard| guard["kind"] == "human" && guard["satisfied"] == false)
             .filter_map(|guard| guard["name"].as_str().map(str::to_owned))
@@ -84,6 +92,7 @@ impl EmbeddedCeremonyInstancePresenter {
             .map(|step| step.id().as_str());
         let interventions = intervention_values(&instance);
         let open_intervention_ids = open_intervention_ids(&instance);
+        let guard_deferrals = guard_deferral_values(&instance);
 
         Ok(json!({
             "ceremony_id": instance.id().as_str(),
@@ -93,6 +102,7 @@ impl EmbeddedCeremonyInstancePresenter {
             "completed": instance.is_completed(&definition),
             "next_step_id": next_step_id,
             "waiting_for_human": waiting_for_human,
+            "guard_deferrals": guard_deferrals,
             "transitions": transitions,
             "steps": steps,
             "interventions": interventions,
@@ -100,6 +110,22 @@ impl EmbeddedCeremonyInstancePresenter {
             "context": instance.context(),
         }))
     }
+}
+
+fn guard_deferral_values(instance: &CeremonyInstance) -> Vec<Value> {
+    instance
+        .guard_deferrals()
+        .iter()
+        .map(|deferral| {
+            json!({
+                "guard_name": deferral.guard_name().as_str(),
+                "statement": deferral.content().statement(),
+                "reason": deferral.content().reason(),
+                "reconsider_when": deferral.content().reconsider_when(),
+                "deferred_at": deferral.deferred_at(),
+            })
+        })
+        .collect()
 }
 
 fn intervention_values(instance: &CeremonyInstance) -> Vec<Value> {

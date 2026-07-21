@@ -4,14 +4,14 @@ use std::sync::Arc;
 use choreo_app::usecases::{
     ApplyCeremonyTransitionInput, ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardInput,
     ApproveCeremonyGuardUseCase, CloseCeremonyInterventionInput, CloseCeremonyInterventionUseCase,
-    CompleteCeremonyStepInput, CompleteCeremonyStepUseCase, GetCeremonyDefinitionUseCase,
-    GetCeremonyInstanceUseCase, GetCeremonyTranscriptUseCase, ListCeremonyDefinitionsUseCase,
-    MountCeremonyDefinitionsOutput, MountCeremonyDefinitionsUseCase,
-    RequestCeremonyInterventionInput, RequestCeremonyInterventionUseCase,
-    RespondToCeremonyInterventionInput, RespondToCeremonyInterventionUseCase, RunCeremonyInput,
-    RunCeremonyOutput, RunCeremonyStepInput, RunCeremonyStepOutput, RunCeremonyStepUseCase,
-    RunCeremonyUseCase, StartCeremonyInput, StartCeremonyStepInput, StartCeremonyStepUseCase,
-    StartCeremonyUseCase,
+    CompleteCeremonyStepInput, CompleteCeremonyStepUseCase, DeferCeremonyGuardInput,
+    DeferCeremonyGuardUseCase, GetCeremonyDefinitionUseCase, GetCeremonyInstanceUseCase,
+    GetCeremonyTranscriptUseCase, ListCeremonyDefinitionsUseCase, MountCeremonyDefinitionsOutput,
+    MountCeremonyDefinitionsUseCase, RequestCeremonyInterventionInput,
+    RequestCeremonyInterventionUseCase, RespondToCeremonyInterventionInput,
+    RespondToCeremonyInterventionUseCase, RunCeremonyInput, RunCeremonyOutput,
+    RunCeremonyStepInput, RunCeremonyStepOutput, RunCeremonyStepUseCase, RunCeremonyUseCase,
+    StartCeremonyInput, StartCeremonyStepInput, StartCeremonyStepUseCase, StartCeremonyUseCase,
 };
 use choreo_core::entities::{CeremonyDefinition, CeremonyInstance};
 use choreo_core::error::DomainError;
@@ -150,6 +150,19 @@ impl EmbeddedChoreographer {
         ApproveCeremonyGuardUseCase::new(self.instances.clone(), self.clock.clone())
             .execute(input)
             .await
+    }
+
+    pub async fn defer_guard(
+        &self,
+        input: DeferCeremonyGuardInput,
+    ) -> Result<CeremonyInstance, DomainError> {
+        DeferCeremonyGuardUseCase::new(
+            self.definitions.clone(),
+            self.instances.clone(),
+            self.clock.clone(),
+        )
+        .execute(input)
+        .await
     }
 
     pub async fn request_intervention(

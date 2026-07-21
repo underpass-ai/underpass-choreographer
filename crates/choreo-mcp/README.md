@@ -92,6 +92,7 @@ that intentionally have no gRPC mapping:
 | `choreo_start_ceremony` | Mount YAML and start without advancing. |
 | `choreo_run_ceremony_step` | Execute and persist one step. |
 | `choreo_approve_ceremony_guard` | Record an explicit human approval for a currently relevant human guard. |
+| `choreo_defer_ceremony_guard` | Preserve an explicit human deferral without satisfying the guard. |
 | `choreo_apply_ceremony_transition` | Apply one enabled transition. |
 | `choreo_get_ceremony_instance` | Inspect steps, transitions, and blocking human guards. |
 | `choreo_request_ceremony_intervention` | Open an opinion, investigation, or action requested by a ceremony participant. |

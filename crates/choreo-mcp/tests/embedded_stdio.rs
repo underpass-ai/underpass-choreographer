@@ -124,6 +124,7 @@ async fn embedded_server_advertises_only_executable_tools() {
             "choreo_start_ceremony",
             "choreo_run_ceremony_step",
             "choreo_approve_ceremony_guard",
+            "choreo_defer_ceremony_guard",
             "choreo_apply_ceremony_transition",
             "choreo_get_ceremony_instance",
             "choreo_request_ceremony_intervention",
@@ -301,6 +302,7 @@ async fn embedded_server_pauses_until_a_human_guard_is_approved() {
     let started = send(&server, start_ceremony_call(1, ceremony_id)).await;
     assert_eq!(structured(&started)["current_state"], "INVESTIGATING");
     assert_eq!(structured(&started)["next_step_id"], "investigate");
+    assert_eq!(structured(&started)["waiting_for_human"], json!([]));
 
     let stepped = send(&server, run_step_call(2, ceremony_id, "investigate")).await;
     assert!(structured(&stepped)["next_step_id"].is_null());
@@ -309,10 +311,30 @@ async fn embedded_server_pauses_until_a_human_guard_is_approved() {
         json!(["engineer_authorized"])
     );
 
-    let blocked = send(&server, transition_call(3, ceremony_id, "finish")).await;
+    let deferred = send(
+        &server,
+        deferral_call(3, ceremony_id, "engineer_authorized"),
+    )
+    .await;
+    assert_eq!(
+        structured(&deferred)["waiting_for_human"],
+        json!(["engineer_authorized"])
+    );
+    assert_eq!(structured(&deferred)["transitions"][0]["enabled"], false);
+    assert!(structured(&deferred)["context"]["engineer_authorized"].is_null());
+    assert_eq!(
+        structured(&deferred)["guard_deferrals"][0]["statement"],
+        "I do not know."
+    );
+    assert_eq!(
+        structured(&deferred)["guard_deferrals"][0]["reason"],
+        "The resolution is not clear."
+    );
+
+    let blocked = send(&server, transition_call(4, ceremony_id, "finish")).await;
     assert_eq!(blocked["result"]["isError"], true);
 
-    let inspected = send(&server, instance_call(4, ceremony_id)).await;
+    let inspected = send(&server, instance_call(5, ceremony_id)).await;
     assert_eq!(
         structured(&inspected)["waiting_for_human"],
         json!(["engineer_authorized"])
@@ -320,20 +342,20 @@ async fn embedded_server_pauses_until_a_human_guard_is_approved() {
 
     let rejected = send(
         &server,
-        approval_call(5, ceremony_id, "investigation_completed"),
+        approval_call(6, ceremony_id, "investigation_completed"),
     )
     .await;
     assert_eq!(rejected["result"]["isError"], true);
 
     let approved = send(
         &server,
-        approval_call(6, ceremony_id, "engineer_authorized"),
+        approval_call(7, ceremony_id, "engineer_authorized"),
     )
     .await;
     assert_eq!(structured(&approved)["waiting_for_human"], json!([]));
     assert_eq!(structured(&approved)["transitions"][0]["enabled"], true);
 
-    let completed = send(&server, transition_call(7, ceremony_id, "finish")).await;
+    let completed = send(&server, transition_call(8, ceremony_id, "finish")).await;
     assert_eq!(structured(&completed)["completed"], true);
     assert_eq!(structured(&completed)["current_state"], "COMPLETED");
 }
@@ -379,7 +401,7 @@ async fn embedded_binary_completes_incremental_human_authorization_over_stdio() 
     let completed = read_response(&mut lines).await;
 
     assert_eq!(initialized["result"]["metadata"]["backend"], "embedded");
-    assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 9);
+    assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 10);
     assert_eq!(structured(&started)["next_step_id"], "investigate");
     assert_eq!(
         structured(&stepped)["waiting_for_human"],
@@ -531,6 +553,20 @@ fn approval_call(id: u64, ceremony_id: &str, guard_name: &str) -> Value {
         id,
         "choreo_approve_ceremony_guard",
         &json!({ "ceremony_id": ceremony_id, "guard_name": guard_name }),
+    )
+}
+
+fn deferral_call(id: u64, ceremony_id: &str, guard_name: &str) -> Value {
+    tool_call(
+        id,
+        "choreo_defer_ceremony_guard",
+        &json!({
+            "ceremony_id": ceremony_id,
+            "guard_name": guard_name,
+            "statement": "I do not know.",
+            "reason": "The resolution is not clear.",
+            "reconsider_when": ["New evidence explains the resolution."],
+        }),
     )
 }
 

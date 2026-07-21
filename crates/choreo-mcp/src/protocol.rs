@@ -21,6 +21,7 @@ pub(crate) const RUN_CEREMONY_TOOL: &str = "choreo_run_ceremony";
 pub(crate) const START_CEREMONY_TOOL: &str = "choreo_start_ceremony";
 pub(crate) const RUN_CEREMONY_STEP_TOOL: &str = "choreo_run_ceremony_step";
 pub(crate) const APPROVE_CEREMONY_GUARD_TOOL: &str = "choreo_approve_ceremony_guard";
+pub(crate) const DEFER_CEREMONY_GUARD_TOOL: &str = "choreo_defer_ceremony_guard";
 pub(crate) const APPLY_CEREMONY_TRANSITION_TOOL: &str = "choreo_apply_ceremony_transition";
 pub(crate) const GET_CEREMONY_INSTANCE_TOOL: &str = "choreo_get_ceremony_instance";
 pub(crate) const REQUEST_CEREMONY_INTERVENTION_TOOL: &str = "choreo_request_ceremony_intervention";
@@ -305,6 +306,11 @@ fn embedded_incremental_tool_catalog() -> Vec<Value> {
             ceremony_guard_approval_schema(),
         ),
         tool_def(
+            DEFER_CEREMONY_GUARD_TOOL,
+            "Record an explicit human deferral without satisfying the guard or inferring authorization.",
+            ceremony_guard_deferral_schema(),
+        ),
+        tool_def(
             APPLY_CEREMONY_TRANSITION_TOOL,
             "Apply one enabled ceremony transition and return the updated persistent instance.",
             ceremony_transition_schema(),
@@ -432,6 +438,27 @@ fn ceremony_guard_approval_schema() -> Value {
         "properties": {
             "ceremony_id": string_schema("Started ceremony instance id."),
             "guard_name": string_schema("Currently-blocking human guard explicitly approved by the human participant.")
+        }
+    })
+}
+
+fn ceremony_guard_deferral_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ceremony_id", "guard_name", "statement", "reason", "reconsider_when"],
+        "properties": {
+            "ceremony_id": string_schema("Started ceremony instance id."),
+            "guard_name": string_schema("Currently-blocking human guard whose decision is deferred."),
+            "statement": string_schema("Human participant's own statement, preserved verbatim."),
+            "reason": string_schema("Why the participant cannot decide yet."),
+            "reconsider_when": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": { "type": "string", "minLength": 1 },
+                "description": "Concrete conditions that would make it appropriate to ask again."
+            }
         }
     })
 }
@@ -861,10 +888,11 @@ mod tests {
         let all_names = catalog_tool_names();
         let unique_names = all_names.iter().collect::<std::collections::BTreeSet<_>>();
 
-        assert_eq!(all_names.len(), 25);
+        assert_eq!(all_names.len(), 26);
         assert_eq!(unique_names.len(), all_names.len());
         assert!(all_names.contains(&START_CEREMONY_TOOL.to_owned()));
         assert!(all_names.contains(&APPROVE_CEREMONY_GUARD_TOOL.to_owned()));
+        assert!(all_names.contains(&DEFER_CEREMONY_GUARD_TOOL.to_owned()));
         assert!(all_names.contains(&GET_CEREMONY_INSTANCE_TOOL.to_owned()));
         assert!(all_names.contains(&REQUEST_CEREMONY_INTERVENTION_TOOL.to_owned()));
         assert!(all_names.contains(&RESPOND_TO_CEREMONY_INTERVENTION_TOOL.to_owned()));

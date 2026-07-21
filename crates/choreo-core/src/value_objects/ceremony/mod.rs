@@ -3,6 +3,8 @@
 mod ceremony_context;
 mod ceremony_description;
 mod ceremony_guard;
+mod ceremony_guard_deferral;
+mod ceremony_guard_deferral_content;
 mod ceremony_id;
 mod ceremony_input_definition;
 mod ceremony_intervention_content;
@@ -48,6 +50,8 @@ mod transition_trigger;
 pub use ceremony_context::CeremonyContext;
 pub use ceremony_description::CeremonyDescription;
 pub use ceremony_guard::CeremonyGuard;
+pub use ceremony_guard_deferral::CeremonyGuardDeferral;
+pub use ceremony_guard_deferral_content::CeremonyGuardDeferralContent;
 pub use ceremony_id::CeremonyId;
 pub use ceremony_input_definition::CeremonyInputDefinition;
 pub use ceremony_intervention_content::CeremonyInterventionContent;

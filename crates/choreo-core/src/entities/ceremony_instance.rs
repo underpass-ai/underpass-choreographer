@@ -12,8 +12,9 @@ use time::OffsetDateTime;
 use super::{ceremony_definition::CeremonyDefinition, CeremonyIntervention};
 use crate::error::DomainError;
 use crate::value_objects::{
-    CeremonyContext, CeremonyId, CeremonyInterventionContent, CeremonyInterventionId,
-    CeremonyInterventionKind, CeremonyInterventionTarget, CeremonyName, CeremonyVersion,
+    CeremonyContext, CeremonyGuardDeferral, CeremonyGuardDeferralContent, CeremonyId,
+    CeremonyInterventionContent, CeremonyInterventionId, CeremonyInterventionKind,
+    CeremonyInterventionTarget, CeremonyName, CeremonyVersion, GuardCondition, GuardName,
     IdempotencyKey, RoleAction, RoleId, StateId, StepAttempt, StepExecutionRecord, StepId,
     StepLease, StepResult, StepStatus, TransitionTrigger,
 };
@@ -27,6 +28,8 @@ pub struct CeremonyInstance {
     step_records: BTreeMap<StepId, StepExecutionRecord>,
     #[serde(default)]
     interventions: Vec<CeremonyIntervention>,
+    #[serde(default)]
+    guard_deferrals: Vec<CeremonyGuardDeferral>,
     context: CeremonyContext,
     idempotency_keys: BTreeSet<IdempotencyKey>,
     #[serde(with = "time::serde::rfc3339")]
@@ -58,6 +61,7 @@ impl CeremonyInstance {
             current_state: definition.initial_state_id().clone(),
             step_records,
             interventions: Vec::new(),
+            guard_deferrals: Vec::new(),
             context,
             idempotency_keys: BTreeSet::new(),
             created_at: now,
@@ -99,6 +103,11 @@ impl CeremonyInstance {
     #[must_use]
     pub fn interventions(&self) -> &[CeremonyIntervention] {
         &self.interventions
+    }
+
+    #[must_use]
+    pub fn guard_deferrals(&self) -> &[CeremonyGuardDeferral] {
+        &self.guard_deferrals
     }
 
     #[must_use]
@@ -255,10 +264,52 @@ impl CeremonyInstance {
 
     pub fn approve_guard(
         &mut self,
-        guard_name: &crate::value_objects::GuardName,
+        guard_name: &GuardName,
         now: OffsetDateTime,
     ) -> Result<(), DomainError> {
         self.context = self.context.clone().with_guard_approval(guard_name)?;
+        self.updated_at = now;
+        Ok(())
+    }
+
+    pub fn defer_guard(
+        &mut self,
+        definition: &CeremonyDefinition,
+        guard_name: GuardName,
+        content: CeremonyGuardDeferralContent,
+        now: OffsetDateTime,
+    ) -> Result<(), DomainError> {
+        self.require_active(
+            definition,
+            "terminal ceremony instances cannot defer guard decisions",
+        )?;
+        let guard = definition
+            .guards()
+            .get(&guard_name)
+            .ok_or(DomainError::NotFound {
+                what: "ceremony_guard",
+            })?;
+        if !matches!(guard.condition(), GuardCondition::HumanApproval) {
+            return Err(DomainError::InvariantViolated {
+                reason: "only human approval guards can be deferred",
+            });
+        }
+        if self.context.is_guard_approved(&guard_name) {
+            return Err(DomainError::InvariantViolated {
+                reason: "approved human guards cannot be deferred",
+            });
+        }
+        let is_currently_required = definition
+            .available_transitions(&self.current_state)
+            .any(|transition| transition.required_guards().contains(&guard_name));
+        if !is_currently_required {
+            return Err(DomainError::InvariantViolated {
+                reason: "human guard is not required from the current state",
+            });
+        }
+
+        self.guard_deferrals
+            .push(CeremonyGuardDeferral::record(guard_name, content, now));
         self.updated_at = now;
         Ok(())
     }
@@ -885,5 +936,57 @@ mod tests {
             .unwrap();
 
         assert!(instance.is_completed(&definition));
+    }
+
+    #[test]
+    fn human_guard_deferral_preserves_uncertainty_without_approving() {
+        let approval =
+            CeremonyGuard::new(guard_name("human_approved"), GuardCondition::HumanApproval);
+        let finish = CeremonyTransition::new(
+            state_id("drafting"),
+            state_id("done"),
+            trigger("approve"),
+            vec![approval.name().clone()],
+        )
+        .unwrap();
+        let definition = CeremonyDefinition::new(
+            crate::value_objects::CeremonyName::new("deferral_ceremony").unwrap(),
+            CeremonyVersion::v1(),
+            None,
+            Vec::new(),
+            Vec::new(),
+            vec![
+                CeremonyState::initial(state_id("drafting")),
+                CeremonyState::terminal(state_id("done")),
+            ],
+            vec![finish.clone()],
+            Vec::new(),
+            vec![approval.clone()],
+            vec![role(vec![RoleAction::transition(finish.trigger().clone())])],
+        )
+        .unwrap();
+        let mut instance = instance(&definition);
+
+        instance
+            .defer_guard(
+                &definition,
+                approval.name().clone(),
+                CeremonyGuardDeferralContent::new(
+                    "I do not know.",
+                    "I cannot explain how the issue was resolved.",
+                    vec!["New evidence explains the resolution.".to_owned()],
+                )
+                .unwrap(),
+                datetime!(2026-06-06 12:01:00 UTC),
+            )
+            .unwrap();
+
+        assert!(!instance.context().is_guard_approved(approval.name()));
+        assert!(instance
+            .apply_transition(&definition, &trigger("approve"), now())
+            .is_err());
+        let deferral = &instance.guard_deferrals()[0];
+        assert_eq!(deferral.guard_name(), approval.name());
+        assert_eq!(deferral.content().statement(), "I do not know.");
     }
 }

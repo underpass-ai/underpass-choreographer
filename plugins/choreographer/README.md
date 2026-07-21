@@ -11,7 +11,8 @@ Executable scope:
 
 - `choreo_run_ceremony` for one-shot terminal execution;
 - `choreo_start_ceremony`, `choreo_run_ceremony_step`,
-  `choreo_approve_ceremony_guard`, `choreo_apply_ceremony_transition`, and
+  `choreo_approve_ceremony_guard`, `choreo_defer_ceremony_guard`,
+  `choreo_apply_ceremony_transition`, and
   `choreo_get_ceremony_instance` for persistent, human-authorized flows;
 - `choreo_request_ceremony_intervention`,
   `choreo_respond_to_ceremony_intervention`, and
