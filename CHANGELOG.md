@@ -16,6 +16,9 @@ operator command.
 
 ### Added
 
+- Host-owned MCP server identity for embedded compositions. The default remains
+  `underpass-choreo-mcp`, while an embedding application can advertise its own
+  name and version during the MCP initialization handshake.
 - Embedded ceremony instance discovery through
   `choreo_list_ceremony_instances`. Hosts can enumerate recoverable meetings
   after losing conversation context, refresh the selected instance, and resume

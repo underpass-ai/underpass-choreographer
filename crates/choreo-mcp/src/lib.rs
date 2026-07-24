@@ -14,6 +14,7 @@ pub mod embedded;
 pub mod fixture;
 #[cfg(feature = "grpc")]
 pub mod grpc;
+pub mod mcp_server_identity;
 pub mod observability;
 pub mod protocol;
 pub mod server;
@@ -28,4 +29,5 @@ pub use embedded::EmbeddedChoreoMcpBackend;
 pub use fixture::FixtureChoreoMcpBackend;
 #[cfg(feature = "grpc")]
 pub use grpc::GrpcChoreoMcpBackend;
+pub use mcp_server_identity::McpServerIdentity;
 pub use server::ChoreoMcpServer;

@@ -18,6 +18,7 @@ use crate::embedded::EmbeddedChoreoMcpBackend;
 use crate::fixture::FixtureChoreoMcpBackend;
 #[cfg(feature = "grpc")]
 use crate::grpc::GrpcChoreoMcpBackend;
+use crate::mcp_server_identity::McpServerIdentity;
 use crate::observability::{record_tool_error, record_tool_success, ToolErrorKind};
 use crate::protocol::{
     initialize_result, jsonrpc_error, jsonrpc_result, tool_error_result, tools_list_result,
@@ -26,6 +27,7 @@ use crate::protocol::{
 /// Boxed-trait holder over any [`ChoreoMcpToolBackend`].
 pub struct ChoreoMcpServer {
     backend: Arc<dyn ChoreoMcpToolBackend>,
+    identity: McpServerIdentity,
 }
 
 impl Default for ChoreoMcpServer {
@@ -67,7 +69,15 @@ impl ChoreoMcpServer {
     pub fn with_backend(backend: impl ChoreoMcpToolBackend + 'static) -> Self {
         Self {
             backend: Arc::new(backend),
+            identity: McpServerIdentity::default(),
         }
+    }
+
+    /// Override the identity advertised to MCP clients.
+    #[must_use]
+    pub fn with_identity(mut self, identity: McpServerIdentity) -> Self {
+        self.identity = identity;
+        self
     }
 
     /// Read backend selection from environment.
@@ -141,7 +151,12 @@ impl ChoreoMcpServer {
             Some("initialize") => id.map(|id| {
                 jsonrpc_result(
                     id,
-                    initialize_result(self.backend_name(), self.grpc_tls_mode_name()),
+                    initialize_result(
+                        self.identity.name(),
+                        self.identity.version(),
+                        self.backend_name(),
+                        self.grpc_tls_mode_name(),
+                    ),
                 )
             }),
             Some("notifications/initialized") => None,
@@ -254,11 +269,11 @@ fn compiled_backend_names() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::protocol::SERVER_NAME;
 
     #[tokio::test]
     async fn initialize_returns_protocol_metadata() {
         let server = ChoreoMcpServer::fixture();
+        let identity = McpServerIdentity::default();
         let response = server
             .handle_json_line(r#"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#)
             .await
@@ -266,8 +281,26 @@ mod tests {
         let parsed: Value = serde_json::from_str(&response).unwrap();
         assert_eq!(parsed["jsonrpc"], "2.0");
         assert_eq!(parsed["id"], 1);
-        assert_eq!(parsed["result"]["serverInfo"]["name"], SERVER_NAME);
+        assert_eq!(parsed["result"]["serverInfo"]["name"], identity.name());
+        assert_eq!(
+            parsed["result"]["serverInfo"]["version"],
+            identity.version()
+        );
         assert_eq!(parsed["result"]["metadata"]["backend"], "fixture");
+    }
+
+    #[tokio::test]
+    async fn initialize_returns_host_owned_identity() {
+        let server =
+            ChoreoMcpServer::fixture().with_identity(McpServerIdentity::new("host-mcp", "9.8.7"));
+        let response = server
+            .handle_json_line(r#"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#)
+            .await
+            .expect("initialize must return a response");
+        let parsed: Value = serde_json::from_str(&response).unwrap();
+
+        assert_eq!(parsed["result"]["serverInfo"]["name"], "host-mcp");
+        assert_eq!(parsed["result"]["serverInfo"]["version"], "9.8.7");
     }
 
     #[tokio::test]

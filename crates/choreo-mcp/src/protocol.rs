@@ -12,10 +12,6 @@ use serde_json::{json, Value};
 
 /// MCP protocol version we advertise.
 pub(crate) const PROTOCOL_VERSION: &str = "2024-11-05";
-/// `serverInfo.name` returned by `initialize`.
-pub(crate) const SERVER_NAME: &str = "underpass-choreo-mcp";
-/// `serverInfo.version` — pulled from the crate version at build time.
-pub(crate) const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub(crate) const RUN_CEREMONY_TOOL: &str = "choreo_run_ceremony";
 pub(crate) const START_CEREMONY_TOOL: &str = "choreo_start_ceremony";
@@ -54,15 +50,20 @@ const GRPC_TOOL_NAMES: [&str; 17] = [
 /// Build the `initialize` result. Includes adapter-side metadata so
 /// the client can record which backend + TLS posture it negotiated
 /// without an extra round-trip.
-pub(crate) fn initialize_result(backend: &str, grpc_tls: &str) -> Value {
+pub(crate) fn initialize_result(
+    server_name: &str,
+    server_version: &str,
+    backend: &str,
+    grpc_tls: &str,
+) -> Value {
     json!({
         "protocolVersion": PROTOCOL_VERSION,
         "capabilities": {
             "tools": {}
         },
         "serverInfo": {
-            "name": SERVER_NAME,
-            "version": SERVER_VERSION,
+            "name": server_name,
+            "version": server_version,
         },
         "metadata": {
             "backend": backend,
@@ -889,9 +890,10 @@ mod tests {
 
     #[test]
     fn initialize_advertises_protocol_version_and_metadata() {
-        let r = initialize_result("grpc", "server");
+        let r = initialize_result("host-mcp", "1.2.3", "grpc", "server");
         assert_eq!(r["protocolVersion"], PROTOCOL_VERSION);
-        assert_eq!(r["serverInfo"]["name"], SERVER_NAME);
+        assert_eq!(r["serverInfo"]["name"], "host-mcp");
+        assert_eq!(r["serverInfo"]["version"], "1.2.3");
         assert_eq!(r["metadata"]["backend"], "grpc");
         assert_eq!(r["metadata"]["grpc_tls"], "server");
     }
