@@ -115,6 +115,10 @@ impl CeremonyInstanceRepositoryPort for InstanceRepositoryFake {
             })
     }
 
+    async fn list(&self) -> Result<Vec<CeremonyInstance>, DomainError> {
+        Ok(self.inner.read().await.values().cloned().collect())
+    }
+
     async fn exists(&self, id: &CeremonyId) -> Result<bool, DomainError> {
         Ok(self.inner.read().await.contains_key(id))
     }

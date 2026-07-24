@@ -14,8 +14,15 @@ Executable scope:
   `choreo_approve_ceremony_guard`, `choreo_defer_ceremony_guard`,
   `choreo_apply_ceremony_transition`, and
   `choreo_get_ceremony_instance` for persistent, human-authorized flows;
+- `choreo_list_ceremony_instances` to rediscover resumable meetings known to
+  the active backend;
 - `choreo_request_ceremony_intervention`,
   `choreo_respond_to_ceremony_intervention`,
   `choreo_collect_ceremony_evidence`, and
   `choreo_close_ceremony_intervention` for participant-created live agenda
   items controlled by the requesting role.
+
+The bundled zero-infrastructure process keeps its repositories in memory.
+`choreo_list_ceremony_instances` can recover host-side conversation loss while
+that process remains alive. Surviving a process restart requires a host to wire
+durable instance, definition, and context repositories.

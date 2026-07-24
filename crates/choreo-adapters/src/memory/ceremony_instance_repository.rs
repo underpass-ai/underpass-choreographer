@@ -51,6 +51,10 @@ impl CeremonyInstanceRepositoryPort for InMemoryCeremonyInstanceRepository {
             })
     }
 
+    async fn list(&self) -> Result<Vec<CeremonyInstance>, DomainError> {
+        Ok(self.inner.read().await.values().cloned().collect())
+    }
+
     async fn exists(&self, id: &CeremonyId) -> Result<bool, DomainError> {
         Ok(self.inner.read().await.contains_key(id))
     }
@@ -112,6 +116,24 @@ mod tests {
 
         assert_eq!(repository.len().await, 1);
         assert!(!repository.is_empty().await);
+    }
+
+    #[tokio::test]
+    async fn list_returns_instances_in_stable_id_order() {
+        let repository = InMemoryCeremonyInstanceRepository::new();
+
+        repository.save(&instance("ceremony-2")).await.unwrap();
+        repository.save(&instance("ceremony-1")).await.unwrap();
+
+        let ids = repository
+            .list()
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|item| item.id().as_str().to_owned())
+            .collect::<Vec<_>>();
+
+        assert_eq!(ids, vec!["ceremony-1", "ceremony-2"]);
     }
 
     #[tokio::test]

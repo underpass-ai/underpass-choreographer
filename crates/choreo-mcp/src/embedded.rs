@@ -23,7 +23,7 @@ use crate::backend::{ChoreoMcpToolBackend, ChoreoMcpToolFuture};
 use crate::protocol::{
     tool_success_result, APPLY_CEREMONY_TRANSITION_TOOL, APPROVE_CEREMONY_GUARD_TOOL,
     CLOSE_CEREMONY_INTERVENTION_TOOL, COLLECT_CEREMONY_EVIDENCE_TOOL, DEFER_CEREMONY_GUARD_TOOL,
-    GET_CEREMONY_INSTANCE_TOOL, REQUEST_CEREMONY_INTERVENTION_TOOL,
+    GET_CEREMONY_INSTANCE_TOOL, LIST_CEREMONY_INSTANCES_TOOL, REQUEST_CEREMONY_INTERVENTION_TOOL,
     RESPOND_TO_CEREMONY_INTERVENTION_TOOL, RUN_CEREMONY_STEP_TOOL, RUN_CEREMONY_TOOL,
     START_CEREMONY_TOOL,
 };
@@ -59,6 +59,26 @@ impl EmbeddedChoreoMcpBackend {
             .await
             .map(tool_success_result)
     }
+
+    async fn present_instances(&self) -> Result<Value, String> {
+        let instances = self
+            .choreographer
+            .instances()
+            .await
+            .map_err(|error| error.to_string())?;
+        let mut values = Vec::with_capacity(instances.len());
+        for instance in instances {
+            values.push(
+                EmbeddedCeremonyInstancePresenter::present(&self.choreographer, instance.id())
+                    .await?,
+            );
+        }
+        let count = values.len();
+        Ok(tool_success_result(serde_json::json!({
+            "count": count,
+            "instances": values,
+        })))
+    }
 }
 
 impl ChoreoMcpToolBackend for EmbeddedChoreoMcpBackend {
@@ -76,6 +96,7 @@ impl ChoreoMcpToolBackend for EmbeddedChoreoMcpBackend {
                 | DEFER_CEREMONY_GUARD_TOOL
                 | APPLY_CEREMONY_TRANSITION_TOOL
                 | GET_CEREMONY_INSTANCE_TOOL
+                | LIST_CEREMONY_INSTANCES_TOOL
                 | REQUEST_CEREMONY_INTERVENTION_TOOL
                 | RESPOND_TO_CEREMONY_INTERVENTION_TOOL
                 | CLOSE_CEREMONY_INTERVENTION_TOOL
@@ -123,6 +144,7 @@ impl ChoreoMcpToolBackend for EmbeddedChoreoMcpBackend {
                     let ceremony_id = request.into_ceremony_id();
                     self.present_instance(&ceremony_id).await
                 }
+                LIST_CEREMONY_INSTANCES_TOOL => self.present_instances().await,
                 REQUEST_CEREMONY_INTERVENTION_TOOL => {
                     let request = EmbeddedRequestCeremonyInterventionRequest::try_from(arguments)?;
                     let ceremony_id = request.execute(&self.choreographer).await?;

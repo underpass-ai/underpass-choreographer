@@ -24,6 +24,7 @@ pub(crate) const APPROVE_CEREMONY_GUARD_TOOL: &str = "choreo_approve_ceremony_gu
 pub(crate) const DEFER_CEREMONY_GUARD_TOOL: &str = "choreo_defer_ceremony_guard";
 pub(crate) const APPLY_CEREMONY_TRANSITION_TOOL: &str = "choreo_apply_ceremony_transition";
 pub(crate) const GET_CEREMONY_INSTANCE_TOOL: &str = "choreo_get_ceremony_instance";
+pub(crate) const LIST_CEREMONY_INSTANCES_TOOL: &str = "choreo_list_ceremony_instances";
 pub(crate) const REQUEST_CEREMONY_INTERVENTION_TOOL: &str = "choreo_request_ceremony_intervention";
 pub(crate) const RESPOND_TO_CEREMONY_INTERVENTION_TOOL: &str =
     "choreo_respond_to_ceremony_intervention";
@@ -320,6 +321,15 @@ fn embedded_incremental_tool_catalog() -> Vec<Value> {
             GET_CEREMONY_INSTANCE_TOOL,
             "Inspect a persistent ceremony instance, including step status and blocking guards.",
             ceremony_instance_schema(),
+        ),
+        tool_def(
+            LIST_CEREMONY_INSTANCES_TOOL,
+            "Discover ceremony instances available to this backend so a host can resume one after losing its local conversation context.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {}
+            }),
         ),
         tool_def(
             REQUEST_CEREMONY_INTERVENTION_TOOL,
@@ -925,12 +935,13 @@ mod tests {
         let all_names = catalog_tool_names();
         let unique_names = all_names.iter().collect::<std::collections::BTreeSet<_>>();
 
-        assert_eq!(all_names.len(), 27);
+        assert_eq!(all_names.len(), 28);
         assert_eq!(unique_names.len(), all_names.len());
         assert!(all_names.contains(&START_CEREMONY_TOOL.to_owned()));
         assert!(all_names.contains(&APPROVE_CEREMONY_GUARD_TOOL.to_owned()));
         assert!(all_names.contains(&DEFER_CEREMONY_GUARD_TOOL.to_owned()));
         assert!(all_names.contains(&GET_CEREMONY_INSTANCE_TOOL.to_owned()));
+        assert!(all_names.contains(&LIST_CEREMONY_INSTANCES_TOOL.to_owned()));
         assert!(all_names.contains(&REQUEST_CEREMONY_INTERVENTION_TOOL.to_owned()));
         assert!(all_names.contains(&RESPOND_TO_CEREMONY_INTERVENTION_TOOL.to_owned()));
         assert!(all_names.contains(&CLOSE_CEREMONY_INTERVENTION_TOOL.to_owned()));

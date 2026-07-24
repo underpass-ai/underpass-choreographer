@@ -12,5 +12,7 @@ pub trait CeremonyInstanceRepositoryPort: Send + Sync {
 
     async fn get(&self, id: &CeremonyId) -> Result<CeremonyInstance, DomainError>;
 
+    async fn list(&self) -> Result<Vec<CeremonyInstance>, DomainError>;
+
     async fn exists(&self, id: &CeremonyId) -> Result<bool, DomainError>;
 }

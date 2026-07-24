@@ -49,6 +49,25 @@ its `ceremony_id`, current state, and blocking guard. A deferral never satisfies
 the guard. Do not convert a refusal into a tool error or silently choose another
 transition.
 
+## Resuming after host context loss
+
+When the host restarted or no longer has the ceremony id:
+
+1. Call `choreo_list_ceremony_instances` before starting a replacement.
+2. If exactly one incomplete instance matches the incident context, refresh it
+   with `choreo_get_ceremony_instance` and continue from the returned
+   `next_step_id`, guard, or open intervention.
+3. If several incomplete instances could match, show their ids, states, and
+   open interventions and ask the user which meeting to resume.
+4. If none exists, state that the prior instance is not recoverable from the
+   active backend. Start a reconstructed successor only with a new stable id
+   and explicit recovery provenance; never call it the original meeting.
+
+Discovery and refresh are read-only. They never approve a guard, close an
+intervention, or replay an operational action. Process restart durability
+depends on the instance, definition, and context repositories configured by
+the embedded host.
+
 ## Dynamic participant interventions
 
 When a participant asks the meeting for an opinion or asks a role to inspect

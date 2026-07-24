@@ -7,7 +7,7 @@ use choreo_app::usecases::{
     CollectCeremonyEvidenceInput, CollectCeremonyEvidenceUseCase, CompleteCeremonyStepInput,
     CompleteCeremonyStepUseCase, DeferCeremonyGuardInput, DeferCeremonyGuardUseCase,
     GetCeremonyDefinitionUseCase, GetCeremonyInstanceUseCase, GetCeremonyTranscriptUseCase,
-    ListCeremonyDefinitionsUseCase, MountCeremonyDefinitionsOutput,
+    ListCeremonyDefinitionsUseCase, ListCeremonyInstancesUseCase, MountCeremonyDefinitionsOutput,
     MountCeremonyDefinitionsUseCase, RequestCeremonyInterventionInput,
     RequestCeremonyInterventionUseCase, RespondToCeremonyInterventionInput,
     RespondToCeremonyInterventionUseCase, RunCeremonyInput, RunCeremonyOutput,
@@ -115,6 +115,12 @@ impl EmbeddedChoreographer {
     pub async fn instance(&self, id: &CeremonyId) -> Result<CeremonyInstance, DomainError> {
         GetCeremonyInstanceUseCase::new(self.instances.clone())
             .execute(id)
+            .await
+    }
+
+    pub async fn instances(&self) -> Result<Vec<CeremonyInstance>, DomainError> {
+        ListCeremonyInstancesUseCase::new(self.instances.clone())
+            .execute()
             .await
     }
 

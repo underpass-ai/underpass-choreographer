@@ -95,6 +95,7 @@ that intentionally have no gRPC mapping:
 | `choreo_defer_ceremony_guard` | Preserve an explicit human deferral without satisfying the guard. |
 | `choreo_apply_ceremony_transition` | Apply one enabled transition. |
 | `choreo_get_ceremony_instance` | Inspect steps, transitions, and blocking human guards. |
+| `choreo_list_ceremony_instances` | Discover instances known to the active backend before starting a replacement. |
 | `choreo_request_ceremony_intervention` | Open a participant request, optionally linked to the table response it selects. |
 | `choreo_respond_to_ceremony_intervention` | Record one targeted role's response. |
 | `choreo_close_ceremony_intervention` | Let the requesting role close its intervention. |
@@ -106,6 +107,9 @@ before it invokes the approval tool. Dynamic interventions likewise coordinate
 the live agenda without bypassing host permissions or ceremony guards. Omitting
 `target_role_ids` addresses the whole table; supplying it scopes the request to
 those roles. Responses and interventions retain insertion order in the instance.
+The default embedded composition stores state in memory. Process-restart
+recovery requires the host to supply durable repositories for ceremony
+instances, mounted definitions, and transcript context.
 
 Mappings live in `src/grpc/{json_to_proto.rs,proto_to_json.rs}` —
 **hand-written field-by-field**. A new proto field is a one-PR

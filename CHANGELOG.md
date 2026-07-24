@@ -16,6 +16,12 @@ operator command.
 
 ### Added
 
+- Embedded ceremony instance discovery through
+  `choreo_list_ceremony_instances`. Hosts can enumerate recoverable meetings
+  after losing conversation context, refresh the selected instance, and resume
+  without approving guards, closing interventions, or replaying operational
+  work. Process-restart durability remains a responsibility of the repositories
+  configured by the embedded host.
 - Embedded MCP backend and repo-local Codex plugin bundle. The isolated
   `choreo-mcp` build exposes only `choreo_run_ceremony`, completes the MCP
   stdio handshake and a real ceremony without gRPC/protobuf, and is covered by

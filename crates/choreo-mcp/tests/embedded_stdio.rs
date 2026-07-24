@@ -133,6 +133,7 @@ async fn embedded_server_advertises_only_executable_tools() {
             "choreo_defer_ceremony_guard",
             "choreo_apply_ceremony_transition",
             "choreo_get_ceremony_instance",
+            "choreo_list_ceremony_instances",
             "choreo_request_ceremony_intervention",
             "choreo_respond_to_ceremony_intervention",
             "choreo_close_ceremony_intervention",
@@ -142,6 +143,34 @@ async fn embedded_server_advertises_only_executable_tools() {
 
     let completed = send(&server, run_ceremony_call(3, "embedded-direct-smoke")).await;
     assert_completed(&completed);
+}
+
+#[tokio::test]
+async fn embedded_server_lists_started_instances_for_host_recovery() {
+    let server = ChoreoMcpServer::embedded();
+
+    let started = send(
+        &server,
+        start_collaborative_ceremony_call(1, "recoverable-table"),
+    )
+    .await;
+    assert_eq!(structured(&started)["ceremony_id"], "recoverable-table");
+
+    let listed = send(
+        &server,
+        tool_call(2, "choreo_list_ceremony_instances", &json!({})),
+    )
+    .await;
+
+    assert_eq!(structured(&listed)["count"], 1);
+    assert_eq!(
+        structured(&listed)["instances"][0]["ceremony_id"],
+        "recoverable-table"
+    );
+    assert_eq!(
+        structured(&listed)["instances"][0]["context"]["incident_ref"],
+        "INC-42"
+    );
 }
 
 #[tokio::test]
@@ -577,7 +606,7 @@ async fn embedded_binary_completes_incremental_human_authorization_over_stdio() 
     let completed = read_response(&mut lines).await;
 
     assert_eq!(initialized["result"]["metadata"]["backend"], "embedded");
-    assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 11);
+    assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 12);
     assert_eq!(structured(&started)["next_step_id"], "investigate");
     assert_eq!(
         structured(&stepped)["waiting_for_human"],
