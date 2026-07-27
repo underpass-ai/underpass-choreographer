@@ -15,9 +15,9 @@ Current support is exact-version support, not a broad Rust range.
 
 | Surface | Supported | Source of truth | Enforcement |
 |---|---:|---|---|
-| Workspace MSRV | `1.90` | `Cargo.toml` `[workspace.package].rust-version` | Cargo package metadata |
-| Local toolchain | `1.90.0` | `rust-toolchain.toml` | `cargo`, `clippy`, `rustfmt` use the pinned toolchain |
-| PR CI toolchain | `1.90.0` | `.github/workflows/quality-gate.yml` | `rustfmt`, `clippy`, tests, benches compile |
+| Workspace MSRV | `1.97` | `Cargo.toml` `[workspace.package].rust-version` | Cargo package metadata |
+| Local toolchain | `1.97.1` | `rust-toolchain.toml` | `cargo`, `clippy`, `rustfmt` use the pinned toolchain |
+| PR CI toolchain | `1.97.1` | `.github/workflows/quality-gate.yml` | `rustfmt`, `clippy`, tests, benches compile |
 | Container-backed CI toolchain | `1.90.0` | `.github/workflows/integration.yml` | NATS and Postgres integration workflows |
 | Developer setup | `1.90.0` | `docs/dev-loop.md` | Manual local setup and `just` recipes |
 | Dependency resolution | `Cargo.lock` committed | `Cargo.lock` | CI and local gates use `--locked` |

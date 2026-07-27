@@ -26,7 +26,7 @@ const RUNTIME_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 /// Per-RPC deadline applied to every call on the runtime channel. Generous
 /// because governed tool invocations can legitimately run for minutes; it
 /// is a safety net against an indefinitely-stuck runtime, not a tight SLA.
-const RUNTIME_REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
+const RUNTIME_REQUEST_TIMEOUT: Duration = Duration::from_mins(5);
 
 const DEFAULT_RUNTIME_GRPC_ENDPOINT: &str = "http://underpass-runtime:50053";
 const DEFAULT_RUNTIME_TENANT_ID: &str = "choreographer";

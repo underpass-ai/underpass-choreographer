@@ -41,7 +41,7 @@ const SUPPORT_JUDGE_ERRORS: ErrorStrings = ErrorStrings {
 };
 
 const DEFAULT_MAX_TOKENS: u32 = 256;
-const DEFAULT_TIMEOUT: Duration = Duration::from_secs(60);
+const DEFAULT_TIMEOUT: Duration = Duration::from_mins(1);
 
 const SYSTEM_PROMPT: &str = "You are a strict auditor of evidence. You are given one claim and \
 the only evidence excerpts the claim cited. Judge solely whether those excerpts, on their own, \

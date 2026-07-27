@@ -58,7 +58,7 @@ async fn main() -> Result<()> {
         .context("VllmConfig::with_endpoint rejected the endpoint URL")?
         .with_max_tokens(max_tokens)
         .context("VllmConfig rejected max_tokens")?
-        .with_timeout(Duration::from_secs(300));
+        .with_timeout(Duration::from_mins(5));
 
     // mTLS: both the cert and key paths must be set together. If one
     // is set and the other isn't, fail loudly — it's almost

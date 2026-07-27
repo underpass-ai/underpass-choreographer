@@ -4,7 +4,7 @@
 # Works identically under docker and podman. Produces a minimal
 # distroless-style runtime image that runs as a non-root user.
 
-ARG RUST_VERSION=1.90.0
+ARG RUST_VERSION=1.97.1
 ARG DEBIAN_RELEASE=bookworm
 
 # ---------------------------------------------------------------------------

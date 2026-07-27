@@ -8,8 +8,8 @@ command produces the same failure locally.
 
 ```bash
 # Rust toolchain pinned at the workspace minimum.
-rustup toolchain install 1.90.0
-rustup default 1.90.0
+rustup toolchain install 1.97.1
+rustup default 1.97.1
 
 # Optional but recommended — installs command aliases from justfile.
 cargo install just --locked

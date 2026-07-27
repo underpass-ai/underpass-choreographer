@@ -42,7 +42,7 @@ const JUDGE_ERRORS: ErrorStrings = ErrorStrings {
 pub const JUDGE_KIND: &str = "llm_judge";
 
 const DEFAULT_MAX_TOKENS: u32 = 256;
-const DEFAULT_TIMEOUT: Duration = Duration::from_secs(60);
+const DEFAULT_TIMEOUT: Duration = Duration::from_mins(1);
 
 const SYSTEM_PROMPT: &str = "You are an impartial, rigorous judge of the proposals produced in a \
 multi-agent deliberation. You reward proposals that are specific, internally consistent (no \

@@ -40,7 +40,7 @@ for one product or one use case.
 
 Use the setup in `docs/dev-loop.md`. Minimum tools:
 
-- Rust `1.90.0`;
+- Rust `1.97.1`;
 - `just`;
 - `buf`;
 - AsyncAPI CLI;
