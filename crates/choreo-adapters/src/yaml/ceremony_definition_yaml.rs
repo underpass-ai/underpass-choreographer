@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::Path;
 
-use choreo_core::entities::CeremonyDefinition;
+use choreo_core::entities::{CeremonyDefinition, CeremonyDefinitionDraft};
 use choreo_core::error::DomainError;
 
 use super::ceremony_definition_document::CeremonyDefinitionDocument;
@@ -11,11 +11,19 @@ pub struct CeremonyDefinitionYaml;
 
 impl CeremonyDefinitionYaml {
     pub fn parse_str(raw: &str) -> Result<CeremonyDefinition, DomainError> {
+        Self::parse_draft_str(raw)?.publish()
+    }
+
+    /// Parse into an authoring draft, which may not be publishable.
+    ///
+    /// Only syntax and value-object failures surface here; structural
+    /// defects are reported by the draft's own analysis.
+    pub fn parse_draft_str(raw: &str) -> Result<CeremonyDefinitionDraft, DomainError> {
         let document: CeremonyDefinitionDocument =
             serde_yaml::from_str(raw).map_err(|_| DomainError::InvariantViolated {
                 reason: "invalid ceremony yaml",
             })?;
-        document.into_domain()
+        document.into_draft()
     }
 
     pub fn parse_path(path: impl AsRef<Path>) -> Result<CeremonyDefinition, DomainError> {

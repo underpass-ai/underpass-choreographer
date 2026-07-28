@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use choreo_core::entities::CeremonyDefinition;
+use choreo_core::entities::CeremonyDefinitionDraft;
 use choreo_core::error::DomainError;
 use choreo_core::value_objects::{
     CeremonyDescription, CeremonyName, CeremonyOutputDefinition, CeremonyVersion, OutputName,
@@ -44,7 +44,14 @@ pub(super) struct CeremonyDefinitionDocument {
 }
 
 impl CeremonyDefinitionDocument {
-    pub(super) fn into_domain(self) -> Result<CeremonyDefinition, DomainError> {
+    /// Build the authoring draft without enforcing the state-machine
+    /// invariants.
+    ///
+    /// Failures here are parse failures — a malformed identifier, an
+    /// unusable retry policy — not structural defects. Structural
+    /// defects belong in the draft's analysis report, where they can be
+    /// reported all at once.
+    pub(super) fn into_draft(self) -> Result<CeremonyDefinitionDraft, DomainError> {
         let retry_policy = self.retry_policies.default_policy()?;
         let timeout = self.timeouts.default_step_timeout()?;
         let steps = self
@@ -75,7 +82,7 @@ impl CeremonyDefinitionDocument {
             .map(|role| role.into_domain(&step_ids, &transition_triggers))
             .collect::<Result<Vec<_>, _>>()?;
 
-        CeremonyDefinition::new(
+        Ok(CeremonyDefinitionDraft::new(
             CeremonyName::new(self.name)?,
             CeremonyVersion::new(self.version)?,
             self.description.map(CeremonyDescription::new).transpose()?,
@@ -92,6 +99,6 @@ impl CeremonyDefinitionDocument {
             steps,
             guards,
             roles,
-        )
+        ))
     }
 }
