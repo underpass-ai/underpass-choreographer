@@ -2,6 +2,8 @@
 
 mod embedded_apply_ceremony_transition_request;
 mod embedded_approve_ceremony_guard_request;
+mod embedded_ceremony_draft_presenter;
+mod embedded_ceremony_draft_request;
 mod embedded_ceremony_instance_presenter;
 mod embedded_close_ceremony_intervention_request;
 mod embedded_collect_ceremony_evidence_request;
@@ -23,13 +25,15 @@ use crate::backend::{ChoreoMcpToolBackend, ChoreoMcpToolFuture};
 use crate::protocol::{
     tool_success_result, APPLY_CEREMONY_TRANSITION_TOOL, APPROVE_CEREMONY_GUARD_TOOL,
     CLOSE_CEREMONY_INTERVENTION_TOOL, COLLECT_CEREMONY_EVIDENCE_TOOL, DEFER_CEREMONY_GUARD_TOOL,
-    GET_CEREMONY_INSTANCE_TOOL, LIST_CEREMONY_INSTANCES_TOOL, REQUEST_CEREMONY_INTERVENTION_TOOL,
-    RESPOND_TO_CEREMONY_INTERVENTION_TOOL, RUN_CEREMONY_STEP_TOOL, RUN_CEREMONY_TOOL,
-    START_CEREMONY_TOOL,
+    EXPLAIN_CEREMONY_DRAFT_TOOL, GET_CEREMONY_INSTANCE_TOOL, LIST_CEREMONY_INSTANCES_TOOL,
+    REQUEST_CEREMONY_INTERVENTION_TOOL, RESPOND_TO_CEREMONY_INTERVENTION_TOOL,
+    RUN_CEREMONY_STEP_TOOL, RUN_CEREMONY_TOOL, START_CEREMONY_TOOL, VALIDATE_CEREMONY_DRAFT_TOOL,
 };
 
 use self::embedded_apply_ceremony_transition_request::EmbeddedApplyCeremonyTransitionRequest;
 use self::embedded_approve_ceremony_guard_request::EmbeddedApproveCeremonyGuardRequest;
+use self::embedded_ceremony_draft_presenter::EmbeddedCeremonyDraftPresenter;
+use self::embedded_ceremony_draft_request::EmbeddedCeremonyDraftRequest;
 use self::embedded_ceremony_instance_presenter::EmbeddedCeremonyInstancePresenter;
 use self::embedded_close_ceremony_intervention_request::EmbeddedCloseCeremonyInterventionRequest;
 use self::embedded_collect_ceremony_evidence_request::EmbeddedCollectCeremonyEvidenceRequest;
@@ -101,12 +105,30 @@ impl ChoreoMcpToolBackend for EmbeddedChoreoMcpBackend {
                 | RESPOND_TO_CEREMONY_INTERVENTION_TOOL
                 | CLOSE_CEREMONY_INTERVENTION_TOOL
                 | COLLECT_CEREMONY_EVIDENCE_TOOL
+                | VALIDATE_CEREMONY_DRAFT_TOOL
+                | EXPLAIN_CEREMONY_DRAFT_TOOL
         )
     }
 
     fn call_tool<'a>(&'a self, name: &'a str, arguments: &'a Value) -> ChoreoMcpToolFuture<'a> {
         Box::pin(async move {
             match name {
+                VALIDATE_CEREMONY_DRAFT_TOOL => {
+                    let request = EmbeddedCeremonyDraftRequest::try_from(arguments)?;
+                    let draft = request.parse()?;
+                    let report = draft.analyze();
+                    Ok(tool_success_result(
+                        EmbeddedCeremonyDraftPresenter::present_validation(&draft, &report),
+                    ))
+                }
+                EXPLAIN_CEREMONY_DRAFT_TOOL => {
+                    let request = EmbeddedCeremonyDraftRequest::try_from(arguments)?;
+                    let draft = request.parse()?;
+                    let report = draft.analyze();
+                    Ok(tool_success_result(
+                        EmbeddedCeremonyDraftPresenter::present_explanation(&draft, &report),
+                    ))
+                }
                 RUN_CEREMONY_TOOL => {
                     let request = EmbeddedRunCeremonyRequest::try_from(arguments)?;
                     let output = request.execute(&self.choreographer).await?;

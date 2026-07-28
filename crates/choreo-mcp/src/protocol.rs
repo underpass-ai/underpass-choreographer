@@ -26,6 +26,8 @@ pub(crate) const RESPOND_TO_CEREMONY_INTERVENTION_TOOL: &str =
     "choreo_respond_to_ceremony_intervention";
 pub(crate) const CLOSE_CEREMONY_INTERVENTION_TOOL: &str = "choreo_close_ceremony_intervention";
 pub(crate) const COLLECT_CEREMONY_EVIDENCE_TOOL: &str = "choreo_collect_ceremony_evidence";
+pub(crate) const VALIDATE_CEREMONY_DRAFT_TOOL: &str = "choreo_validate_ceremony_draft";
+pub(crate) const EXPLAIN_CEREMONY_DRAFT_TOOL: &str = "choreo_explain_ceremony_draft";
 
 const GRPC_TOOL_NAMES: [&str; 17] = [
     "choreo_deliberate",
@@ -89,7 +91,38 @@ pub(crate) fn tools_list_result(supports: impl Fn(&str) -> bool) -> Value {
 fn tool_catalog() -> Vec<Value> {
     let mut tools = grpc_tool_catalog();
     tools.extend(embedded_incremental_tool_catalog());
+    tools.extend(authoring_tool_catalog());
     tools
+}
+
+/// Authoring tools analyse a draft; they neither publish nor execute
+/// anything, so they hold no state and need no running ceremony.
+fn authoring_tool_catalog() -> Vec<Value> {
+    vec![
+        tool_def(
+            VALIDATE_CEREMONY_DRAFT_TOOL,
+            "Analyse a ceremony draft and report every structural defect at once. Read-only: it neither publishes nor executes the draft.",
+            ceremony_draft_schema(),
+        ),
+        tool_def(
+            EXPLAIN_CEREMONY_DRAFT_TOOL,
+            "Describe what a ceremony draft declares and what would block its publication, in prose meant to be read back and corrected.",
+            ceremony_draft_schema(),
+        ),
+    ]
+}
+
+fn ceremony_draft_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["definition_yaml"],
+        "properties": {
+            "definition_yaml": string_schema(
+                "Ceremony definition YAML to analyse. It does not need to be publishable — reporting why it is not is the point."
+            )
+        }
+    })
 }
 
 #[allow(clippy::too_many_lines)] // 17 gRPC tool definitions form one auditable transport contract
@@ -937,8 +970,10 @@ mod tests {
         let all_names = catalog_tool_names();
         let unique_names = all_names.iter().collect::<std::collections::BTreeSet<_>>();
 
-        assert_eq!(all_names.len(), 28);
+        assert_eq!(all_names.len(), 30);
         assert_eq!(unique_names.len(), all_names.len());
+        assert!(all_names.contains(&VALIDATE_CEREMONY_DRAFT_TOOL.to_owned()));
+        assert!(all_names.contains(&EXPLAIN_CEREMONY_DRAFT_TOOL.to_owned()));
         assert!(all_names.contains(&START_CEREMONY_TOOL.to_owned()));
         assert!(all_names.contains(&APPROVE_CEREMONY_GUARD_TOOL.to_owned()));
         assert!(all_names.contains(&DEFER_CEREMONY_GUARD_TOOL.to_owned()));

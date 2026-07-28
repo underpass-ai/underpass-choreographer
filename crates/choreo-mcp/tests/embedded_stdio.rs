@@ -138,12 +138,118 @@ async fn embedded_server_advertises_only_executable_tools() {
             "choreo_respond_to_ceremony_intervention",
             "choreo_close_ceremony_intervention",
             "choreo_collect_ceremony_evidence",
+            "choreo_validate_ceremony_draft",
+            "choreo_explain_ceremony_draft",
         ]
     );
 
     let completed = send(&server, run_ceremony_call(3, "embedded-direct-smoke")).await;
     assert_completed(&completed);
 }
+
+#[tokio::test]
+async fn validating_a_draft_reports_every_defect_without_publishing_it() {
+    let server = ChoreoMcpServer::embedded();
+
+    let response = send(&server, draft_call(1, "choreo_validate_ceremony_draft")).await;
+    let report = structured(&response);
+
+    assert_eq!(report["ceremony"], "broken_ceremony");
+    assert_eq!(report["publishable"], false);
+    assert_eq!(report["error_count"], 2);
+
+    let findings = report["findings"].as_array().unwrap();
+    assert_eq!(findings.len(), 2, "{findings:?}");
+    assert_eq!(findings[0]["severity"], "error");
+    assert_eq!(findings[0]["locus"]["kind"], "transition");
+    assert_eq!(findings[0]["locus"]["from"], "DRAFTING");
+    assert!(findings[1]["message"]
+        .as_str()
+        .unwrap()
+        .contains("ceremony_role.step_action"));
+}
+
+#[tokio::test]
+async fn explaining_a_draft_describes_what_it_declares_and_what_blocks_it() {
+    let server = ChoreoMcpServer::embedded();
+
+    let response = send(&server, draft_call(1, "choreo_explain_ceremony_draft")).await;
+    let explanation = structured(&response);
+
+    assert_eq!(explanation["publishable"], false);
+    assert_eq!(explanation["summary"]["states"], 2);
+    assert_eq!(explanation["summary"]["initial_states"], 1);
+    assert_eq!(explanation["summary"]["terminal_states"], 1);
+
+    let narrative = explanation["narrative"].as_array().unwrap();
+    assert!(narrative[0]
+        .as_str()
+        .unwrap()
+        .contains("`broken_ceremony` declares 2 states"));
+    assert!(narrative
+        .iter()
+        .any(|line| line.as_str().unwrap().contains("block publication")));
+}
+
+#[tokio::test]
+async fn an_unparseable_draft_is_reported_as_a_tool_error() {
+    let server = ChoreoMcpServer::embedded();
+
+    let response = send(
+        &server,
+        jsonrpc(
+            1,
+            "tools/call",
+            Some(json!({
+                "name": "choreo_validate_ceremony_draft",
+                "arguments": { "definition_yaml": "this: is: not: a ceremony" }
+            })),
+        ),
+    )
+    .await;
+
+    assert_eq!(response["result"]["isError"], true, "{response:?}");
+}
+
+fn draft_call(id: u64, tool: &str) -> Value {
+    jsonrpc(
+        id,
+        "tools/call",
+        Some(json!({
+            "name": tool,
+            "arguments": { "definition_yaml": BROKEN_CEREMONY_YAML }
+        })),
+    )
+}
+
+/// A draft with two independent defects: a transition to a state that
+/// does not exist, and a role authorising a step that does not exist.
+/// Fail-fast construction would surface only the first.
+const BROKEN_CEREMONY_YAML: &str = r#"
+version: "1.0"
+name: "broken_ceremony"
+inputs:
+  required: []
+  optional: []
+outputs: {}
+states:
+  - id: DRAFTING
+    initial: true
+    terminal: false
+  - id: DONE
+    initial: false
+    terminal: true
+transitions:
+  - from: DRAFTING
+    to: NOWHERE
+    trigger: "finish"
+    guards: []
+steps: []
+roles:
+  - id: FACILITATOR
+    allowed_actions:
+      - missing_step
+"#;
 
 #[tokio::test]
 async fn embedded_server_lists_started_instances_for_host_recovery() {
@@ -606,7 +712,7 @@ async fn embedded_binary_completes_incremental_human_authorization_over_stdio() 
     let completed = read_response(&mut lines).await;
 
     assert_eq!(initialized["result"]["metadata"]["backend"], "embedded");
-    assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 12);
+    assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 14);
     assert_eq!(structured(&started)["next_step_id"], "investigate");
     assert_eq!(
         structured(&stepped)["waiting_for_human"],
