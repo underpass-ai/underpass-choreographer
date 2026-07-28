@@ -4,7 +4,7 @@
 //! from the original laboratory ceremony engine. It is intentionally
 //! pure domain: no YAML, no transport, no handler registry.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
@@ -12,9 +12,11 @@ use crate::error::DomainError;
 use crate::value_objects::{
     CeremonyContext, CeremonyDescription, CeremonyGuard, CeremonyInputDefinition, CeremonyName,
     CeremonyOutputDefinition, CeremonyRole, CeremonyState, CeremonyStep, CeremonyTransition,
-    CeremonyVersion, GuardName, InputName, OutputName, RoleAction, RoleId, StateId,
-    StepExecutionRecord, StepId, TransitionTrigger,
+    CeremonyValidationReport, CeremonyVersion, GuardName, InputName, OutputName, RoleAction,
+    RoleId, StateId, StepExecutionRecord, StepId, TransitionTrigger,
 };
+
+use super::ceremony_definition_analysis::CeremonyDefinitionParts;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CeremonyDefinition {
@@ -269,128 +271,37 @@ impl CeremonyDefinition {
             .find(|transition| self.guards_are_satisfied(transition, records, context))
     }
 
+    /// Collect every defect in the definition instead of stopping at
+    /// the first one.
+    ///
+    /// A single error is enough to reject a definition but not enough
+    /// to correct one. An author — human or agent — needs the full set
+    /// to fix a draft in one pass.
+    ///
+    /// Findings are emitted in check order, so the first blocking one
+    /// is exactly the error [`Self::new`] raises.
+    #[must_use]
+    pub fn analyze(&self) -> CeremonyValidationReport {
+        let mut findings = Vec::new();
+        self.parts().collect_findings(&mut findings);
+        CeremonyValidationReport::new(findings)
+    }
+
+    fn parts(&self) -> CeremonyDefinitionParts<'_> {
+        CeremonyDefinitionParts {
+            states: &self.states,
+            transitions: &self.transitions,
+            steps: &self.steps,
+            guards: &self.guards,
+            roles: &self.roles,
+        }
+    }
+
     fn validate(&self) -> Result<(), DomainError> {
-        self.require_exactly_one_initial_state()?;
-        self.require_valid_transition_graph()?;
-        self.require_valid_steps()?;
-        self.require_valid_guards()?;
-        self.require_valid_roles()?;
-        Ok(())
-    }
-
-    fn require_exactly_one_initial_state(&self) -> Result<(), DomainError> {
-        if self.states.is_empty() {
-            return Err(DomainError::EmptyCollection {
-                field: "ceremony_definition.states",
-            });
+        match self.analyze().first_error() {
+            Some(finding) => Err(finding.defect().clone()),
+            None => Ok(()),
         }
-
-        let initial_count = self
-            .states
-            .values()
-            .filter(|state| state.is_initial())
-            .count();
-        if initial_count != 1 {
-            return Err(DomainError::InvariantViolated {
-                reason: "ceremony definition must have exactly one initial state",
-            });
-        }
-        Ok(())
-    }
-
-    fn require_valid_transition_graph(&self) -> Result<(), DomainError> {
-        let mut state_trigger_pairs = BTreeSet::new();
-        for transition in &self.transitions {
-            let from = self
-                .states
-                .get(transition.from())
-                .ok_or(DomainError::NotFound {
-                    what: "ceremony_transition.from_state",
-                })?;
-            if !self.states.contains_key(transition.to()) {
-                return Err(DomainError::NotFound {
-                    what: "ceremony_transition.to_state",
-                });
-            }
-            if from.is_terminal() {
-                return Err(DomainError::InvariantViolated {
-                    reason: "terminal ceremony states cannot have outgoing transitions",
-                });
-            }
-            if !state_trigger_pairs
-                .insert((transition.from().clone(), transition.trigger().clone()))
-            {
-                return Err(DomainError::AlreadyExists {
-                    what: "ceremony_transition.state_trigger",
-                });
-            }
-            for guard_name in transition.required_guards() {
-                if !self.guards.contains_key(guard_name) {
-                    return Err(DomainError::NotFound {
-                        what: "ceremony_transition.guard",
-                    });
-                }
-            }
-        }
-        Ok(())
-    }
-
-    fn require_valid_steps(&self) -> Result<(), DomainError> {
-        for step in self.steps.values() {
-            let state = self
-                .states
-                .get(step.state_id())
-                .ok_or(DomainError::NotFound {
-                    what: "ceremony_step.state",
-                })?;
-            if state.is_terminal() {
-                return Err(DomainError::InvariantViolated {
-                    reason: "terminal ceremony states cannot own executable steps",
-                });
-            }
-        }
-        Ok(())
-    }
-
-    fn require_valid_guards(&self) -> Result<(), DomainError> {
-        for guard in self.guards.values() {
-            if let Some(step_id) = guard.condition().referenced_step_id() {
-                if !self.steps.contains_key(step_id) {
-                    return Err(DomainError::NotFound {
-                        what: "ceremony_guard.step",
-                    });
-                }
-            }
-        }
-        Ok(())
-    }
-
-    fn require_valid_roles(&self) -> Result<(), DomainError> {
-        let transition_triggers = self
-            .transitions
-            .iter()
-            .map(|transition| transition.trigger().clone())
-            .collect::<BTreeSet<_>>();
-
-        for role in self.roles.values() {
-            for action in role.allowed_actions() {
-                if let Some(step_id) = action.step_id() {
-                    if !self.steps.contains_key(step_id) {
-                        return Err(DomainError::NotFound {
-                            what: "ceremony_role.step_action",
-                        });
-                    }
-                }
-                if let Some(trigger) = action.transition_trigger() {
-                    if !transition_triggers.contains(trigger) {
-                        return Err(DomainError::NotFound {
-                            what: "ceremony_role.transition_action",
-                        });
-                    }
-                }
-            }
-        }
-        Ok(())
     }
 }
 
@@ -485,8 +396,8 @@ fn collect_roles(
 mod tests {
     use super::*;
     use crate::value_objects::{
-        CeremonyStateKind, GuardCondition, RetryPolicy, StepHandlerConfig, StepHandlerKind,
-        StepStatus,
+        CeremonyStateKind, CeremonyValidationLocus, GuardCondition, RetryPolicy, StepHandlerConfig,
+        StepHandlerKind, StepStatus,
     };
 
     fn name() -> CeremonyName {
@@ -1020,6 +931,143 @@ mod tests {
             err,
             DomainError::NotFound {
                 what: "ceremony_guard.step"
+            }
+        ));
+    }
+
+    #[test]
+    fn a_valid_definition_reports_no_findings_at_all() {
+        let report = valid_definition().analyze();
+
+        assert!(report.is_valid());
+        assert!(report.findings().is_empty());
+    }
+
+    #[test]
+    fn an_unreachable_state_is_warned_about_without_blocking_construction() {
+        let definition = definition(
+            vec![
+                CeremonyState::initial(state_id("drafting")),
+                CeremonyState::intermediate(state_id("orphan")),
+                CeremonyState::terminal(state_id("done")),
+            ],
+            vec![
+                CeremonyTransition::new(
+                    state_id("drafting"),
+                    state_id("done"),
+                    trigger("finish"),
+                    Vec::new(),
+                )
+                .unwrap(),
+                CeremonyTransition::new(
+                    state_id("orphan"),
+                    state_id("done"),
+                    trigger("rescue"),
+                    Vec::new(),
+                )
+                .unwrap(),
+            ],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .unwrap();
+
+        let report = definition.analyze();
+        let warnings = report.warnings().collect::<Vec<_>>();
+
+        assert!(report.is_valid());
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(
+            warnings[0].locus(),
+            &CeremonyValidationLocus::state(state_id("orphan"))
+        );
+    }
+
+    #[test]
+    fn a_state_that_cannot_reach_a_terminal_is_warned_about() {
+        let definition = definition(
+            vec![
+                CeremonyState::initial(state_id("drafting")),
+                CeremonyState::intermediate(state_id("stuck")),
+                CeremonyState::terminal(state_id("done")),
+            ],
+            vec![
+                CeremonyTransition::new(
+                    state_id("drafting"),
+                    state_id("done"),
+                    trigger("finish"),
+                    Vec::new(),
+                )
+                .unwrap(),
+                CeremonyTransition::new(
+                    state_id("drafting"),
+                    state_id("stuck"),
+                    trigger("stall"),
+                    Vec::new(),
+                )
+                .unwrap(),
+                CeremonyTransition::new(
+                    state_id("stuck"),
+                    state_id("stuck"),
+                    trigger("spin"),
+                    Vec::new(),
+                )
+                .unwrap(),
+            ],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .unwrap();
+
+        let report = definition.analyze();
+        let warnings = report.warnings().collect::<Vec<_>>();
+
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(
+            warnings[0].locus(),
+            &CeremonyValidationLocus::state(state_id("stuck"))
+        );
+    }
+
+    #[test]
+    fn a_definition_without_any_terminal_state_is_warned_about() {
+        let definition = definition(
+            vec![CeremonyState::initial(state_id("drafting"))],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .unwrap();
+
+        let report = definition.analyze();
+        let warnings = report.warnings().collect::<Vec<_>>();
+
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(warnings[0].locus(), &CeremonyValidationLocus::Definition);
+    }
+
+    #[test]
+    fn structural_errors_suppress_reachability_noise() {
+        let report = definition(
+            vec![
+                CeremonyState::initial(state_id("drafting")),
+                CeremonyState::initial(state_id("also_drafting")),
+                CeremonyState::terminal(state_id("done")),
+            ],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            report,
+            DomainError::InvariantViolated {
+                reason: "ceremony definition must have exactly one initial state"
             }
         ));
     }

@@ -5,6 +5,8 @@
 //! happen through their methods, not by mutating fields directly.
 
 mod ceremony_definition;
+mod ceremony_definition_analysis;
+mod ceremony_definition_draft;
 mod ceremony_evidence_pack;
 mod ceremony_instance;
 mod ceremony_intervention;
@@ -17,6 +19,7 @@ mod task;
 mod validation;
 
 pub use ceremony_definition::CeremonyDefinition;
+pub use ceremony_definition_draft::CeremonyDefinitionDraft;
 pub use ceremony_evidence_pack::CeremonyEvidencePack;
 pub use ceremony_instance::CeremonyInstance;
 pub use ceremony_intervention::CeremonyIntervention;
