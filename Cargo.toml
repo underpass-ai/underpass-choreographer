@@ -91,6 +91,7 @@ prost-types = "0.13"
 async-nats = "0.38"
 
 # SQL / persistence
+redb = "4.1"
 sqlx = { version = "0.8", default-features = false, features = [
     "runtime-tokio-rustls",
     "postgres",

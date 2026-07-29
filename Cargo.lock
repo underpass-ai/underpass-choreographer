@@ -483,11 +483,13 @@ dependencies = [
  "opentelemetry_sdk",
  "prometheus",
  "prost-types",
+ "redb",
  "reqwest",
  "serde",
  "serde_json",
  "serde_yaml",
  "sqlx",
+ "tempfile",
  "thiserror 1.0.69",
  "time",
  "tokio",
@@ -2859,6 +2861,15 @@ dependencies = [
  "rustls-pki-types",
  "time",
  "yasna",
+]
+
+[[package]]
+name = "redb"
+version = "4.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8e925444704b5f17d32bf42f5b6e2df050bceebc3dcd6e71cc73dafe8092e839"
+dependencies = [
+ "libc",
 ]
 
 [[package]]

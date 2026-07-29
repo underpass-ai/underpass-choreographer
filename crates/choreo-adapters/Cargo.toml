@@ -29,6 +29,11 @@ runtime-grpc = ["dep:choreo-proto", "dep:tokio-stream", "dep:tonic"]
 # later slices.
 postgres = ["dep:sqlx"]
 
+# Embedded persistence. redb is the store the embedded distribution
+# uses: pure Rust, no non-optional dependencies and no C toolchain, so
+# an embedded host stays free of system dependencies.
+redb = ["dep:redb"]
+
 # OpenTelemetry integration. Pulls in the bridge crates the gRPC
 # interceptor needs to extract W3C tracecontext from request
 # metadata and set it as the OTel parent context. The exporter
@@ -73,6 +78,7 @@ prost-types = { workspace = true, optional = true }
 async-nats = { workspace = true, optional = true }
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false, optional = true }
 url = { workspace = true, optional = true }
+redb = { workspace = true, optional = true }
 sqlx = { workspace = true, optional = true }
 opentelemetry = { workspace = true, optional = true }
 opentelemetry_sdk = { workspace = true, optional = true }
@@ -80,6 +86,7 @@ tracing-opentelemetry = { workspace = true, optional = true }
 
 [dev-dependencies]
 choreo-core = { workspace = true, features = ["conformance"] }
+tempfile = "3"
 mockall = { workspace = true }
 tokio-test = { workspace = true }
 wiremock = "0.6"

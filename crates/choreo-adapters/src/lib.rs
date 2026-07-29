@@ -73,4 +73,7 @@ pub mod nats;
 #[cfg(feature = "postgres")]
 pub mod postgres;
 
+#[cfg(feature = "redb")]
+pub mod redb;
+
 pub mod agents;
