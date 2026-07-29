@@ -918,7 +918,7 @@ mod tests {
         Task::new(
             TaskId::new("t1").unwrap(),
             specialty(),
-            TaskDescription::new("describe the incident").unwrap(),
+            TaskDescription::new("describe the proposed change").unwrap(),
             constraints,
             Attributes::empty(),
         )
@@ -931,7 +931,7 @@ mod tests {
         Task::new_with_context(
             TaskId::new("t1").unwrap(),
             specialty(),
-            TaskDescription::new("describe the incident").unwrap(),
+            TaskDescription::new("describe the proposed change").unwrap(),
             constraints,
             Attributes::empty(),
             Some(external_context),
