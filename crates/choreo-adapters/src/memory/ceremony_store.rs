@@ -13,8 +13,13 @@ use choreo_core::entities::{
     AuditFact, AuditRecord, CeremonyCommit, CeremonyInstance, CommitOutcome,
 };
 use choreo_core::error::DomainError;
-use choreo_core::ports::{AuditJournalPort, CeremonyUnitOfWorkPort};
-use choreo_core::value_objects::{CeremonyId, CeremonyRevision, OutboxMessage};
+use choreo_core::ports::{AuditJournalPort, CeremonyUnitOfWorkPort, OutboxPort};
+use choreo_core::value_objects::{
+    CeremonyId, CeremonyRevision, ClaimedOutboxMessage, DurationMs, EventId, OutboxAttempt,
+    OutboxMessage, OutboxQuarantineReason,
+};
+use std::time::Duration;
+use time::OffsetDateTime;
 use tokio::sync::RwLock;
 
 #[derive(Debug, Default, Clone)]
@@ -22,7 +27,38 @@ struct StoredCeremony {
     revision: Option<CeremonyRevision>,
     instance: Option<CeremonyInstance>,
     journal: Vec<AuditRecord>,
-    outbox: Vec<OutboxMessage>,
+    outbox: Vec<StoredOutboxMessage>,
+}
+
+/// A committed message and everything the store knows about getting it
+/// out. Delivery state lives here rather than on the message for the
+/// same reason the revision does: it describes the store's dealings
+/// with the message, not what the ceremony did.
+#[derive(Debug, Clone)]
+struct StoredOutboxMessage {
+    message: OutboxMessage,
+    attempt: OutboxAttempt,
+    claimed_until: Option<OffsetDateTime>,
+    delivered: bool,
+    quarantine: Option<OutboxQuarantineReason>,
+}
+
+impl StoredOutboxMessage {
+    fn new(message: OutboxMessage) -> Self {
+        Self {
+            message,
+            attempt: OutboxAttempt::NONE,
+            claimed_until: None,
+            delivered: false,
+            quarantine: None,
+        }
+    }
+
+    fn is_claimable(&self, now: OffsetDateTime) -> bool {
+        !self.delivered
+            && self.quarantine.is_none()
+            && self.claimed_until.is_none_or(|until| until <= now)
+    }
 }
 
 #[derive(Debug, Default, Clone)]
@@ -50,7 +86,14 @@ impl InMemoryCeremonyStore {
             .read()
             .await
             .get(ceremony_id)
-            .map(|stored| stored.outbox.clone())
+            .map(|stored| {
+                stored
+                    .outbox
+                    .iter()
+                    .filter(|entry| !entry.delivered)
+                    .map(|entry| entry.message.clone())
+                    .collect()
+            })
             .unwrap_or_default()
     }
 }
@@ -89,7 +132,9 @@ impl CeremonyUnitOfWorkPort for InMemoryCeremonyStore {
         stored.revision = Some(revision);
         stored.instance = Some(instance);
         stored.journal = journal;
-        stored.outbox.extend(messages);
+        stored
+            .outbox
+            .extend(messages.into_iter().map(StoredOutboxMessage::new));
 
         Ok(CommitOutcome::Committed {
             revision,
@@ -141,5 +186,99 @@ impl AuditJournalPort for InMemoryCeremonyStore {
             .get(ceremony_id)
             .map(|stored| stored.journal.clone())
             .unwrap_or_default())
+    }
+}
+
+#[async_trait]
+impl OutboxPort for InMemoryCeremonyStore {
+    /// At most one message per ceremony, so a ceremony's stream cannot
+    /// be reordered by a publisher handling two of its messages at
+    /// once. A quarantined or already-claimed head stops that ceremony
+    /// and leaves every other one alone.
+    async fn claim(
+        &self,
+        limit: usize,
+        now: OffsetDateTime,
+        lease: DurationMs,
+    ) -> Result<Vec<ClaimedOutboxMessage>, DomainError> {
+        let lease_until = now + Duration::from_millis(lease.get());
+        let mut claimed = Vec::new();
+
+        for stored in self.inner.write().await.values_mut() {
+            if claimed.len() >= limit {
+                break;
+            }
+            let Some(head) = stored.outbox.iter_mut().find(|entry| !entry.delivered) else {
+                continue;
+            };
+            if !head.is_claimable(now) {
+                continue;
+            }
+            head.claimed_until = Some(lease_until);
+            claimed.push(ClaimedOutboxMessage::new(
+                head.message.clone(),
+                head.attempt,
+            ));
+        }
+
+        Ok(claimed)
+    }
+
+    async fn mark_delivered(&self, event_ids: &[EventId]) -> Result<(), DomainError> {
+        let mut ceremonies = self.inner.write().await;
+        for entry in ceremonies
+            .values_mut()
+            .flat_map(|stored| stored.outbox.iter_mut())
+        {
+            if event_ids.contains(entry.message.event_id()) {
+                entry.delivered = true;
+                entry.claimed_until = None;
+            }
+        }
+        Ok(())
+    }
+
+    async fn mark_failed(&self, event_id: &EventId) -> Result<(), DomainError> {
+        let mut ceremonies = self.inner.write().await;
+        for entry in ceremonies
+            .values_mut()
+            .flat_map(|stored| stored.outbox.iter_mut())
+        {
+            if entry.message.event_id() == event_id {
+                entry.attempt = entry.attempt.next();
+                entry.claimed_until = None;
+            }
+        }
+        Ok(())
+    }
+
+    async fn quarantine(
+        &self,
+        event_id: &EventId,
+        reason: OutboxQuarantineReason,
+    ) -> Result<(), DomainError> {
+        let mut ceremonies = self.inner.write().await;
+        for entry in ceremonies
+            .values_mut()
+            .flat_map(|stored| stored.outbox.iter_mut())
+        {
+            if entry.message.event_id() == event_id {
+                entry.quarantine = Some(reason.clone());
+                entry.claimed_until = None;
+            }
+        }
+        Ok(())
+    }
+
+    async fn quarantined(&self) -> Result<Vec<ClaimedOutboxMessage>, DomainError> {
+        Ok(self
+            .inner
+            .read()
+            .await
+            .values()
+            .flat_map(|stored| stored.outbox.iter())
+            .filter(|entry| entry.quarantine.is_some())
+            .map(|entry| ClaimedOutboxMessage::new(entry.message.clone(), entry.attempt))
+            .collect())
     }
 }

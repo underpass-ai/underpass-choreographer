@@ -10,6 +10,9 @@
 
 mod audit_journal_conformance;
 mod ceremony_unit_of_work_conformance;
+mod conformance_fixtures;
+mod outbox_conformance;
 
 pub use audit_journal_conformance::{AuditJournalConformance, ConformanceFailure};
 pub use ceremony_unit_of_work_conformance::CeremonyUnitOfWorkConformance;
+pub use outbox_conformance::OutboxConformance;

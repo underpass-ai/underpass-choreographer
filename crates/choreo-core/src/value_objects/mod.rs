@@ -56,7 +56,9 @@ pub use duration::DurationMs;
 pub use ids::{AgentId, CouncilId, EventId, ProposalId, TaskId};
 pub use llm_error_kind::LlmErrorKind;
 pub use num_agents::NumAgents;
-pub use outbox::{OutboxMessage, OutboxSubject};
+pub use outbox::{
+    ClaimedOutboxMessage, OutboxAttempt, OutboxMessage, OutboxQuarantineReason, OutboxSubject,
+};
 pub use output_contract::{
     EvidenceGroundingRule, OutputContract, OutputFieldRule, OutputFormat, SemanticSupportRule,
     DEFAULT_SUPPORT_MIN_CONFIDENCE,

@@ -23,6 +23,7 @@ serde = { workspace = true }
 
 [dev-dependencies]
 mockall = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt"] }
 tokio-test = { workspace = true }
 tracing-subscriber = { workspace = true }
 criterion = { workspace = true }
