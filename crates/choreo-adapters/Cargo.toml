@@ -79,6 +79,7 @@ opentelemetry_sdk = { workspace = true, optional = true }
 tracing-opentelemetry = { workspace = true, optional = true }
 
 [dev-dependencies]
+choreo-core = { workspace = true, features = ["conformance"] }
 mockall = { workspace = true }
 tokio-test = { workspace = true }
 wiremock = "0.6"

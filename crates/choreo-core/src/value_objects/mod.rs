@@ -29,7 +29,10 @@ mod validation_mode;
 
 pub use agent_kind::AgentKind;
 pub use attributes::Attributes;
-pub use audit::{AuditActor, AuditActorKind, AuditEventType, AuditRecordHash, AuditSequence};
+pub use audit::{
+    AuditActor, AuditActorKind, AuditChainDefect, AuditChainVerdict, AuditEventType,
+    AuditRecordHash, AuditSequence,
+};
 pub use ceremony::{
     CeremonyContext, CeremonyDescription, CeremonyEvidenceSourceId, CeremonyGuard,
     CeremonyGuardDeferral, CeremonyGuardDeferralContent, CeremonyId, CeremonyInputDefinition,

@@ -13,6 +13,7 @@ workspace = true
 
 [dependencies]
 async-trait = { workspace = true }
+futures = { workspace = true, optional = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -20,6 +21,9 @@ sha2 = { workspace = true }
 time = { workspace = true }
 uuid = { workspace = true }
 tracing = { workspace = true }
+
+[features]
+conformance = ["dep:futures"]
 
 [dev-dependencies]
 tokio = { workspace = true }

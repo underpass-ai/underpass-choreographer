@@ -16,6 +16,8 @@
 
 #![deny(missing_debug_implementations)]
 
+#[cfg(feature = "conformance")]
+pub mod conformance;
 pub mod entities;
 pub mod error;
 pub mod events;

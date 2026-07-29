@@ -4,6 +4,7 @@
 //! roots own invariants spanning multiple objects; state transitions
 //! happen through their methods, not by mutating fields directly.
 
+mod audit_chain;
 mod audit_record;
 mod ceremony_definition;
 mod ceremony_definition_analysis;
@@ -19,6 +20,7 @@ mod statistics;
 mod task;
 mod validation;
 
+pub use audit_chain::AuditChain;
 pub use audit_record::{AuditFact, AuditRecord, AUDIT_RECORD_SCHEMA_VERSION};
 pub use ceremony_definition::CeremonyDefinition;
 pub use ceremony_definition_draft::CeremonyDefinitionDraft;
