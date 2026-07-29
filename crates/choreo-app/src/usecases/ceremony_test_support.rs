@@ -4,8 +4,8 @@ use async_trait::async_trait;
 use choreo_core::entities::{CeremonyDefinition, CeremonyInstance};
 use choreo_core::error::DomainError;
 use choreo_core::ports::{
-    CeremonyContextStorePort, CeremonyDefinitionRepositoryPort, CeremonyInstanceRepositoryPort,
-    CeremonyStepHandlerPort, CeremonyStepHandlerRequest, ClockPort,
+    CeremonyDefinitionRepositoryPort, CeremonyInstanceRepositoryPort, CeremonyStepHandlerPort,
+    CeremonyStepHandlerRequest, CeremonyTranscriptStorePort, ClockPort,
 };
 use choreo_core::value_objects::{
     CeremonyContext, CeremonyGuard, CeremonyId, CeremonyName, CeremonyRole, CeremonyState,
@@ -167,7 +167,7 @@ pub(super) struct ContextStoreFake {
 }
 
 #[async_trait]
-impl CeremonyContextStorePort for ContextStoreFake {
+impl CeremonyTranscriptStorePort for ContextStoreFake {
     async fn append(
         &self,
         instance_id: &CeremonyId,

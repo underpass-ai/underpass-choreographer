@@ -5,8 +5,8 @@ use std::sync::Arc;
 use choreo_core::entities::{CeremonyDefinition, CeremonyInstance};
 use choreo_core::error::DomainError;
 use choreo_core::ports::{
-    CeremonyContextStorePort, CeremonyDefinitionRepositoryPort, CeremonyInstanceRepositoryPort,
-    CeremonyStepHandlerPort, CeremonyStepHandlerRequest, ClockPort, MetricsRecorderPort,
+    CeremonyDefinitionRepositoryPort, CeremonyInstanceRepositoryPort, CeremonyStepHandlerPort,
+    CeremonyStepHandlerRequest, CeremonyTranscriptStorePort, ClockPort, MetricsRecorderPort,
     NoopMetricsRecorder,
 };
 use choreo_core::value_objects::{
@@ -29,7 +29,7 @@ pub struct RunCeremonyUseCase {
     definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
     instances: Arc<dyn CeremonyInstanceRepositoryPort>,
     handler: Arc<dyn CeremonyStepHandlerPort>,
-    context_store: Arc<dyn CeremonyContextStorePort>,
+    transcript_store: Arc<dyn CeremonyTranscriptStorePort>,
     clock: Arc<dyn ClockPort>,
     metrics: Arc<dyn MetricsRecorderPort>,
 }
@@ -46,14 +46,14 @@ impl RunCeremonyUseCase {
         definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
         instances: Arc<dyn CeremonyInstanceRepositoryPort>,
         handler: Arc<dyn CeremonyStepHandlerPort>,
-        context_store: Arc<dyn CeremonyContextStorePort>,
+        transcript_store: Arc<dyn CeremonyTranscriptStorePort>,
         clock: Arc<dyn ClockPort>,
     ) -> Self {
         Self {
             definitions,
             instances,
             handler,
-            context_store,
+            transcript_store,
             clock,
             metrics: Arc::new(NoopMetricsRecorder),
         }
@@ -122,7 +122,7 @@ impl RunCeremonyUseCase {
                     continue;
                 }
                 let role_id = definition.role_id_for_step(&step_id)?;
-                let transcript = self.context_store.transcript(&id).await?;
+                let transcript = self.transcript_store.transcript(&id).await?;
                 let step_started = self.clock.now();
                 let (attempt, step_result) = self
                     .run_step(
@@ -147,7 +147,7 @@ impl RunCeremonyUseCase {
                     step_result.status(),
                 );
                 if step_result.is_success() {
-                    self.context_store
+                    self.transcript_store
                         .append(
                             &id,
                             CeremonyStepContribution::new(

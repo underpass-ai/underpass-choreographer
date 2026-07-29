@@ -1,4 +1,4 @@
-//! In-memory [`CeremonyContextStorePort`] implementation.
+//! In-memory [`CeremonyTranscriptStorePort`] implementation.
 //!
 //! The generic, product-agnostic context store: contributions live in a
 //! lock-guarded map keyed by ceremony instance. A deployment that needs
@@ -11,16 +11,16 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use choreo_core::error::DomainError;
-use choreo_core::ports::CeremonyContextStorePort;
+use choreo_core::ports::CeremonyTranscriptStorePort;
 use choreo_core::value_objects::{CeremonyId, CeremonyStepContribution, CeremonyTranscript};
 use tokio::sync::RwLock;
 
 #[derive(Debug, Default, Clone)]
-pub struct InMemoryCeremonyContextStore {
+pub struct InMemoryCeremonyTranscriptStore {
     inner: Arc<RwLock<BTreeMap<CeremonyId, Vec<CeremonyStepContribution>>>>,
 }
 
-impl InMemoryCeremonyContextStore {
+impl InMemoryCeremonyTranscriptStore {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -28,7 +28,7 @@ impl InMemoryCeremonyContextStore {
 }
 
 #[async_trait]
-impl CeremonyContextStorePort for InMemoryCeremonyContextStore {
+impl CeremonyTranscriptStorePort for InMemoryCeremonyTranscriptStore {
     async fn append(
         &self,
         instance_id: &CeremonyId,
@@ -74,7 +74,7 @@ mod tests {
 
     #[tokio::test]
     async fn unknown_instance_has_empty_transcript() {
-        let store = InMemoryCeremonyContextStore::new();
+        let store = InMemoryCeremonyTranscriptStore::new();
 
         let transcript = store
             .transcript(&CeremonyId::new("ceremony-1").unwrap())
@@ -86,7 +86,7 @@ mod tests {
 
     #[tokio::test]
     async fn appends_accumulate_in_order_per_instance() {
-        let store = InMemoryCeremonyContextStore::new();
+        let store = InMemoryCeremonyTranscriptStore::new();
         let instance = CeremonyId::new("ceremony-1").unwrap();
 
         store
@@ -112,7 +112,7 @@ mod tests {
 
     #[tokio::test]
     async fn transcripts_are_isolated_per_instance() {
-        let store = InMemoryCeremonyContextStore::new();
+        let store = InMemoryCeremonyTranscriptStore::new();
         let first = CeremonyId::new("ceremony-1").unwrap();
         let second = CeremonyId::new("ceremony-2").unwrap();
 

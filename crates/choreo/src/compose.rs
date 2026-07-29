@@ -7,9 +7,9 @@ use choreo_adapters::ceremony::DeliberatingCeremonyStepHandler;
 use choreo_adapters::clock::SystemClock;
 use choreo_adapters::config::EnvConfiguration;
 use choreo_adapters::memory::{
-    InMemoryAgentRegistry, InMemoryCeremonyContextStore, InMemoryCeremonyDefinitionRepository,
-    InMemoryCeremonyInstanceRepository, InMemoryContractRegistry, InMemoryCouncilRegistry,
-    InMemoryDeliberationRepository, InMemoryStatistics,
+    InMemoryAgentRegistry, InMemoryCeremonyDefinitionRepository,
+    InMemoryCeremonyInstanceRepository, InMemoryCeremonyTranscriptStore, InMemoryContractRegistry,
+    InMemoryCouncilRegistry, InMemoryDeliberationRepository, InMemoryStatistics,
 };
 use choreo_adapters::metrics::PrometheusMetricsRecorder;
 use choreo_adapters::nats::{NatsConfig, NatsMessaging, NatsTriggerSubscriber};
@@ -35,8 +35,8 @@ use choreo_app::usecases::{
 };
 use choreo_core::error::DomainError;
 use choreo_core::ports::{
-    AgentFactoryPort, AgentRegistryPort, AgentResolverPort, CeremonyContextStorePort,
-    CeremonyDefinitionRepositoryPort, CeremonyInstanceRepositoryPort, CeremonyStepHandlerPort,
+    AgentFactoryPort, AgentRegistryPort, AgentResolverPort, CeremonyDefinitionRepositoryPort,
+    CeremonyInstanceRepositoryPort, CeremonyStepHandlerPort, CeremonyTranscriptStorePort,
     ConfigurationPort, ContractRegistryPort, CouncilRegistryPort, DeliberationRepositoryPort,
     ExecutorPort, MessagingPort, MetricsRecorderPort, ScoringPort, ServiceConfig, StatisticsPort,
     ValidatorPort,
@@ -188,8 +188,8 @@ pub async fn compose() -> Result<Application, ComposeError> {
         Arc::new(InMemoryCeremonyDefinitionRepository::new());
     let ceremony_instances: Arc<dyn CeremonyInstanceRepositoryPort> =
         Arc::new(InMemoryCeremonyInstanceRepository::new());
-    let ceremony_context_store: Arc<dyn CeremonyContextStorePort> =
-        Arc::new(InMemoryCeremonyContextStore::new());
+    let ceremony_transcript_store: Arc<dyn CeremonyTranscriptStorePort> =
+        Arc::new(InMemoryCeremonyTranscriptStore::new());
 
     let MessagingWiring {
         port: messaging,
@@ -233,7 +233,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
             ceremony_definitions,
             ceremony_instances,
             ceremony_step_handler,
-            ceremony_context_store,
+            ceremony_transcript_store,
             clock.clone(),
         )
         .with_metrics(metrics_recorder.clone()),

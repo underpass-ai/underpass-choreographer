@@ -7,10 +7,10 @@
 
 mod agent_registry;
 mod audit_journal;
-mod ceremony_context_store;
 mod ceremony_definition_repository;
 mod ceremony_instance_repository;
 mod ceremony_store;
+mod ceremony_transcript_store;
 mod contract_registry;
 mod council_registry;
 mod deliberation_repository;
@@ -18,10 +18,10 @@ mod statistics;
 
 pub use agent_registry::InMemoryAgentRegistry;
 pub use audit_journal::InMemoryAuditJournal;
-pub use ceremony_context_store::InMemoryCeremonyContextStore;
 pub use ceremony_definition_repository::InMemoryCeremonyDefinitionRepository;
 pub use ceremony_instance_repository::InMemoryCeremonyInstanceRepository;
 pub use ceremony_store::InMemoryCeremonyStore;
+pub use ceremony_transcript_store::InMemoryCeremonyTranscriptStore;
 pub use contract_registry::InMemoryContractRegistry;
 pub use council_registry::InMemoryCouncilRegistry;
 pub use deliberation_repository::InMemoryDeliberationRepository;

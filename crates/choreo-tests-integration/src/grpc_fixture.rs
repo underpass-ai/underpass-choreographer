@@ -24,9 +24,9 @@ use choreo_adapters::ceremony::DeliberatingCeremonyStepHandler;
 use choreo_adapters::clock::SystemClock;
 use choreo_adapters::grpc::ChoreographerGrpcService;
 use choreo_adapters::memory::{
-    InMemoryAgentRegistry, InMemoryCeremonyContextStore, InMemoryCeremonyDefinitionRepository,
-    InMemoryCeremonyInstanceRepository, InMemoryContractRegistry, InMemoryCouncilRegistry,
-    InMemoryDeliberationRepository, InMemoryStatistics,
+    InMemoryAgentRegistry, InMemoryCeremonyDefinitionRepository,
+    InMemoryCeremonyInstanceRepository, InMemoryCeremonyTranscriptStore, InMemoryContractRegistry,
+    InMemoryCouncilRegistry, InMemoryDeliberationRepository, InMemoryStatistics,
 };
 use choreo_adapters::noop::{NoopExecutor, NoopMessaging};
 use choreo_adapters::scoring::UniformScoring;
@@ -146,7 +146,7 @@ impl GrpcFixture {
             ceremony_definitions,
             ceremony_instances,
             ceremony_step_handler,
-            Arc::new(InMemoryCeremonyContextStore::new()),
+            Arc::new(InMemoryCeremonyTranscriptStore::new()),
             clock.clone(),
         ));
         let create_council = Arc::new(CreateCouncilUseCase::new(
@@ -305,7 +305,7 @@ impl GrpcFixture {
             ceremony_definitions,
             ceremony_instances,
             ceremony_step_handler,
-            Arc::new(InMemoryCeremonyContextStore::new()),
+            Arc::new(InMemoryCeremonyTranscriptStore::new()),
             clock.clone(),
         ));
         let create_council = Arc::new(CreateCouncilUseCase::new(

@@ -6,8 +6,8 @@ use std::sync::Arc;
 
 use choreo_adapters::clock::SystemClock;
 use choreo_adapters::memory::{
-    InMemoryCeremonyContextStore, InMemoryCeremonyDefinitionRepository,
-    InMemoryCeremonyInstanceRepository,
+    InMemoryCeremonyDefinitionRepository, InMemoryCeremonyInstanceRepository,
+    InMemoryCeremonyTranscriptStore,
 };
 use choreo_adapters::noop::NoopCeremonyStepHandler;
 use choreo_adapters::yaml::FileSystemCeremonyDefinitionSource;
@@ -84,7 +84,7 @@ async fn yaml_definition_can_drive_the_application_ceremony_flow() {
         Arc::new(FileSystemCeremonyDefinitionSource::from_directory(&fixture_dir).unwrap());
     let definitions = Arc::new(InMemoryCeremonyDefinitionRepository::new());
     let instances = Arc::new(InMemoryCeremonyInstanceRepository::new());
-    let context_store = Arc::new(InMemoryCeremonyContextStore::new());
+    let transcript_store = Arc::new(InMemoryCeremonyTranscriptStore::new());
     let handler = Arc::new(NoopCeremonyStepHandler::new());
     let clock = Arc::new(SystemClock::new());
 
@@ -120,7 +120,7 @@ async fn yaml_definition_can_drive_the_application_ceremony_flow() {
         handler,
         clock.clone(),
     )
-    .with_context_store(context_store);
+    .with_transcript_store(transcript_store);
     let step_output = run_step
         .execute(RunCeremonyStepInput::new(
             CeremonyId::new("meeting-1").unwrap(),

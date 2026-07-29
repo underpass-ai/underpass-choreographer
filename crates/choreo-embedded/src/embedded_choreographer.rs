@@ -17,8 +17,8 @@ use choreo_app::usecases::{
 use choreo_core::entities::{CeremonyDefinition, CeremonyInstance};
 use choreo_core::error::DomainError;
 use choreo_core::ports::{
-    CeremonyContextStorePort, CeremonyDefinitionRepositoryPort, CeremonyEvidenceSourcePort,
-    CeremonyInstanceRepositoryPort, CeremonyStepHandlerPort, ClockPort, MetricsRecorderPort,
+    CeremonyDefinitionRepositoryPort, CeremonyEvidenceSourcePort, CeremonyInstanceRepositoryPort,
+    CeremonyStepHandlerPort, CeremonyTranscriptStorePort, ClockPort, MetricsRecorderPort,
 };
 use choreo_core::value_objects::{
     CeremonyId, CeremonyName, CeremonyTranscript, CeremonyVersion, StepAttempt,
@@ -31,7 +31,7 @@ use crate::{EmbeddedChoreographerBuilder, InProcessCeremonyDefinitionSource, VER
 pub struct EmbeddedChoreographer {
     definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
     instances: Arc<dyn CeremonyInstanceRepositoryPort>,
-    context_store: Arc<dyn CeremonyContextStorePort>,
+    transcript_store: Arc<dyn CeremonyTranscriptStorePort>,
     step_handler: Arc<dyn CeremonyStepHandlerPort>,
     evidence_source: Arc<dyn CeremonyEvidenceSourcePort>,
     clock: Arc<dyn ClockPort>,
@@ -42,7 +42,7 @@ impl EmbeddedChoreographer {
     pub(crate) fn new(
         definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
         instances: Arc<dyn CeremonyInstanceRepositoryPort>,
-        context_store: Arc<dyn CeremonyContextStorePort>,
+        transcript_store: Arc<dyn CeremonyTranscriptStorePort>,
         step_handler: Arc<dyn CeremonyStepHandlerPort>,
         evidence_source: Arc<dyn CeremonyEvidenceSourcePort>,
         clock: Arc<dyn ClockPort>,
@@ -51,7 +51,7 @@ impl EmbeddedChoreographer {
         Self {
             definitions,
             instances,
-            context_store,
+            transcript_store,
             step_handler,
             evidence_source,
             clock,
@@ -125,7 +125,7 @@ impl EmbeddedChoreographer {
     }
 
     pub async fn transcript(&self, id: &CeremonyId) -> Result<CeremonyTranscript, DomainError> {
-        GetCeremonyTranscriptUseCase::new(self.context_store.clone())
+        GetCeremonyTranscriptUseCase::new(self.transcript_store.clone())
             .execute(id)
             .await
     }
@@ -135,7 +135,7 @@ impl EmbeddedChoreographer {
             self.definitions.clone(),
             self.instances.clone(),
             self.step_handler.clone(),
-            self.context_store.clone(),
+            self.transcript_store.clone(),
             self.clock.clone(),
         )
         .with_metrics(self.metrics.clone())
@@ -251,7 +251,7 @@ impl EmbeddedChoreographer {
             self.step_handler.clone(),
             self.clock.clone(),
         )
-        .with_context_store(self.context_store.clone())
+        .with_transcript_store(self.transcript_store.clone())
         .execute(input)
         .await
     }

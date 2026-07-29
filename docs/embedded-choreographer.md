@@ -56,7 +56,7 @@ and definition version solve different compatibility problems.
 |---|---|
 | ceremony definitions | `InMemoryCeremonyDefinitionRepository` |
 | ceremony instances | `InMemoryCeremonyInstanceRepository` |
-| ceremony transcript | `InMemoryCeremonyContextStore` |
+| ceremony transcript | `InMemoryCeremonyTranscriptStore` |
 | step execution | `NoopCeremonyStepHandler` |
 | clock | `SystemClock` |
 | metrics | `NoopMetricsRecorder` |
@@ -90,7 +90,7 @@ For richer integrations the builder accepts `Arc<dyn ...Port>` for:
 
 - definition repository;
 - instance repository;
-- context store;
+- transcript store;
 - step handler;
 - clock;
 - metrics recorder.

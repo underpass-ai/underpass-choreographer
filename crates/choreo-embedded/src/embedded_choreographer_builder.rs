@@ -4,16 +4,16 @@ use std::sync::Arc;
 
 use choreo_adapters::clock::SystemClock;
 use choreo_adapters::memory::{
-    InMemoryCeremonyContextStore, InMemoryCeremonyDefinitionRepository,
-    InMemoryCeremonyInstanceRepository,
+    InMemoryCeremonyDefinitionRepository, InMemoryCeremonyInstanceRepository,
+    InMemoryCeremonyTranscriptStore,
 };
 use choreo_adapters::noop::{NoopCeremonyEvidenceSource, NoopCeremonyStepHandler};
 use choreo_core::entities::CeremonyEvidencePack;
 use choreo_core::error::DomainError;
 use choreo_core::ports::{
-    CeremonyContextStorePort, CeremonyDefinitionRepositoryPort, CeremonyEvidenceRequest,
-    CeremonyEvidenceSourcePort, CeremonyInstanceRepositoryPort, CeremonyStepHandlerPort,
-    CeremonyStepHandlerRequest, ClockPort, MetricsRecorderPort, NoopMetricsRecorder,
+    CeremonyDefinitionRepositoryPort, CeremonyEvidenceRequest, CeremonyEvidenceSourcePort,
+    CeremonyInstanceRepositoryPort, CeremonyStepHandlerPort, CeremonyStepHandlerRequest,
+    CeremonyTranscriptStorePort, ClockPort, MetricsRecorderPort, NoopMetricsRecorder,
 };
 use choreo_core::value_objects::StepResult;
 
@@ -24,7 +24,7 @@ use crate::{CallbackCeremonyEvidenceSource, CallbackCeremonyStepHandler, Embedde
 pub struct EmbeddedChoreographerBuilder {
     definitions: Option<Arc<dyn CeremonyDefinitionRepositoryPort>>,
     instances: Option<Arc<dyn CeremonyInstanceRepositoryPort>>,
-    context_store: Option<Arc<dyn CeremonyContextStorePort>>,
+    transcript_store: Option<Arc<dyn CeremonyTranscriptStorePort>>,
     step_handler: Option<Arc<dyn CeremonyStepHandlerPort>>,
     evidence_source: Option<Arc<dyn CeremonyEvidenceSourcePort>>,
     clock: Option<Arc<dyn ClockPort>>,
@@ -56,8 +56,8 @@ impl EmbeddedChoreographerBuilder {
     }
 
     #[must_use]
-    pub fn with_context_store(mut self, adapter: Arc<dyn CeremonyContextStorePort>) -> Self {
-        self.context_store = Some(adapter);
+    pub fn with_transcript_store(mut self, adapter: Arc<dyn CeremonyTranscriptStorePort>) -> Self {
+        self.transcript_store = Some(adapter);
         self
     }
 
@@ -115,8 +115,8 @@ impl EmbeddedChoreographerBuilder {
             Arc::new(InMemoryCeremonyInstanceRepository::new())
                 as Arc<dyn CeremonyInstanceRepositoryPort>
         });
-        let context_store = self.context_store.unwrap_or_else(|| {
-            Arc::new(InMemoryCeremonyContextStore::new()) as Arc<dyn CeremonyContextStorePort>
+        let transcript_store = self.transcript_store.unwrap_or_else(|| {
+            Arc::new(InMemoryCeremonyTranscriptStore::new()) as Arc<dyn CeremonyTranscriptStorePort>
         });
         let step_handler = self.step_handler.unwrap_or_else(|| {
             Arc::new(NoopCeremonyStepHandler::new()) as Arc<dyn CeremonyStepHandlerPort>
@@ -134,7 +134,7 @@ impl EmbeddedChoreographerBuilder {
         EmbeddedChoreographer::new(
             definitions,
             instances,
-            context_store,
+            transcript_store,
             step_handler,
             evidence_source,
             clock,
@@ -149,7 +149,7 @@ impl fmt::Debug for EmbeddedChoreographerBuilder {
             .debug_struct("EmbeddedChoreographerBuilder")
             .field("has_definition_repository", &self.definitions.is_some())
             .field("has_instance_repository", &self.instances.is_some())
-            .field("has_context_store", &self.context_store.is_some())
+            .field("has_transcript_store", &self.transcript_store.is_some())
             .field("has_step_handler", &self.step_handler.is_some())
             .field("has_evidence_source", &self.evidence_source.is_some())
             .field("has_clock", &self.clock.is_some())
