@@ -9,5 +9,7 @@
 //! repository or outside it.
 
 mod audit_journal_conformance;
+mod ceremony_unit_of_work_conformance;
 
 pub use audit_journal_conformance::{AuditJournalConformance, ConformanceFailure};
+pub use ceremony_unit_of_work_conformance::CeremonyUnitOfWorkConformance;

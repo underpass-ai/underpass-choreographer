@@ -16,6 +16,7 @@ mod duration;
 mod ids;
 mod llm_error_kind;
 mod num_agents;
+mod outbox;
 mod output_contract;
 mod rounds;
 mod rubric;
@@ -38,14 +39,14 @@ pub use ceremony::{
     CeremonyGuardDeferral, CeremonyGuardDeferralContent, CeremonyId, CeremonyInputDefinition,
     CeremonyInterventionContent, CeremonyInterventionId, CeremonyInterventionKind,
     CeremonyInterventionProvenance, CeremonyInterventionResponse, CeremonyInterventionStatus,
-    CeremonyInterventionTarget, CeremonyName, CeremonyOutputDefinition, CeremonyRole,
-    CeremonyState, CeremonyStateKind, CeremonyStep, CeremonyStepContribution, CeremonyTranscript,
-    CeremonyTransition, CeremonyValidationFinding, CeremonyValidationLocus,
-    CeremonyValidationReport, CeremonyValidationSeverity, CeremonyVersion, GuardCondition,
-    GuardName, IdempotencyKey, InputName, InputRequirement, LeaseOwnerId, OutputName, RetryPolicy,
-    RoleAction, RoleId, StateId, StepAttempt, StepErrorMessage, StepExecutionRecord,
-    StepHandlerConfig, StepHandlerKind, StepId, StepLease, StepOutput, StepResult, StepStatus,
-    StepTimeout, TransitionTrigger,
+    CeremonyInterventionTarget, CeremonyName, CeremonyOutputDefinition, CeremonyRevision,
+    CeremonyRole, CeremonyState, CeremonyStateKind, CeremonyStep, CeremonyStepContribution,
+    CeremonyTranscript, CeremonyTransition, CeremonyValidationFinding, CeremonyValidationLocus,
+    CeremonyValidationReport, CeremonyValidationSeverity, CeremonyVersion, ExpectedRevision,
+    GuardCondition, GuardName, IdempotencyKey, InputName, InputRequirement, LeaseOwnerId,
+    OutputName, RetryPolicy, RoleAction, RoleId, StateId, StepAttempt, StepErrorMessage,
+    StepExecutionRecord, StepHandlerConfig, StepHandlerKind, StepId, StepLease, StepOutput,
+    StepResult, StepStatus, StepTimeout, TransitionTrigger,
 };
 pub use ceremony_outcome::CeremonyOutcome;
 pub use council_selector::CouncilSelector;
@@ -55,6 +56,7 @@ pub use duration::DurationMs;
 pub use ids::{AgentId, CouncilId, EventId, ProposalId, TaskId};
 pub use llm_error_kind::LlmErrorKind;
 pub use num_agents::NumAgents;
+pub use outbox::{OutboxMessage, OutboxSubject};
 pub use output_contract::{
     EvidenceGroundingRule, OutputContract, OutputFieldRule, OutputFormat, SemanticSupportRule,
     DEFAULT_SUPPORT_MIN_CONFIDENCE,

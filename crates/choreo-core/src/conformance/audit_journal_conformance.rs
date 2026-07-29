@@ -42,6 +42,13 @@ pub struct ConformanceFailure {
 }
 
 impl ConformanceFailure {
+    pub(super) fn new(property: &'static str, detail: impl Into<String>) -> Self {
+        Self {
+            property,
+            detail: detail.into(),
+        }
+    }
+
     #[must_use]
     pub fn property(&self) -> &'static str {
         self.property
