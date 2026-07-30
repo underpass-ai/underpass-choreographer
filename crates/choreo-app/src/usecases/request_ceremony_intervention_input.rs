@@ -41,4 +41,18 @@ impl RequestCeremonyInterventionInput {
         self.provenance = Some(provenance);
         self
     }
+    #[must_use]
+    pub fn intervention_id(&self) -> &CeremonyInterventionId {
+        &self.intervention_id
+    }
+
+    #[must_use]
+    pub fn target(&self) -> &CeremonyInterventionTarget {
+        &self.target
+    }
+
+    #[must_use]
+    pub const fn kind(&self) -> CeremonyInterventionKind {
+        self.kind
+    }
 }

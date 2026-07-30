@@ -20,4 +20,13 @@ impl DeferCeremonyGuardInput {
             content,
         }
     }
+    #[must_use]
+    pub fn guard_name(&self) -> &GuardName {
+        &self.guard_name
+    }
+
+    #[must_use]
+    pub fn content(&self) -> &CeremonyGuardDeferralContent {
+        &self.content
+    }
 }

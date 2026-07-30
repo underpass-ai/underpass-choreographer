@@ -229,9 +229,13 @@ impl EmbeddedChoreographer {
         &self,
         input: ApproveCeremonyGuardInput,
     ) -> Result<CeremonyInstance, DomainError> {
-        ApproveCeremonyGuardUseCase::new(self.instances.clone(), self.clock.clone())
-            .execute(input)
-            .await
+        ApproveCeremonyGuardUseCase::new(
+            self.resolve_definition(),
+            self.instances.clone(),
+            self.clock.clone(),
+        )
+        .execute(input)
+        .await
     }
 
     pub async fn defer_guard(

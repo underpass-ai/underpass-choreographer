@@ -6,12 +6,15 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use choreo_app::services::AutoDispatchService;
 use choreo_app::usecases::{
-    ApplyCeremonyTransitionUseCase, CeremonyInstanceView, CreateCouncilInput, CreateCouncilUseCase,
-    DeleteCouncilUseCase, DeliberateUseCase, GetCeremonyInstanceUseCase, GetDeliberationUseCase,
-    ListCeremonyInstancesUseCase, ListCouncilsUseCase, OrchestrateUseCase,
-    PrepareCeremonyParticipantsUseCase, RegisterAgentUseCase, ResolveCeremonyDefinitionUseCase,
-    RunCeremonyStepUseCase, RunCeremonyUseCase, RunCouncilDecisionUseCase, StartCeremonyUseCase,
-    StartPublishedCeremonyUseCase, UnregisterAgentUseCase,
+    ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase, CeremonyInstanceView,
+    CloseCeremonyInterventionUseCase, CollectCeremonyEvidenceUseCase, CreateCouncilInput,
+    CreateCouncilUseCase, DeferCeremonyGuardUseCase, DeleteCouncilUseCase, DeliberateUseCase,
+    GetCeremonyInstanceUseCase, GetDeliberationUseCase, ListCeremonyInstancesUseCase,
+    ListCouncilsUseCase, OrchestrateUseCase, PrepareCeremonyParticipantsUseCase,
+    RegisterAgentUseCase, RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
+    RespondToCeremonyInterventionUseCase, RunCeremonyStepUseCase, RunCeremonyUseCase,
+    RunCouncilDecisionUseCase, StartCeremonyUseCase, StartPublishedCeremonyUseCase,
+    UnregisterAgentUseCase,
 };
 use choreo_core::error::DomainError;
 use choreo_core::ports::{
@@ -26,13 +29,17 @@ use tonic::{Request, Response, Status};
 use tracing::debug;
 
 use super::mappers::{
-    apply_ceremony_transition_input_from_proto, ceremony_instance_state_from, council_summary_from,
-    deliberate_response_from, orchestrate_response_from, output_contract_from_proto,
-    output_contract_to_proto, run_ceremony_input_from_proto, run_ceremony_response_from,
-    run_ceremony_step_input_from_proto, run_council_decision_input_from_proto,
-    run_council_decision_response_from, start_ceremony_from_proto,
-    start_published_ceremony_input_from_proto, task_from_proto, trigger_event_from_proto,
-    StartCeremonyFromYaml,
+    apply_ceremony_transition_input_from_proto, approve_ceremony_guard_input_from_proto,
+    ceremony_instance_state_from, close_ceremony_intervention_input_from_proto,
+    collect_ceremony_evidence_input_from_proto, council_summary_from,
+    defer_ceremony_guard_input_from_proto, deliberate_response_from, orchestrate_response_from,
+    output_contract_from_proto, output_contract_to_proto,
+    request_ceremony_intervention_input_from_proto,
+    respond_to_ceremony_intervention_input_from_proto, run_ceremony_input_from_proto,
+    run_ceremony_response_from, run_ceremony_step_input_from_proto,
+    run_council_decision_input_from_proto, run_council_decision_response_from,
+    start_ceremony_from_proto, start_published_ceremony_input_from_proto, task_from_proto,
+    trigger_event_from_proto, StartCeremonyFromYaml,
 };
 use super::status::domain_error_to_status;
 use super::tracecontext::link_span_to_metadata;
@@ -59,6 +66,12 @@ pub struct ChoreographerGrpcService {
     start_published_ceremony: Arc<StartPublishedCeremonyUseCase>,
     run_ceremony_step: Arc<RunCeremonyStepUseCase>,
     apply_ceremony_transition: Arc<ApplyCeremonyTransitionUseCase>,
+    approve_ceremony_guard: Arc<ApproveCeremonyGuardUseCase>,
+    defer_ceremony_guard: Arc<DeferCeremonyGuardUseCase>,
+    request_ceremony_intervention: Arc<RequestCeremonyInterventionUseCase>,
+    respond_to_ceremony_intervention: Arc<RespondToCeremonyInterventionUseCase>,
+    close_ceremony_intervention: Arc<CloseCeremonyInterventionUseCase>,
+    collect_ceremony_evidence: Arc<CollectCeremonyEvidenceUseCase>,
     ceremony_definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
     prepare_ceremony_participants: Arc<PrepareCeremonyParticipantsUseCase>,
     contract_registry: Arc<dyn ContractRegistryPort>,
@@ -180,6 +193,12 @@ pub struct ChoreographerGrpcServiceBuilder {
     start_published_ceremony: Option<Arc<StartPublishedCeremonyUseCase>>,
     run_ceremony_step: Option<Arc<RunCeremonyStepUseCase>>,
     apply_ceremony_transition: Option<Arc<ApplyCeremonyTransitionUseCase>>,
+    approve_ceremony_guard: Option<Arc<ApproveCeremonyGuardUseCase>>,
+    defer_ceremony_guard: Option<Arc<DeferCeremonyGuardUseCase>>,
+    request_ceremony_intervention: Option<Arc<RequestCeremonyInterventionUseCase>>,
+    respond_to_ceremony_intervention: Option<Arc<RespondToCeremonyInterventionUseCase>>,
+    close_ceremony_intervention: Option<Arc<CloseCeremonyInterventionUseCase>>,
+    collect_ceremony_evidence: Option<Arc<CollectCeremonyEvidenceUseCase>>,
     ceremony_definitions: Option<Arc<dyn CeremonyDefinitionRepositoryPort>>,
     prepare_ceremony_participants: Option<Arc<PrepareCeremonyParticipantsUseCase>>,
     contract_registry: Option<Arc<dyn ContractRegistryPort>>,
@@ -192,6 +211,17 @@ impl std::fmt::Debug for ChoreographerGrpcServiceBuilder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ChoreographerGrpcServiceBuilder").finish()
     }
+}
+
+macro_rules! required {
+    ($self:ident, $field:ident) => {
+        required!($self, $field, "use case")
+    };
+    ($self:ident, $field:ident, $what:literal) => {
+        $self.$field.ok_or(DomainError::InvariantViolated {
+            reason: concat!("grpc: ", stringify!($field), " ", $what, " is required"),
+        })?
+    };
 }
 
 macro_rules! setter {
@@ -247,6 +277,36 @@ impl ChoreographerGrpcServiceBuilder {
         apply_ceremony_transition
     );
     setter!(
+        approve_ceremony_guard,
+        ApproveCeremonyGuardUseCase,
+        approve_ceremony_guard
+    );
+    setter!(
+        defer_ceremony_guard,
+        DeferCeremonyGuardUseCase,
+        defer_ceremony_guard
+    );
+    setter!(
+        request_ceremony_intervention,
+        RequestCeremonyInterventionUseCase,
+        request_ceremony_intervention
+    );
+    setter!(
+        respond_to_ceremony_intervention,
+        RespondToCeremonyInterventionUseCase,
+        respond_to_ceremony_intervention
+    );
+    setter!(
+        close_ceremony_intervention,
+        CloseCeremonyInterventionUseCase,
+        close_ceremony_intervention
+    );
+    setter!(
+        collect_ceremony_evidence,
+        CollectCeremonyEvidenceUseCase,
+        collect_ceremony_evidence
+    );
+    setter!(
         prepare_ceremony_participants,
         PrepareCeremonyParticipantsUseCase,
         prepare_ceremony_participants
@@ -285,96 +345,34 @@ impl ChoreographerGrpcServiceBuilder {
     /// through the same error channel the rest of the app uses.
     pub fn build(self) -> Result<ChoreographerGrpcService, DomainError> {
         Ok(ChoreographerGrpcService {
-            deliberate: self.deliberate.ok_or(DomainError::InvariantViolated {
-                reason: "grpc: deliberate use case is required",
-            })?,
-            orchestrate: self.orchestrate.ok_or(DomainError::InvariantViolated {
-                reason: "grpc: orchestrate use case is required",
-            })?,
-            create_council: self.create_council.ok_or(DomainError::InvariantViolated {
-                reason: "grpc: create_council use case is required",
-            })?,
-            delete_council: self.delete_council.ok_or(DomainError::InvariantViolated {
-                reason: "grpc: delete_council use case is required",
-            })?,
-            list_councils: self.list_councils.ok_or(DomainError::InvariantViolated {
-                reason: "grpc: list_councils use case is required",
-            })?,
-            get_deliberation: self
-                .get_deliberation
-                .ok_or(DomainError::InvariantViolated {
-                    reason: "grpc: get_deliberation use case is required",
-                })?,
-            register_agent: self.register_agent.ok_or(DomainError::InvariantViolated {
-                reason: "grpc: register_agent use case is required",
-            })?,
-            unregister_agent: self
-                .unregister_agent
-                .ok_or(DomainError::InvariantViolated {
-                    reason: "grpc: unregister_agent use case is required",
-                })?,
-            run_council_decision: self.run_council_decision.ok_or(
-                DomainError::InvariantViolated {
-                    reason: "grpc: run_council_decision use case is required",
-                },
-            )?,
-            run_ceremony: self.run_ceremony.ok_or(DomainError::InvariantViolated {
-                reason: "grpc: run_ceremony use case is required",
-            })?,
-            get_ceremony_instance: self.get_ceremony_instance.ok_or(
-                DomainError::InvariantViolated {
-                    reason: "grpc: get_ceremony_instance use case is required",
-                },
-            )?,
-            list_ceremony_instances: self.list_ceremony_instances.ok_or(
-                DomainError::InvariantViolated {
-                    reason: "grpc: list_ceremony_instances use case is required",
-                },
-            )?,
-            resolve_ceremony_definition: self.resolve_ceremony_definition.ok_or(
-                DomainError::InvariantViolated {
-                    reason: "grpc: resolve_ceremony_definition use case is required",
-                },
-            )?,
-            start_ceremony: self.start_ceremony.ok_or(DomainError::InvariantViolated {
-                reason: "grpc: start_ceremony use case is required",
-            })?,
-            start_published_ceremony: self.start_published_ceremony.ok_or(
-                DomainError::InvariantViolated {
-                    reason: "grpc: start_published_ceremony use case is required",
-                },
-            )?,
-            run_ceremony_step: self
-                .run_ceremony_step
-                .ok_or(DomainError::InvariantViolated {
-                    reason: "grpc: run_ceremony_step use case is required",
-                })?,
-            apply_ceremony_transition: self.apply_ceremony_transition.ok_or(
-                DomainError::InvariantViolated {
-                    reason: "grpc: apply_ceremony_transition use case is required",
-                },
-            )?,
-            ceremony_definitions: self.ceremony_definitions.ok_or(
-                DomainError::InvariantViolated {
-                    reason: "grpc: ceremony_definitions port is required",
-                },
-            )?,
-            prepare_ceremony_participants: self.prepare_ceremony_participants.ok_or(
-                DomainError::InvariantViolated {
-                    reason: "grpc: prepare_ceremony_participants use case is required",
-                },
-            )?,
-            contract_registry: self
-                .contract_registry
-                .ok_or(DomainError::InvariantViolated {
-                    reason: "grpc: contract_registry port is required",
-                })?,
-            auto_dispatch: self.auto_dispatch.ok_or(DomainError::InvariantViolated {
-                reason: "grpc: auto_dispatch service is required",
-            })?,
-            statistics: self.statistics.ok_or(DomainError::InvariantViolated {
-                reason: "grpc: statistics port is required",
-            })?,
+            deliberate: required!(self, deliberate),
+            orchestrate: required!(self, orchestrate),
+            create_council: required!(self, create_council),
+            delete_council: required!(self, delete_council),
+            list_councils: required!(self, list_councils),
+            get_deliberation: required!(self, get_deliberation),
+            register_agent: required!(self, register_agent),
+            unregister_agent: required!(self, unregister_agent),
+            run_council_decision: required!(self, run_council_decision),
+            run_ceremony: required!(self, run_ceremony),
+            get_ceremony_instance: required!(self, get_ceremony_instance),
+            list_ceremony_instances: required!(self, list_ceremony_instances),
+            resolve_ceremony_definition: required!(self, resolve_ceremony_definition),
+            start_ceremony: required!(self, start_ceremony),
+            start_published_ceremony: required!(self, start_published_ceremony),
+            run_ceremony_step: required!(self, run_ceremony_step),
+            apply_ceremony_transition: required!(self, apply_ceremony_transition),
+            approve_ceremony_guard: required!(self, approve_ceremony_guard),
+            defer_ceremony_guard: required!(self, defer_ceremony_guard),
+            request_ceremony_intervention: required!(self, request_ceremony_intervention),
+            respond_to_ceremony_intervention: required!(self, respond_to_ceremony_intervention),
+            close_ceremony_intervention: required!(self, close_ceremony_intervention),
+            collect_ceremony_evidence: required!(self, collect_ceremony_evidence),
+            ceremony_definitions: required!(self, ceremony_definitions, "port"),
+            prepare_ceremony_participants: required!(self, prepare_ceremony_participants),
+            contract_registry: required!(self, contract_registry, "port"),
+            auto_dispatch: required!(self, auto_dispatch, "service"),
+            statistics: required!(self, statistics, "port"),
             started_at: std::time::Instant::now(),
             service_version: self.service_version.unwrap_or(""),
         })
@@ -876,6 +874,126 @@ impl ChoreographerService for ChoreographerGrpcService {
             .map_err(domain_error_to_status)?;
         Ok(Response::new(pb::ApplyCeremonyTransitionResponse {
             instance: Some(Self::render(&moved, &definition).map_err(domain_error_to_status)?),
+        }))
+    }
+
+    // Each of these answers with the session, like every other move.
+    // The definition is resolved once per call rather than carried
+    // over from a previous one: these are the calls a person makes,
+    // minutes or hours apart, and nothing says the process handling
+    // this one saw the last.
+
+    #[tracing::instrument(name = "rpc.approve_ceremony_guard", skip_all)]
+    async fn approve_ceremony_guard(
+        &self,
+        request: Request<pb::ApproveCeremonyGuardRequest>,
+    ) -> GrpcResult<pb::ApproveCeremonyGuardResponse> {
+        link_span_to_metadata(&request);
+        let input = approve_ceremony_guard_input_from_proto(request.into_inner())
+            .map_err(domain_error_to_status)?;
+        let instance = self
+            .approve_ceremony_guard
+            .execute(input)
+            .await
+            .map_err(domain_error_to_status)?;
+        let state = self.project(&instance).await?;
+        Ok(Response::new(pb::ApproveCeremonyGuardResponse {
+            instance: Some(state),
+        }))
+    }
+
+    #[tracing::instrument(name = "rpc.defer_ceremony_guard", skip_all)]
+    async fn defer_ceremony_guard(
+        &self,
+        request: Request<pb::DeferCeremonyGuardRequest>,
+    ) -> GrpcResult<pb::DeferCeremonyGuardResponse> {
+        link_span_to_metadata(&request);
+        let input = defer_ceremony_guard_input_from_proto(request.into_inner())
+            .map_err(domain_error_to_status)?;
+        let instance = self
+            .defer_ceremony_guard
+            .execute(input)
+            .await
+            .map_err(domain_error_to_status)?;
+        let state = self.project(&instance).await?;
+        Ok(Response::new(pb::DeferCeremonyGuardResponse {
+            instance: Some(state),
+        }))
+    }
+
+    #[tracing::instrument(name = "rpc.request_ceremony_intervention", skip_all)]
+    async fn request_ceremony_intervention(
+        &self,
+        request: Request<pb::RequestCeremonyInterventionRequest>,
+    ) -> GrpcResult<pb::RequestCeremonyInterventionResponse> {
+        link_span_to_metadata(&request);
+        let input = request_ceremony_intervention_input_from_proto(request.into_inner())
+            .map_err(domain_error_to_status)?;
+        let instance = self
+            .request_ceremony_intervention
+            .execute(input)
+            .await
+            .map_err(domain_error_to_status)?;
+        let state = self.project(&instance).await?;
+        Ok(Response::new(pb::RequestCeremonyInterventionResponse {
+            instance: Some(state),
+        }))
+    }
+
+    #[tracing::instrument(name = "rpc.respond_to_ceremony_intervention", skip_all)]
+    async fn respond_to_ceremony_intervention(
+        &self,
+        request: Request<pb::RespondToCeremonyInterventionRequest>,
+    ) -> GrpcResult<pb::RespondToCeremonyInterventionResponse> {
+        link_span_to_metadata(&request);
+        let input = respond_to_ceremony_intervention_input_from_proto(request.into_inner())
+            .map_err(domain_error_to_status)?;
+        let instance = self
+            .respond_to_ceremony_intervention
+            .execute(input)
+            .await
+            .map_err(domain_error_to_status)?;
+        let state = self.project(&instance).await?;
+        Ok(Response::new(pb::RespondToCeremonyInterventionResponse {
+            instance: Some(state),
+        }))
+    }
+
+    #[tracing::instrument(name = "rpc.close_ceremony_intervention", skip_all)]
+    async fn close_ceremony_intervention(
+        &self,
+        request: Request<pb::CloseCeremonyInterventionRequest>,
+    ) -> GrpcResult<pb::CloseCeremonyInterventionResponse> {
+        link_span_to_metadata(&request);
+        let input = close_ceremony_intervention_input_from_proto(request.into_inner())
+            .map_err(domain_error_to_status)?;
+        let instance = self
+            .close_ceremony_intervention
+            .execute(input)
+            .await
+            .map_err(domain_error_to_status)?;
+        let state = self.project(&instance).await?;
+        Ok(Response::new(pb::CloseCeremonyInterventionResponse {
+            instance: Some(state),
+        }))
+    }
+
+    #[tracing::instrument(name = "rpc.collect_ceremony_evidence", skip_all)]
+    async fn collect_ceremony_evidence(
+        &self,
+        request: Request<pb::CollectCeremonyEvidenceRequest>,
+    ) -> GrpcResult<pb::CollectCeremonyEvidenceResponse> {
+        link_span_to_metadata(&request);
+        let input = collect_ceremony_evidence_input_from_proto(request.into_inner())
+            .map_err(domain_error_to_status)?;
+        let instance = self
+            .collect_ceremony_evidence
+            .execute(input)
+            .await
+            .map_err(domain_error_to_status)?;
+        let state = self.project(&instance).await?;
+        Ok(Response::new(pb::CollectCeremonyEvidenceResponse {
+            instance: Some(state),
         }))
     }
 

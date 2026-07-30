@@ -328,11 +328,35 @@ impl CeremonyInstance {
         Ok(())
     }
 
+    /// Approving is checked the way deferring is. It used to take no
+    /// definition at all, so any name at all could be "approved" —
+    /// which wrote that name into the session context, told the caller
+    /// it had succeeded, and left a session that would never move.
+    ///
+    /// Approving ahead of time is still allowed: unlike a deferral,
+    /// which answers a decision being asked for now, a person may
+    /// settle a guard before the work leading up to it is finished.
     pub fn approve_guard(
         &mut self,
+        definition: &CeremonyDefinition,
         guard_name: &GuardName,
         now: OffsetDateTime,
     ) -> Result<(), DomainError> {
+        self.require_active(
+            definition,
+            "terminal ceremony instances cannot approve guards",
+        )?;
+        let guard = definition
+            .guards()
+            .get(guard_name)
+            .ok_or(DomainError::NotFound {
+                what: "ceremony_guard",
+            })?;
+        if !matches!(guard.condition(), GuardCondition::HumanApproval) {
+            return Err(DomainError::InvariantViolated {
+                reason: "only human approval guards can be approved",
+            });
+        }
         self.context = self.context.clone().with_guard_approval(guard_name)?;
         self.updated_at = now;
         Ok(())
@@ -1119,6 +1143,50 @@ mod tests {
     }
 
     #[test]
+    fn approving_a_guard_the_ceremony_never_declared_is_refused() {
+        let approval =
+            CeremonyGuard::new(guard_name("human_approved"), GuardCondition::HumanApproval);
+        let finish = CeremonyTransition::new(
+            state_id("drafting"),
+            state_id("done"),
+            trigger("approve"),
+            vec![approval.name().clone()],
+        )
+        .unwrap();
+        let definition = CeremonyDefinition::new(
+            crate::value_objects::CeremonyName::new("approval_ceremony").unwrap(),
+            CeremonyVersion::v1(),
+            None,
+            Vec::new(),
+            Vec::new(),
+            vec![
+                CeremonyState::initial(state_id("drafting")),
+                CeremonyState::terminal(state_id("done")),
+            ],
+            vec![finish.clone()],
+            Vec::new(),
+            vec![approval],
+            vec![role(vec![RoleAction::transition(finish.trigger().clone())])],
+        )
+        .unwrap();
+        let mut instance = instance(&definition);
+
+        // This used to succeed and write `not_a_guard: true` into the
+        // session context: a caller could put any key at all there,
+        // and a typo answered "approved" while leaving a session that
+        // would never move.
+        assert!(matches!(
+            instance.approve_guard(&definition, &guard_name("not_a_guard"), now()),
+            Err(DomainError::NotFound {
+                what: "ceremony_guard"
+            })
+        ));
+        assert!(!instance
+            .context()
+            .is_guard_approved(&guard_name("not_a_guard")));
+    }
+
+    #[test]
     fn human_approval_guard_uses_typed_context() {
         let approval =
             CeremonyGuard::new(guard_name("human_approved"), GuardCondition::HumanApproval);
@@ -1152,7 +1220,11 @@ mod tests {
             Err(DomainError::InvariantViolated { .. })
         ));
         instance
-            .approve_guard(approval.name(), datetime!(2026-06-06 12:01:00 UTC))
+            .approve_guard(
+                &definition,
+                approval.name(),
+                datetime!(2026-06-06 12:01:00 UTC),
+            )
             .unwrap();
         instance
             .apply_transition(

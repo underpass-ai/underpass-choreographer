@@ -134,6 +134,18 @@ service ChoreographerService {
   rpc RunCeremonyStep(RunCeremonyStepRequest) returns (RunCeremonyStepResponse);
   rpc ApplyCeremonyTransition(ApplyCeremonyTransitionRequest) returns (ApplyCeremonyTransitionResponse);
 
+  // The part of a working session that only a person can do. A guard
+  // is approved or deferred, an agenda item is opened, answered and
+  // closed, evidence is gathered against it. These are what make a
+  // session something an engineer takes part in rather than watches,
+  // and they answer with the session exactly as the moves above do.
+  rpc ApproveCeremonyGuard(ApproveCeremonyGuardRequest) returns (ApproveCeremonyGuardResponse);
+  rpc DeferCeremonyGuard(DeferCeremonyGuardRequest) returns (DeferCeremonyGuardResponse);
+  rpc RequestCeremonyIntervention(RequestCeremonyInterventionRequest) returns (RequestCeremonyInterventionResponse);
+  rpc RespondToCeremonyIntervention(RespondToCeremonyInterventionRequest) returns (RespondToCeremonyInterventionResponse);
+  rpc CloseCeremonyIntervention(CloseCeremonyInterventionRequest) returns (CloseCeremonyInterventionResponse);
+  rpc CollectCeremonyEvidence(CollectCeremonyEvidenceRequest) returns (CollectCeremonyEvidenceResponse);
+
   // ---- Observability --------------------------------------------------
 
   rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
@@ -823,5 +835,92 @@ message ApplyCeremonyTransitionRequest {
 }
 
 message ApplyCeremonyTransitionResponse {
+  CeremonyInstanceState instance = 1;
+}
+
+message ApproveCeremonyGuardRequest {
+  string ceremony_id = 1;
+  string guard_name = 2;
+}
+
+message ApproveCeremonyGuardResponse {
+  CeremonyInstanceState instance = 1;
+}
+
+message DeferCeremonyGuardRequest {
+  string ceremony_id = 1;
+  string guard_name = 2;
+  // Deferring is a decision, not a silence: what was decided, why,
+  // and what would make it worth revisiting. All three are required,
+  // because a deferral that records none of them is indistinguishable
+  // from nobody having looked.
+  string statement = 3;
+  string reason = 4;
+  repeated string reconsider_when = 5;
+}
+
+message DeferCeremonyGuardResponse {
+  CeremonyInstanceState instance = 1;
+}
+
+message RequestCeremonyInterventionRequest {
+  string ceremony_id = 1;
+  // Empty mints one server-side.
+  string intervention_id = 2;
+  string role_id = 3;
+  // "opinion", "investigation" or "action".
+  string kind = 4;
+  // Whom it is put to. Empty asks the whole table.
+  repeated string target_role_ids = 5;
+  string message = 6;
+  google.protobuf.Struct details = 7;
+  // Set when this item exists because of an answer to an earlier one,
+  // so a reader can follow how the session got here.
+  CeremonyInterventionProvenanceState provenance = 8;
+}
+
+message RequestCeremonyInterventionResponse {
+  CeremonyInstanceState instance = 1;
+}
+
+message RespondToCeremonyInterventionRequest {
+  string ceremony_id = 1;
+  string intervention_id = 2;
+  string role_id = 3;
+  string message = 4;
+  google.protobuf.Struct details = 5;
+}
+
+message RespondToCeremonyInterventionResponse {
+  CeremonyInstanceState instance = 1;
+}
+
+message CloseCeremonyInterventionRequest {
+  string ceremony_id = 1;
+  string intervention_id = 2;
+  string role_id = 3;
+}
+
+message CloseCeremonyInterventionResponse {
+  CeremonyInstanceState instance = 1;
+}
+
+// Gathering evidence needs a source to gather from, and the server
+// ships without one: until an operator wires a CeremonyEvidenceSource
+// adapter, this RPC answers NOT_FOUND rather than inventing a result.
+// The call exists so the surface is whole and so the failure is a
+// plain answer instead of a missing method.
+message CollectCeremonyEvidenceRequest {
+  string ceremony_id = 1;
+  string intervention_id = 2;
+  string role_id = 3;
+  // Where the evidence came from. It is recorded alongside the answer
+  // so a reader can tell what was looked at, not only what was said.
+  string source_id = 4;
+  string query = 5;
+  google.protobuf.Struct details = 6;
+}
+
+message CollectCeremonyEvidenceResponse {
   CeremonyInstanceState instance = 1;
 }

@@ -7,8 +7,10 @@ use choreo_core::error::DomainError;
 use choreo_core::ports::{CeremonyInstanceRepositoryPort, ClockPort};
 
 use super::approve_ceremony_guard_input::ApproveCeremonyGuardInput;
+use super::resolve_ceremony_definition_use_case::ResolveCeremonyDefinitionUseCase;
 
 pub struct ApproveCeremonyGuardUseCase {
+    definitions: Arc<ResolveCeremonyDefinitionUseCase>,
     instances: Arc<dyn CeremonyInstanceRepositoryPort>,
     clock: Arc<dyn ClockPort>,
 }
@@ -22,10 +24,15 @@ impl std::fmt::Debug for ApproveCeremonyGuardUseCase {
 impl ApproveCeremonyGuardUseCase {
     #[must_use]
     pub fn new(
+        definitions: Arc<ResolveCeremonyDefinitionUseCase>,
         instances: Arc<dyn CeremonyInstanceRepositoryPort>,
         clock: Arc<dyn ClockPort>,
     ) -> Self {
-        Self { instances, clock }
+        Self {
+            definitions,
+            instances,
+            clock,
+        }
     }
 
     #[tracing::instrument(
@@ -38,7 +45,8 @@ impl ApproveCeremonyGuardUseCase {
         input: ApproveCeremonyGuardInput,
     ) -> Result<CeremonyInstance, DomainError> {
         let mut instance = self.instances.get(&input.instance_id).await?;
-        instance.approve_guard(&input.guard_name, self.clock.now())?;
+        let definition = self.definitions.execute(&instance).await?;
+        instance.approve_guard(&definition, &input.guard_name, self.clock.now())?;
         self.instances.save(&instance).await?;
         Ok(instance)
     }
@@ -53,19 +61,24 @@ mod tests {
 
     use super::*;
     use crate::usecases::ceremony_test_support::{
-        approval_definition, ceremony_id, now, started_instance, FixedClock, InstanceRepositoryFake,
+        approval_definition, ceremony_id, definition_resolver, now, started_instance,
+        DefinitionRepositoryFake, FixedClock, InstanceRepositoryFake,
     };
 
     #[tokio::test]
     async fn records_human_guard_approval_in_context() {
         let definition = approval_definition();
+        let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
         let instances = Arc::new(InstanceRepositoryFake::default());
         instances
             .save(&started_instance(&definition))
             .await
             .unwrap();
-        let usecase =
-            ApproveCeremonyGuardUseCase::new(instances.clone(), Arc::new(FixedClock::new(now())));
+        let usecase = ApproveCeremonyGuardUseCase::new(
+            definition_resolver(definitions),
+            instances.clone(),
+            Arc::new(FixedClock::new(now())),
+        );
         let guard_name = GuardName::new("human_approved").unwrap();
 
         let approved = usecase

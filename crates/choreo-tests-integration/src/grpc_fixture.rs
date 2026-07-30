@@ -29,7 +29,7 @@ use choreo_adapters::memory::{
     InMemoryCeremonyTranscriptStore, InMemoryContractRegistry, InMemoryCouncilRegistry,
     InMemoryDeliberationRepository, InMemoryStatistics,
 };
-use choreo_adapters::noop::{NoopExecutor, NoopMessaging};
+use choreo_adapters::noop::{NoopCeremonyEvidenceSource, NoopExecutor, NoopMessaging};
 use choreo_adapters::scoring::UniformScoring;
 use choreo_adapters::validators::{
     AllowedStringValuesValidator, ContentNonEmptyValidator, JsonObjectOutputValidator,
@@ -37,10 +37,12 @@ use choreo_adapters::validators::{
 };
 use choreo_app::services::AutoDispatchService;
 use choreo_app::usecases::{
-    ApplyCeremonyTransitionUseCase, CreateCouncilUseCase, DeleteCouncilUseCase, DeliberateUseCase,
-    GetCeremonyInstanceUseCase, GetDeliberationUseCase, ListCeremonyInstancesUseCase,
-    ListCouncilsUseCase, OrchestrateUseCase, PrepareCeremonyParticipantsUseCase,
-    RegisterAgentUseCase, ResolveCeremonyDefinitionUseCase, RunCeremonyStepUseCase,
+    ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase, CloseCeremonyInterventionUseCase,
+    CollectCeremonyEvidenceUseCase, CreateCouncilUseCase, DeferCeremonyGuardUseCase,
+    DeleteCouncilUseCase, DeliberateUseCase, GetCeremonyInstanceUseCase, GetDeliberationUseCase,
+    ListCeremonyInstancesUseCase, ListCouncilsUseCase, OrchestrateUseCase,
+    PrepareCeremonyParticipantsUseCase, RegisterAgentUseCase, RequestCeremonyInterventionUseCase,
+    ResolveCeremonyDefinitionUseCase, RespondToCeremonyInterventionUseCase, RunCeremonyStepUseCase,
     RunCeremonyUseCase, RunCouncilDecisionUseCase, StartCeremonyUseCase,
     StartPublishedCeremonyUseCase, UnregisterAgentUseCase,
 };
@@ -189,6 +191,40 @@ impl GrpcFixture {
             ceremony_instances.clone(),
             clock.clone(),
         ));
+        let approve_ceremony_guard = Arc::new(ApproveCeremonyGuardUseCase::new(
+            resolve_ceremony_definition.clone(),
+            ceremony_instances.clone(),
+            clock.clone(),
+        ));
+        let defer_ceremony_guard = Arc::new(DeferCeremonyGuardUseCase::new(
+            resolve_ceremony_definition.clone(),
+            ceremony_instances.clone(),
+            clock.clone(),
+        ));
+        let request_ceremony_intervention = Arc::new(RequestCeremonyInterventionUseCase::new(
+            resolve_ceremony_definition.clone(),
+            ceremony_instances.clone(),
+            clock.clone(),
+        ));
+        let respond_to_ceremony_intervention = Arc::new(RespondToCeremonyInterventionUseCase::new(
+            resolve_ceremony_definition.clone(),
+            ceremony_instances.clone(),
+            clock.clone(),
+        ));
+        let close_ceremony_intervention = Arc::new(CloseCeremonyInterventionUseCase::new(
+            resolve_ceremony_definition.clone(),
+            ceremony_instances.clone(),
+            clock.clone(),
+        ));
+        // No evidence source ships with the server, so this answers
+        // NOT_FOUND until an operator wires one. Failing plainly beats
+        // a missing method or an invented answer.
+        let collect_ceremony_evidence = Arc::new(CollectCeremonyEvidenceUseCase::new(
+            resolve_ceremony_definition.clone(),
+            ceremony_instances.clone(),
+            Arc::new(NoopCeremonyEvidenceSource::new()),
+            clock.clone(),
+        ));
         let create_council = Arc::new(CreateCouncilUseCase::new(
             clock.clone(),
             council_registry.clone(),
@@ -231,6 +267,12 @@ impl GrpcFixture {
             .start_published_ceremony(start_published_ceremony)
             .run_ceremony_step(run_ceremony_step)
             .apply_ceremony_transition(apply_ceremony_transition)
+            .approve_ceremony_guard(approve_ceremony_guard)
+            .defer_ceremony_guard(defer_ceremony_guard)
+            .request_ceremony_intervention(request_ceremony_intervention)
+            .respond_to_ceremony_intervention(respond_to_ceremony_intervention)
+            .close_ceremony_intervention(close_ceremony_intervention)
+            .collect_ceremony_evidence(collect_ceremony_evidence)
             .ceremony_definitions(ceremony_definitions.clone())
             .get_ceremony_instance(Arc::new(GetCeremonyInstanceUseCase::new(
                 ceremony_instances.clone(),
@@ -393,6 +435,40 @@ impl GrpcFixture {
             ceremony_instances.clone(),
             clock.clone(),
         ));
+        let approve_ceremony_guard = Arc::new(ApproveCeremonyGuardUseCase::new(
+            resolve_ceremony_definition.clone(),
+            ceremony_instances.clone(),
+            clock.clone(),
+        ));
+        let defer_ceremony_guard = Arc::new(DeferCeremonyGuardUseCase::new(
+            resolve_ceremony_definition.clone(),
+            ceremony_instances.clone(),
+            clock.clone(),
+        ));
+        let request_ceremony_intervention = Arc::new(RequestCeremonyInterventionUseCase::new(
+            resolve_ceremony_definition.clone(),
+            ceremony_instances.clone(),
+            clock.clone(),
+        ));
+        let respond_to_ceremony_intervention = Arc::new(RespondToCeremonyInterventionUseCase::new(
+            resolve_ceremony_definition.clone(),
+            ceremony_instances.clone(),
+            clock.clone(),
+        ));
+        let close_ceremony_intervention = Arc::new(CloseCeremonyInterventionUseCase::new(
+            resolve_ceremony_definition.clone(),
+            ceremony_instances.clone(),
+            clock.clone(),
+        ));
+        // No evidence source ships with the server, so this answers
+        // NOT_FOUND until an operator wires one. Failing plainly beats
+        // a missing method or an invented answer.
+        let collect_ceremony_evidence = Arc::new(CollectCeremonyEvidenceUseCase::new(
+            resolve_ceremony_definition.clone(),
+            ceremony_instances.clone(),
+            Arc::new(NoopCeremonyEvidenceSource::new()),
+            clock.clone(),
+        ));
         let create_council = Arc::new(CreateCouncilUseCase::new(
             clock.clone(),
             council_registry.clone(),
@@ -435,6 +511,12 @@ impl GrpcFixture {
             .start_published_ceremony(start_published_ceremony)
             .run_ceremony_step(run_ceremony_step)
             .apply_ceremony_transition(apply_ceremony_transition)
+            .approve_ceremony_guard(approve_ceremony_guard)
+            .defer_ceremony_guard(defer_ceremony_guard)
+            .request_ceremony_intervention(request_ceremony_intervention)
+            .respond_to_ceremony_intervention(respond_to_ceremony_intervention)
+            .close_ceremony_intervention(close_ceremony_intervention)
+            .collect_ceremony_evidence(collect_ceremony_evidence)
             .ceremony_definitions(ceremony_definitions.clone())
             .prepare_ceremony_participants(prepare_ceremony_participants)
             .get_ceremony_instance(Arc::new(GetCeremonyInstanceUseCase::new(

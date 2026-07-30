@@ -1,0 +1,220 @@
+//! The moves only a person makes: proto → application.
+//!
+//! Guards and agenda items are where a working session stops being a
+//! state machine running by itself and becomes something an engineer
+//! is in. These conversions carry that across the wire without
+//! deciding anything: what a role may do is the engine's business.
+
+use choreo_app::usecases::{
+    ApproveCeremonyGuardInput, CloseCeremonyInterventionInput, CollectCeremonyEvidenceInput,
+    DeferCeremonyGuardInput, RequestCeremonyInterventionInput, RespondToCeremonyInterventionInput,
+};
+use choreo_core::error::DomainError;
+use choreo_core::value_objects::{
+    CeremonyEvidenceSourceId, CeremonyGuardDeferralContent, CeremonyId,
+    CeremonyInterventionContent, CeremonyInterventionId, CeremonyInterventionKind,
+    CeremonyInterventionProvenance, CeremonyInterventionTarget, GuardName, RoleId,
+};
+use choreo_proto::v1 as pb;
+use uuid::Uuid;
+
+use super::attributes::attributes_from_struct;
+
+pub fn approve_ceremony_guard_input_from_proto(
+    request: pb::ApproveCeremonyGuardRequest,
+) -> Result<ApproveCeremonyGuardInput, DomainError> {
+    Ok(ApproveCeremonyGuardInput::new(
+        CeremonyId::new(request.ceremony_id)?,
+        GuardName::new(request.guard_name)?,
+    ))
+}
+
+pub fn defer_ceremony_guard_input_from_proto(
+    request: pb::DeferCeremonyGuardRequest,
+) -> Result<DeferCeremonyGuardInput, DomainError> {
+    Ok(DeferCeremonyGuardInput::new(
+        CeremonyId::new(request.ceremony_id)?,
+        GuardName::new(request.guard_name)?,
+        CeremonyGuardDeferralContent::new(
+            request.statement,
+            request.reason,
+            request.reconsider_when,
+        )?,
+    ))
+}
+
+pub fn request_ceremony_intervention_input_from_proto(
+    request: pb::RequestCeremonyInterventionRequest,
+) -> Result<RequestCeremonyInterventionInput, DomainError> {
+    let intervention_id = if request.intervention_id.trim().is_empty() {
+        CeremonyInterventionId::new(Uuid::new_v4().to_string())?
+    } else {
+        CeremonyInterventionId::new(request.intervention_id)?
+    };
+    // No target roles means the item is put to the table rather than
+    // to nobody: an unanswerable agenda item is not a useful thing to
+    // be able to express.
+    let target = if request.target_role_ids.is_empty() {
+        CeremonyInterventionTarget::table()
+    } else {
+        CeremonyInterventionTarget::roles(
+            request
+                .target_role_ids
+                .into_iter()
+                .map(RoleId::new)
+                .collect::<Result<Vec<_>, _>>()?,
+        )?
+    };
+    let content = CeremonyInterventionContent::new(
+        request.message,
+        attributes_from_struct(request.details)?,
+    )?;
+
+    let mut input = RequestCeremonyInterventionInput::new(
+        CeremonyId::new(request.ceremony_id)?,
+        intervention_id,
+        RoleId::new(request.role_id)?,
+        intervention_kind_from_proto(&request.kind)?,
+        target,
+        content,
+    );
+    if let Some(provenance) = request.provenance {
+        input = input.with_provenance(provenance_from_proto(provenance)?);
+    }
+    Ok(input)
+}
+
+pub fn respond_to_ceremony_intervention_input_from_proto(
+    request: pb::RespondToCeremonyInterventionRequest,
+) -> Result<RespondToCeremonyInterventionInput, DomainError> {
+    Ok(RespondToCeremonyInterventionInput::new(
+        CeremonyId::new(request.ceremony_id)?,
+        CeremonyInterventionId::new(request.intervention_id)?,
+        RoleId::new(request.role_id)?,
+        CeremonyInterventionContent::new(
+            request.message,
+            attributes_from_struct(request.details)?,
+        )?,
+    ))
+}
+
+pub fn close_ceremony_intervention_input_from_proto(
+    request: pb::CloseCeremonyInterventionRequest,
+) -> Result<CloseCeremonyInterventionInput, DomainError> {
+    Ok(CloseCeremonyInterventionInput::new(
+        CeremonyId::new(request.ceremony_id)?,
+        CeremonyInterventionId::new(request.intervention_id)?,
+        RoleId::new(request.role_id)?,
+    ))
+}
+
+pub fn collect_ceremony_evidence_input_from_proto(
+    request: pb::CollectCeremonyEvidenceRequest,
+) -> Result<CollectCeremonyEvidenceInput, DomainError> {
+    Ok(CollectCeremonyEvidenceInput::new(
+        CeremonyId::new(request.ceremony_id)?,
+        CeremonyInterventionId::new(request.intervention_id)?,
+        RoleId::new(request.role_id)?,
+        CeremonyEvidenceSourceId::new(request.source_id)?,
+        CeremonyInterventionContent::new(request.query, attributes_from_struct(request.details)?)?,
+    ))
+}
+
+/// The same three words the in-process surface accepts. Rendered as a
+/// string rather than a proto enum so both distributions spell the
+/// kind identically — an enum here would make the wire say
+/// `INTERVENTION_KIND_OPINION` where the other says `opinion`.
+fn intervention_kind_from_proto(raw: &str) -> Result<CeremonyInterventionKind, DomainError> {
+    match raw {
+        "opinion" => Ok(CeremonyInterventionKind::Opinion),
+        "investigation" => Ok(CeremonyInterventionKind::Investigation),
+        "action" => Ok(CeremonyInterventionKind::Action),
+        _ => Err(DomainError::InvariantViolated {
+            reason: "intervention kind must be one of: opinion, investigation, action",
+        }),
+    }
+}
+
+fn provenance_from_proto(
+    provenance: pb::CeremonyInterventionProvenanceState,
+) -> Result<CeremonyInterventionProvenance, DomainError> {
+    Ok(CeremonyInterventionProvenance::selected_from(
+        CeremonyInterventionId::new(provenance.source_intervention_id)?,
+        RoleId::new(provenance.source_response_role_id)?,
+        RoleId::new(provenance.selected_role_id)?,
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn intervention_request() -> pb::RequestCeremonyInterventionRequest {
+        pb::RequestCeremonyInterventionRequest {
+            ceremony_id: "session-1".to_owned(),
+            intervention_id: String::new(),
+            role_id: "FACILITATOR".to_owned(),
+            kind: "investigation".to_owned(),
+            target_role_ids: Vec::new(),
+            message: "Which table holds the queued messages?".to_owned(),
+            details: None,
+            provenance: None,
+        }
+    }
+
+    #[test]
+    fn an_item_with_no_named_roles_is_put_to_the_table() {
+        let input = request_ceremony_intervention_input_from_proto(intervention_request()).unwrap();
+
+        assert_eq!(input.target(), &CeremonyInterventionTarget::table());
+        // An id is minted rather than left empty, so the item can be
+        // answered without a round-trip to discover its name.
+        assert!(!input.intervention_id().as_str().is_empty());
+    }
+
+    #[test]
+    fn named_roles_are_who_the_item_is_put_to() {
+        let request = pb::RequestCeremonyInterventionRequest {
+            target_role_ids: vec!["RISK_REVIEWER".to_owned(), "SYNTHESIZER".to_owned()],
+            ..intervention_request()
+        };
+
+        let input = request_ceremony_intervention_input_from_proto(request).unwrap();
+
+        assert_eq!(
+            input.target(),
+            &CeremonyInterventionTarget::roles(vec![
+                RoleId::new("RISK_REVIEWER").unwrap(),
+                RoleId::new("SYNTHESIZER").unwrap(),
+            ])
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn an_unknown_kind_is_refused_rather_than_guessed() {
+        let request = pb::RequestCeremonyInterventionRequest {
+            kind: "escalation".to_owned(),
+            ..intervention_request()
+        };
+
+        let error = request_ceremony_intervention_input_from_proto(request).unwrap_err();
+
+        assert!(matches!(error, DomainError::InvariantViolated { .. }));
+    }
+
+    #[test]
+    fn a_deferral_carries_what_was_decided_and_what_would_reopen_it() {
+        let input = defer_ceremony_guard_input_from_proto(pb::DeferCeremonyGuardRequest {
+            ceremony_id: "session-1".to_owned(),
+            guard_name: "budget_approved".to_owned(),
+            statement: "Not approving today.".to_owned(),
+            reason: "The cost figure is a guess.".to_owned(),
+            reconsider_when: vec!["a measured figure exists".to_owned()],
+        })
+        .unwrap();
+
+        assert_eq!(input.guard_name().as_str(), "budget_approved");
+        assert_eq!(input.content().reconsider_when().len(), 1);
+    }
+}
