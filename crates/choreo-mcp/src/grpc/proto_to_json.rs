@@ -344,3 +344,224 @@ pub(crate) fn statistics_to_json(s: pb::Statistics) -> Value {
         "per_specialty_counts": Value::Object(per_specialty),
     })
 }
+
+// ---------------------------------------------------------------------------
+// Ceremony instance
+// ---------------------------------------------------------------------------
+
+/// A live working session as the MCP contract carries it.
+///
+/// This is the shape the in-process backend renders from the domain,
+/// reproduced from the proto. Proto has no null, so absence arrives as
+/// an empty string and is put back as `null` here: a client must not
+/// have to know which backend answered in order to tell "no next step"
+/// from "the next step is called nothing".
+pub(crate) fn ceremony_instance_state_to_json(state: pb::CeremonyInstanceState) -> Value {
+    json!({
+        "ceremony_id": state.ceremony_id,
+        "definition_name": state.definition_name,
+        "definition_version": state.definition_version,
+        "bound_definition_digest": empty_as_null(state.bound_definition_digest),
+        "current_state": state.current_state,
+        "completed": state.completed,
+        "next_step_id": empty_as_null(state.next_step_id),
+        "waiting_for_human": state.waiting_for_human,
+        "guard_deferrals": state
+            .guard_deferrals
+            .into_iter()
+            .map(|deferral| guard_deferral_to_json(&deferral))
+            .collect::<Vec<_>>(),
+        "transitions": state
+            .transitions
+            .into_iter()
+            .map(available_transition_to_json)
+            .collect::<Vec<_>>(),
+        "steps": state.steps.into_iter().map(step_state_to_json).collect::<Vec<_>>(),
+        "interventions": state
+            .interventions
+            .into_iter()
+            .map(intervention_to_json)
+            .collect::<Vec<_>>(),
+        "open_intervention_ids": state.open_intervention_ids,
+        "context": optional_pb_struct_to_json(state.context),
+    })
+}
+
+fn step_state_to_json(step: pb::CeremonyStepState) -> Value {
+    json!({
+        "step_id": step.step_id,
+        "state_id": step.state_id,
+        "status": step.status,
+        "attempt": step.attempt,
+        "output": optional_pb_struct_to_json(step.output),
+        "error": empty_as_null(step.error),
+    })
+}
+
+fn available_transition_to_json(transition: pb::CeremonyAvailableTransition) -> Value {
+    json!({
+        "trigger": transition.trigger,
+        "to_state": transition.to,
+        "enabled": transition.enabled,
+        "guards": transition
+            .guards
+            .into_iter()
+            .map(|guard| json!({
+                "name": guard.name,
+                "kind": guard.kind,
+                "satisfied": guard.satisfied,
+            }))
+            .collect::<Vec<_>>(),
+    })
+}
+
+fn guard_deferral_to_json(deferral: &pb::CeremonyGuardDeferralState) -> Value {
+    json!({
+        "guard_name": deferral.guard_name,
+        "statement": deferral.statement,
+        "reason": deferral.reason,
+        "reconsider_when": deferral.reconsider_when.clone(),
+        "deferred_at": deferral.deferred_at,
+    })
+}
+
+fn intervention_to_json(intervention: pb::CeremonyInterventionState) -> Value {
+    json!({
+        "intervention_id": intervention.intervention_id,
+        "kind": intervention.kind,
+        "status": intervention.status,
+        "requested_by": intervention.requested_by,
+        "target": intervention.target.as_ref().map_or_else(
+            || json!({ "kind": "table" }),
+            intervention_target_to_json,
+        ),
+        "request": intervention.request.map_or_else(
+            || json!({ "message": "", "details": {} }),
+            intervention_message_to_json,
+        ),
+        "provenance": intervention.provenance.map(|provenance| json!({
+            "source_intervention_id": provenance.source_intervention_id,
+            "source_response_role_id": provenance.source_response_role_id,
+            "selected_role_id": provenance.selected_role_id,
+        })),
+        "responses": intervention
+            .responses
+            .into_iter()
+            .map(|response| json!({
+                "role_id": response.role_id,
+                "message": response.content.as_ref().map_or("", |c| c.message.as_str()),
+                "details": optional_pb_struct_to_json(
+                    response.content.and_then(|content| content.details),
+                ),
+                "evidence_pack": empty_as_null(response.evidence_pack),
+                "responded_at": response.responded_at,
+            }))
+            .collect::<Vec<_>>(),
+        "created_at": intervention.created_at,
+        "updated_at": intervention.updated_at,
+        "closed_at": empty_as_null(intervention.closed_at),
+    })
+}
+
+/// An item put to the whole table carries no roles, and says so by
+/// having no `role_ids` at all rather than an empty list. Proto has no
+/// way to leave a repeated field out, so the distinction is restored
+/// here — an empty list reads as "put to nobody", which is the one
+/// thing a target can never mean.
+fn intervention_target_to_json(target: &pb::CeremonyInterventionTargetState) -> Value {
+    if target.role_ids.is_empty() {
+        json!({ "kind": target.kind })
+    } else {
+        json!({
+            "kind": target.kind,
+            "role_ids": target.role_ids.clone(),
+        })
+    }
+}
+
+fn intervention_message_to_json(message: pb::CeremonyInterventionMessage) -> Value {
+    json!({
+        "message": message.message,
+        "details": optional_pb_struct_to_json(message.details),
+    })
+}
+
+/// Proto cannot say "absent", so an empty string is how absence
+/// arrives. Turning it back into `null` is what makes the two backends
+/// answer the same thing.
+fn empty_as_null(value: String) -> Value {
+    if value.is_empty() {
+        Value::Null
+    } else {
+        Value::String(value)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Authoring
+// ---------------------------------------------------------------------------
+
+pub(crate) fn validate_ceremony_draft_to_json(
+    response: pb::ValidateCeremonyDraftResponse,
+) -> Value {
+    json!({
+        "ceremony": response.ceremony,
+        "version": response.version,
+        "publishable": response.publishable,
+        "error_count": response.error_count,
+        "warning_count": response.warning_count,
+        "findings": response
+            .findings
+            .into_iter()
+            .map(|finding| json!({
+                "severity": finding.severity,
+                "locus": finding.locus.map_or(Value::Null, |locus| Value::Object(pb_struct_to_json(locus))),
+                "message": finding.message,
+            }))
+            .collect::<Vec<_>>(),
+    })
+}
+
+pub(crate) fn explain_ceremony_draft_to_json(response: &pb::ExplainCeremonyDraftResponse) -> Value {
+    json!({
+        "ceremony": response.ceremony,
+        "version": response.version,
+        "publishable": response.publishable,
+        "summary": response.summary.as_ref().map_or_else(
+            || json!({}),
+            |summary| json!({
+                "states": summary.states,
+                "initial_states": summary.initial_states,
+                "terminal_states": summary.terminal_states,
+                "transitions": summary.transitions,
+                "steps": summary.steps,
+                "guards": summary.guards,
+                "roles": summary.roles,
+            }),
+        ),
+        "narrative": response.narrative.clone(),
+    })
+}
+
+/// Publishing answers one of three outcomes, and each carries only the
+/// fields that mean anything for it. Emitting the others as empty
+/// strings would tell a reader that a refused publication has a digest
+/// of "".
+pub(crate) fn publish_ceremony_definition_to_json(
+    response: &pb::PublishCeremonyDefinitionResponse,
+) -> Value {
+    if response.outcome == "version_occupied" {
+        json!({
+            "outcome": response.outcome,
+            "published_digest": response.published_digest,
+            "offered_digest": response.offered_digest,
+        })
+    } else {
+        json!({
+            "outcome": response.outcome,
+            "ceremony": response.ceremony,
+            "version": response.version,
+            "digest": response.digest,
+        })
+    }
+}

@@ -61,6 +61,7 @@ grpc = [
     "dep:prost-types",
     "dep:time",
     "dep:tonic",
+    "dep:uuid",
 ]
 container-tests = ["dep:testcontainers"]
 

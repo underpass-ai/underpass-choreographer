@@ -42,6 +42,11 @@ testcontainers = { version = "0.23", optional = true }
 rcgen = { version = "0.13", features = ["pem"] }
 
 [dev-dependencies]
+# Both backends at once, on purpose: the parity test is the only place
+# that can compare what one MCP tool answers depending on how it
+# reached the engine.
+choreo-mcp = { workspace = true, features = ["grpc", "embedded"] }
+choreo-embedded = { workspace = true }
 async-nats = { workspace = true }
 tokio = { workspace = true }
 time = { workspace = true }

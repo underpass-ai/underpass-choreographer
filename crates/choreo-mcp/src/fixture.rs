@@ -29,6 +29,11 @@ impl ChoreoMcpToolBackend for FixtureChoreoMcpBackend {
         crate::protocol::is_grpc_tool(name)
     }
 
+    // One arm per tool, even where the canned answer is the same:
+    // `grpc_dispatch_and_fixture_cover_every_catalog_tool` reads this
+    // file to check that no tool is missing a response, and a merged
+    // arm would hide the ones folded into it.
+    #[allow(clippy::match_same_arms)]
     fn call_tool<'a>(&'a self, name: &'a str, _arguments: &'a Value) -> ChoreoMcpToolFuture<'a> {
         Box::pin(async move {
             let structured = match name {
@@ -47,6 +52,23 @@ impl ChoreoMcpToolBackend for FixtureChoreoMcpBackend {
                 "choreo_list_contracts" => list_contracts_fixture(),
                 "choreo_delete_contract" => delete_contract_fixture(),
                 "choreo_run_ceremony" => run_ceremony_fixture(),
+                "choreo_get_ceremony_instance" => ceremony_instance_fixture(),
+                "choreo_start_ceremony" => ceremony_instance_fixture(),
+                "choreo_start_published_ceremony" => ceremony_instance_fixture(),
+                "choreo_run_ceremony_step" => ceremony_instance_fixture(),
+                "choreo_apply_ceremony_transition" => ceremony_instance_fixture(),
+                "choreo_approve_ceremony_guard" => ceremony_instance_fixture(),
+                "choreo_defer_ceremony_guard" => ceremony_instance_fixture(),
+                "choreo_request_ceremony_intervention" => ceremony_instance_fixture(),
+                "choreo_respond_to_ceremony_intervention" => ceremony_instance_fixture(),
+                "choreo_close_ceremony_intervention" => ceremony_instance_fixture(),
+                "choreo_collect_ceremony_evidence" => ceremony_instance_fixture(),
+                "choreo_list_ceremony_instances" => {
+                    json!({ "instances": [ceremony_instance_fixture()] })
+                }
+                "choreo_validate_ceremony_draft" => validate_draft_fixture(),
+                "choreo_explain_ceremony_draft" => explain_draft_fixture(),
+                "choreo_publish_ceremony_definition" => publish_definition_fixture(),
                 "choreo_get_status" => get_status_fixture(),
                 "choreo_get_metrics" => get_metrics_fixture(),
                 other => {
@@ -258,6 +280,128 @@ fn run_ceremony_fixture() -> Value {
             }
         ],
         "mermaid_sequence": "sequenceDiagram\n    FACILITATOR->>FACILITATOR: collect_context [noop_step]"
+    })
+}
+
+/// A working session with something in every collection, so a client
+/// wiring against the fixture meets the same shape a live engine
+/// answers — including the parts that only appear once a person has
+/// taken part.
+fn ceremony_instance_fixture() -> Value {
+    json!({
+        "ceremony_id": "ceremony-fixture-1",
+        "definition_name": "fixture_ceremony",
+        "definition_version": "1.0",
+        "bound_definition_digest": null,
+        "current_state": "REVIEW",
+        "completed": false,
+        "next_step_id": null,
+        "waiting_for_human": ["human_approved"],
+        "guard_deferrals": [
+            {
+                "guard_name": "budget_approved",
+                "statement": "Not approving today.",
+                "reason": "The cost figure is a guess.",
+                "reconsider_when": ["a measured figure exists"],
+                "deferred_at": "2026-01-01T00:00:00Z"
+            }
+        ],
+        "transitions": [
+            {
+                "trigger": "approve",
+                "to_state": "DONE",
+                "enabled": false,
+                "guards": [
+                    { "name": "human_approved", "kind": "human", "satisfied": false }
+                ]
+            }
+        ],
+        "steps": [
+            {
+                "step_id": "collect_context",
+                "state_id": "OPEN",
+                "status": "completed",
+                "attempt": 1,
+                "output": { "summary": "the team agreed on the brief" },
+                "error": null
+            }
+        ],
+        "interventions": [
+            {
+                "intervention_id": "item-1",
+                "kind": "investigation",
+                "status": "open",
+                "requested_by": "FACILITATOR",
+                "target": { "kind": "table" },
+                "request": {
+                    "message": "Which rollback did we rehearse last?",
+                    "details": {}
+                },
+                "provenance": null,
+                "responses": [
+                    {
+                        "role_id": "RISK_REVIEWER",
+                        "message": "The one from the March release.",
+                        "details": {},
+                        "evidence_pack": null,
+                        "responded_at": "2026-01-01T00:00:00Z"
+                    }
+                ],
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-01-01T00:00:00Z",
+                "closed_at": null
+            }
+        ],
+        "open_intervention_ids": ["item-1"],
+        "context": { "brief": "ship the editorial calendar" }
+    })
+}
+
+fn validate_draft_fixture() -> Value {
+    json!({
+        "ceremony": "fixture_ceremony",
+        "version": "1.0",
+        "publishable": false,
+        "error_count": 1,
+        "warning_count": 0,
+        "findings": [
+            {
+                "severity": "error",
+                "locus": { "kind": "transition", "from": "OPEN", "trigger": "finish" },
+                "message": "not found: ceremony_transition.to_state"
+            }
+        ]
+    })
+}
+
+fn explain_draft_fixture() -> Value {
+    json!({
+        "ceremony": "fixture_ceremony",
+        "version": "1.0",
+        "publishable": false,
+        "summary": {
+            "states": 2,
+            "initial_states": 1,
+            "terminal_states": 1,
+            "transitions": 1,
+            "steps": 1,
+            "guards": 1,
+            "roles": 1
+        },
+        "narrative": [
+            "`fixture_ceremony` declares 2 states, 1 transitions, 1 steps, 1 guards and 1 roles.",
+            "1 defect(s) block publication; the draft cannot be published or executed until every one is fixed.",
+            "not found: ceremony_transition.to_state — at transition `finish` out of state `OPEN`"
+        ]
+    })
+}
+
+fn publish_definition_fixture() -> Value {
+    json!({
+        "outcome": "published",
+        "ceremony": "fixture_ceremony",
+        "version": "1.0",
+        "digest": "3f786850e387550fdab836ed7e6dc881de23001b"
     })
 }
 

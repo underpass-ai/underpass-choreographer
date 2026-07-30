@@ -313,7 +313,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn tools_list_lists_seventeen_tools() {
+    async fn tools_list_lists_one_tool_per_rpc() {
         let server = ChoreoMcpServer::fixture();
         let response = server
             .handle_json_line(r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#)
@@ -321,7 +321,8 @@ mod tests {
             .unwrap();
         let parsed: Value = serde_json::from_str(&response).unwrap();
         let tools = parsed["result"]["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 17);
+        // One per RPC on the choreographer service.
+        assert_eq!(tools.len(), 32);
     }
 
     #[tokio::test]

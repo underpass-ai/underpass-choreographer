@@ -101,6 +101,23 @@ pub(crate) fn optional_pb_struct(
     }
 }
 
+/// A JSON array of strings. Anything that is not one is absent, not
+/// an error: proto has no way to say "this was the wrong type", and a
+/// caller who sent the wrong thing is better served by the engine
+/// refusing the call than by a parse error about a list.
+pub(crate) fn string_array(obj: &serde_json::Map<String, Value>, key: &str) -> Vec<String> {
+    obj.get(key)
+        .and_then(Value::as_array)
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(Value::as_str)
+                .map(ToOwned::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 pub(crate) fn parse_rfc3339_to_timestamp(value: &str) -> Result<Timestamp, String> {
     // Minimal RFC3339 parsing using `time` crate.
     let dt = time::OffsetDateTime::parse(value, &time::format_description::well_known::Rfc3339)

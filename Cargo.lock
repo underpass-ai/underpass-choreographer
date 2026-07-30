@@ -653,6 +653,8 @@ dependencies = [
  "choreo-adapters",
  "choreo-app",
  "choreo-core",
+ "choreo-embedded",
+ "choreo-mcp",
  "choreo-proto",
  "futures",
  "prost-types",

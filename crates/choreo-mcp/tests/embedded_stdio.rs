@@ -125,15 +125,18 @@ async fn embedded_server_advertises_only_executable_tools() {
         .collect::<Vec<_>>();
     assert_eq!(
         names,
+        // In the order the gRPC service declares them: the catalogue
+        // follows the contract, and this list follows the catalogue.
         vec![
             "choreo_run_ceremony",
-            "choreo_start_ceremony",
-            "choreo_run_ceremony_step",
-            "choreo_approve_ceremony_guard",
-            "choreo_defer_ceremony_guard",
-            "choreo_apply_ceremony_transition",
             "choreo_get_ceremony_instance",
             "choreo_list_ceremony_instances",
+            "choreo_start_ceremony",
+            "choreo_start_published_ceremony",
+            "choreo_run_ceremony_step",
+            "choreo_apply_ceremony_transition",
+            "choreo_approve_ceremony_guard",
+            "choreo_defer_ceremony_guard",
             "choreo_request_ceremony_intervention",
             "choreo_respond_to_ceremony_intervention",
             "choreo_close_ceremony_intervention",
@@ -141,7 +144,6 @@ async fn embedded_server_advertises_only_executable_tools() {
             "choreo_validate_ceremony_draft",
             "choreo_explain_ceremony_draft",
             "choreo_publish_ceremony_definition",
-            "choreo_start_published_ceremony",
         ]
     );
 

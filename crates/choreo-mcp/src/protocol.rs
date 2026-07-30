@@ -31,7 +31,7 @@ pub(crate) const EXPLAIN_CEREMONY_DRAFT_TOOL: &str = "choreo_explain_ceremony_dr
 pub(crate) const PUBLISH_CEREMONY_DEFINITION_TOOL: &str = "choreo_publish_ceremony_definition";
 pub(crate) const START_PUBLISHED_CEREMONY_TOOL: &str = "choreo_start_published_ceremony";
 
-const GRPC_TOOL_NAMES: [&str; 17] = [
+const GRPC_TOOL_NAMES: [&str; 32] = [
     "choreo_deliberate",
     "choreo_stream_deliberation",
     "choreo_get_deliberation_result",
@@ -47,6 +47,21 @@ const GRPC_TOOL_NAMES: [&str; 17] = [
     "choreo_list_contracts",
     "choreo_delete_contract",
     RUN_CEREMONY_TOOL,
+    GET_CEREMONY_INSTANCE_TOOL,
+    LIST_CEREMONY_INSTANCES_TOOL,
+    START_CEREMONY_TOOL,
+    START_PUBLISHED_CEREMONY_TOOL,
+    RUN_CEREMONY_STEP_TOOL,
+    APPLY_CEREMONY_TRANSITION_TOOL,
+    APPROVE_CEREMONY_GUARD_TOOL,
+    DEFER_CEREMONY_GUARD_TOOL,
+    REQUEST_CEREMONY_INTERVENTION_TOOL,
+    RESPOND_TO_CEREMONY_INTERVENTION_TOOL,
+    CLOSE_CEREMONY_INTERVENTION_TOOL,
+    COLLECT_CEREMONY_EVIDENCE_TOOL,
+    VALIDATE_CEREMONY_DRAFT_TOOL,
+    EXPLAIN_CEREMONY_DRAFT_TOOL,
+    PUBLISH_CEREMONY_DEFINITION_TOOL,
     "choreo_get_status",
     "choreo_get_metrics",
 ];
@@ -91,37 +106,11 @@ pub(crate) fn tools_list_result(supports: impl Fn(&str) -> bool) -> Value {
 }
 
 fn tool_catalog() -> Vec<Value> {
-    let mut tools = grpc_tool_catalog();
-    tools.extend(embedded_incremental_tool_catalog());
-    tools.extend(authoring_tool_catalog());
-    tools
-}
-
-/// Authoring tools analyse a draft; they neither publish nor execute
-/// anything, so they hold no state and need no running ceremony.
-fn authoring_tool_catalog() -> Vec<Value> {
-    vec![
-        tool_def(
-            VALIDATE_CEREMONY_DRAFT_TOOL,
-            "Analyse a ceremony draft and report every structural defect at once. Read-only: it neither publishes nor executes the draft.",
-            ceremony_draft_schema(),
-        ),
-        tool_def(
-            EXPLAIN_CEREMONY_DRAFT_TOOL,
-            "Describe what a ceremony draft declares and what would block its publication, in prose meant to be read back and corrected.",
-            ceremony_draft_schema(),
-        ),
-        tool_def(
-            PUBLISH_CEREMONY_DEFINITION_TOOL,
-            "Fix a validated draft to an immutable version identified by a content digest. Republishing identical content is a no-op; different content under a taken version is refused, never overwritten.",
-            ceremony_draft_schema(),
-        ),
-        tool_def(
-            START_PUBLISHED_CEREMONY_TOOL,
-            "Start a ceremony from a published version, binding the instance to that definition's digest so which one ran can be checked afterwards rather than taken on trust.",
-            start_published_ceremony_schema(),
-        ),
-    ]
+    // One list, ordered exactly as the gRPC service orders its RPCs.
+    // A test pins that correspondence both ways: a tool with no RPC,
+    // or an RPC with no tool, is a surface that exists on one side
+    // only, which is how two distributions drift apart.
+    grpc_tool_catalog()
 }
 
 fn start_published_ceremony_schema() -> Value {
@@ -328,6 +317,86 @@ fn grpc_tool_catalog() -> Vec<Value> {
             "Execute a declarative ceremony YAML definition and return final state, step trace, and Mermaid sequence diagram.",
             run_ceremony_schema(),
         ),
+
+        tool_def(
+            GET_CEREMONY_INSTANCE_TOOL,
+            "Inspect a persistent ceremony instance, including step status and blocking guards.",
+            ceremony_instance_schema(),
+        ),
+        tool_def(
+            LIST_CEREMONY_INSTANCES_TOOL,
+            "Discover ceremony instances available to this backend so a host can resume one after losing its local conversation context.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {}
+            }),
+        ),
+        tool_def(
+            START_CEREMONY_TOOL,
+            "Mount a ceremony YAML definition and start a persistent in-process instance without advancing it.",
+            start_ceremony_schema(),
+        ),
+        tool_def(
+            START_PUBLISHED_CEREMONY_TOOL,
+            "Start a ceremony from a published version, binding the instance to that definition's digest so which one ran can be checked afterwards rather than taken on trust.",
+            start_published_ceremony_schema(),
+        ),
+        tool_def(
+            RUN_CEREMONY_STEP_TOOL,
+            "Execute one declared step on a started ceremony instance and persist its result.",
+            run_ceremony_step_schema(),
+        ),
+        tool_def(
+            APPLY_CEREMONY_TRANSITION_TOOL,
+            "Apply one enabled ceremony transition and return the updated persistent instance.",
+            ceremony_transition_schema(),
+        ),
+        tool_def(
+            APPROVE_CEREMONY_GUARD_TOOL,
+            "Record an explicit human approval for a currently-blocking human guard. Call only after the human has authorized it.",
+            ceremony_guard_approval_schema(),
+        ),
+        tool_def(
+            DEFER_CEREMONY_GUARD_TOOL,
+            "Record an explicit human deferral without satisfying the guard or inferring authorization.",
+            ceremony_guard_deferral_schema(),
+        ),
+        tool_def(
+            REQUEST_CEREMONY_INTERVENTION_TOOL,
+            "Open a participant-requested opinion, investigation, or action on the live ceremony table. This coordinates the request; it does not authorize external mutations.",
+            request_ceremony_intervention_schema(),
+        ),
+        tool_def(
+            RESPOND_TO_CEREMONY_INTERVENTION_TOOL,
+            "Record one targeted role's response to an open ceremony intervention.",
+            respond_to_ceremony_intervention_schema(),
+        ),
+        tool_def(
+            CLOSE_CEREMONY_INTERVENTION_TOOL,
+            "Close an open ceremony intervention as its requesting role.",
+            close_ceremony_intervention_schema(),
+        ),
+        tool_def(
+            COLLECT_CEREMONY_EVIDENCE_TOOL,
+            "Collect a non-empty evidence pack through the configured read-only host source and attach it to an open intervention.",
+            collect_ceremony_evidence_schema(),
+        ),
+        tool_def(
+            VALIDATE_CEREMONY_DRAFT_TOOL,
+            "Analyse a ceremony draft and report every structural defect at once. Read-only: it neither publishes nor executes the draft.",
+            ceremony_draft_schema(),
+        ),
+        tool_def(
+            EXPLAIN_CEREMONY_DRAFT_TOOL,
+            "Describe what a ceremony draft declares and what would block its publication, in prose meant to be read back and corrected.",
+            ceremony_draft_schema(),
+        ),
+        tool_def(
+            PUBLISH_CEREMONY_DEFINITION_TOOL,
+            "Fix a validated draft to an immutable version identified by a content digest. Republishing identical content is a no-op; different content under a taken version is refused, never overwritten.",
+            ceremony_draft_schema(),
+        ),
         tool_def(
             "choreo_get_status",
             "Return service health, version, uptime, and optionally statistics.",
@@ -350,70 +419,6 @@ fn grpc_tool_catalog() -> Vec<Value> {
                 "additionalProperties": false,
                 "properties": {}
             }),
-        ),
-    ]
-}
-
-fn embedded_incremental_tool_catalog() -> Vec<Value> {
-    vec![
-        tool_def(
-            START_CEREMONY_TOOL,
-            "Mount a ceremony YAML definition and start a persistent in-process instance without advancing it.",
-            start_ceremony_schema(),
-        ),
-        tool_def(
-            RUN_CEREMONY_STEP_TOOL,
-            "Execute one declared step on a started ceremony instance and persist its result.",
-            run_ceremony_step_schema(),
-        ),
-        tool_def(
-            APPROVE_CEREMONY_GUARD_TOOL,
-            "Record an explicit human approval for a currently-blocking human guard. Call only after the human has authorized it.",
-            ceremony_guard_approval_schema(),
-        ),
-        tool_def(
-            DEFER_CEREMONY_GUARD_TOOL,
-            "Record an explicit human deferral without satisfying the guard or inferring authorization.",
-            ceremony_guard_deferral_schema(),
-        ),
-        tool_def(
-            APPLY_CEREMONY_TRANSITION_TOOL,
-            "Apply one enabled ceremony transition and return the updated persistent instance.",
-            ceremony_transition_schema(),
-        ),
-        tool_def(
-            GET_CEREMONY_INSTANCE_TOOL,
-            "Inspect a persistent ceremony instance, including step status and blocking guards.",
-            ceremony_instance_schema(),
-        ),
-        tool_def(
-            LIST_CEREMONY_INSTANCES_TOOL,
-            "Discover ceremony instances available to this backend so a host can resume one after losing its local conversation context.",
-            json!({
-                "type": "object",
-                "additionalProperties": false,
-                "properties": {}
-            }),
-        ),
-        tool_def(
-            REQUEST_CEREMONY_INTERVENTION_TOOL,
-            "Open a participant-requested opinion, investigation, or action on the live ceremony table. This coordinates the request; it does not authorize external mutations.",
-            request_ceremony_intervention_schema(),
-        ),
-        tool_def(
-            RESPOND_TO_CEREMONY_INTERVENTION_TOOL,
-            "Record one targeted role's response to an open ceremony intervention.",
-            respond_to_ceremony_intervention_schema(),
-        ),
-        tool_def(
-            CLOSE_CEREMONY_INTERVENTION_TOOL,
-            "Close an open ceremony intervention as its requesting role.",
-            close_ceremony_intervention_schema(),
-        ),
-        tool_def(
-            COLLECT_CEREMONY_EVIDENCE_TOOL,
-            "Collect a non-empty evidence pack through the configured read-only host source and attach it to an open intervention.",
-            collect_ceremony_evidence_schema(),
         ),
     ]
 }

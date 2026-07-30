@@ -118,6 +118,42 @@ service ChoreographerService {
   // both execution trace and a Mermaid sequence diagram.
   rpc RunCeremony(RunCeremonyRequest) returns (RunCeremonyResponse);
 
+  // Read a live ceremony without advancing it. The response is the
+  // same view the embedded distribution exposes, so a client sees one
+  // working session whichever way it reached the engine.
+  rpc GetCeremonyInstance(GetCeremonyInstanceRequest) returns (GetCeremonyInstanceResponse);
+  rpc ListCeremonyInstances(ListCeremonyInstancesRequest) returns (ListCeremonyInstancesResponse);
+
+  // Advance a ceremony one move at a time. RunCeremony above runs a
+  // whole session in a single call, which is right for a ceremony that
+  // needs nobody; these are for one that does. Every one of them
+  // answers with the instance as it stands afterwards, so a caller
+  // never has to follow a mutation with a read to learn what changed.
+  rpc StartCeremony(StartCeremonyRequest) returns (StartCeremonyResponse);
+  rpc StartPublishedCeremony(StartPublishedCeremonyRequest) returns (StartPublishedCeremonyResponse);
+  rpc RunCeremonyStep(RunCeremonyStepRequest) returns (RunCeremonyStepResponse);
+  rpc ApplyCeremonyTransition(ApplyCeremonyTransitionRequest) returns (ApplyCeremonyTransitionResponse);
+
+  // The part of a working session that only a person can do. A guard
+  // is approved or deferred, an agenda item is opened, answered and
+  // closed, evidence is gathered against it. These are what make a
+  // session something an engineer takes part in rather than watches,
+  // and they answer with the session exactly as the moves above do.
+  rpc ApproveCeremonyGuard(ApproveCeremonyGuardRequest) returns (ApproveCeremonyGuardResponse);
+  rpc DeferCeremonyGuard(DeferCeremonyGuardRequest) returns (DeferCeremonyGuardResponse);
+  rpc RequestCeremonyIntervention(RequestCeremonyInterventionRequest) returns (RequestCeremonyInterventionResponse);
+  rpc RespondToCeremonyIntervention(RespondToCeremonyInterventionRequest) returns (RespondToCeremonyInterventionResponse);
+  rpc CloseCeremonyIntervention(CloseCeremonyInterventionRequest) returns (CloseCeremonyInterventionResponse);
+  rpc CollectCeremonyEvidence(CollectCeremonyEvidenceRequest) returns (CollectCeremonyEvidenceResponse);
+
+  // Authoring. A draft is checked and explained before it is put in
+  // the catalogue, and publishing is what makes a version something
+  // an instance can be bound to. Validate and explain touch nothing:
+  // they answer about the YAML in the request and leave no trace.
+  rpc ValidateCeremonyDraft(ValidateCeremonyDraftRequest) returns (ValidateCeremonyDraftResponse);
+  rpc ExplainCeremonyDraft(ExplainCeremonyDraftRequest) returns (ExplainCeremonyDraftResponse);
+  rpc PublishCeremonyDefinition(PublishCeremonyDefinitionRequest) returns (PublishCeremonyDefinitionResponse);
+
   // ---- Observability --------------------------------------------------
 
   rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
@@ -614,4 +650,350 @@ message RunCeremonyResponse {
   bool completed = 5;
   repeated CeremonyStepExecution steps = 6;
   string mermaid_sequence = 7;
+}
+
+// ============================================================================
+// Live ceremony state
+// ============================================================================
+
+// A step as it stands right now.
+//
+// Distinct from CeremonyStepExecution, which is the trace of a finished
+// run: this is current state, and it can report a failure a completed
+// trace would never contain.
+message CeremonyStepState {
+  string step_id = 1;
+  string state_id = 2;
+  string status = 3;
+  uint32 attempt = 4;
+  // Structured output produced so far. Empty for a step that has not
+  // run or produces none.
+  google.protobuf.Struct output = 5;
+  // Why the step failed, when it did. Empty otherwise.
+  string error = 6;
+}
+
+// A guard on an outgoing transition.
+message CeremonyTransitionGuard {
+  string name = 1;
+  // "human" when only a person can satisfy it, "automated" otherwise.
+  string kind = 2;
+  bool satisfied = 3;
+}
+
+// A transition leaving the current state.
+message CeremonyAvailableTransition {
+  string trigger = 1;
+  string to = 2;
+  // Whether every guard holds, so the transition can be applied now.
+  bool enabled = 3;
+  repeated CeremonyTransitionGuard guards = 4;
+}
+
+// A human guard whose decision was postponed, with the reason.
+message CeremonyGuardDeferralState {
+  string guard_name = 1;
+  string statement = 2;
+  string reason = 3;
+  // What would make the decision worth revisiting. A deferral without
+  // this is a decision quietly dropped.
+  repeated string reconsider_when = 4;
+  string deferred_at = 5;
+}
+
+// Who an intervention is addressed to. Empty role_ids means the whole
+// table rather than nobody, which is why the kind is explicit.
+message CeremonyInterventionTargetState {
+  // "table" or "roles".
+  string kind = 1;
+  repeated string role_ids = 2;
+}
+
+// A message inside an intervention: what was said, plus whatever
+// structured data came with it.
+message CeremonyInterventionMessage {
+  string message = 1;
+  google.protobuf.Struct details = 2;
+}
+
+// Where a follow-up intervention came from, when it was opened off the
+// back of an earlier answer.
+message CeremonyInterventionProvenanceState {
+  string source_intervention_id = 1;
+  string source_response_role_id = 2;
+  string selected_role_id = 3;
+}
+
+message CeremonyInterventionResponseState {
+  string role_id = 1;
+  CeremonyInterventionMessage content = 2;
+  // Serialized evidence pack attached to the answer, when one was.
+  string evidence_pack = 3;
+  string responded_at = 4;
+}
+
+// A topic opened inside a working session.
+message CeremonyInterventionState {
+  string intervention_id = 1;
+  string kind = 2;
+  string status = 3;
+  string requested_by = 4;
+  CeremonyInterventionTargetState target = 5;
+  CeremonyInterventionMessage request = 6;
+  // Absent unless this intervention was opened from another one.
+  CeremonyInterventionProvenanceState provenance = 7;
+  repeated CeremonyInterventionResponseState responses = 8;
+  string created_at = 9;
+  string updated_at = 10;
+  // Empty while the intervention is still open.
+  string closed_at = 11;
+}
+
+// Everything a caller needs to decide what to do next with a working
+// session: where it is, what blocks it, and what it has recorded.
+message CeremonyInstanceState {
+  string ceremony_id = 1;
+  string definition_name = 2;
+  string definition_version = 3;
+  // Digest of the published definition this instance is bound to.
+  // Empty when it was started from a definition supplied for the run:
+  // an instance that is not governed must not look governed.
+  string bound_definition_digest = 4;
+  string current_state = 5;
+  bool completed = 6;
+  // The next step ready to run. Empty when none is.
+  string next_step_id = 7;
+  // Guards blocking progress that only a person can satisfy. This is
+  // the field a client turns into "waiting for you".
+  repeated string waiting_for_human = 8;
+  repeated CeremonyGuardDeferralState guard_deferrals = 9;
+  repeated CeremonyAvailableTransition transitions = 10;
+  repeated CeremonyStepState steps = 11;
+  repeated CeremonyInterventionState interventions = 12;
+  repeated string open_intervention_ids = 13;
+  google.protobuf.Struct context = 14;
+}
+
+message GetCeremonyInstanceRequest {
+  string ceremony_id = 1;
+}
+
+// Each RPC owns its response type by convention, all wrapping the same
+// state message so every way of reaching a working session describes it
+// identically.
+message GetCeremonyInstanceResponse {
+  CeremonyInstanceState instance = 1;
+}
+
+message ListCeremonyInstancesRequest {}
+
+message ListCeremonyInstancesResponse {
+  repeated CeremonyInstanceState instances = 1;
+}
+
+message StartCeremonyRequest {
+  // Identifier for the session about to exist. Required here, unlike
+  // in the tool surface that mints one: a server that invents an id
+  // gives a client no way to retry a start it never saw answered.
+  string ceremony_id = 1;
+  string definition_yaml = 2;
+  google.protobuf.Struct context = 3;
+}
+
+message StartCeremonyResponse {
+  CeremonyInstanceState instance = 1;
+}
+
+message StartPublishedCeremonyRequest {
+  string ceremony_id = 1;
+  // Name and version of an already-published definition. The instance
+  // records the digest it resolved to, which is what makes it possible
+  // to tell later whether what ran is still what is published.
+  string ceremony = 2;
+  string version = 3;
+  google.protobuf.Struct context = 4;
+}
+
+message StartPublishedCeremonyResponse {
+  CeremonyInstanceState instance = 1;
+}
+
+message RunCeremonyStepRequest {
+  string ceremony_id = 1;
+  string step_id = 2;
+  // Who holds the step lease. Empty takes the server default.
+  string lease_owner_id = 3;
+  // Repeating a call with the same key must not run the step twice.
+  // Empty mints a fresh key server-side, which is accepted but is the
+  // same as asking for no guarantee: a retry will run the step again.
+  string idempotency_key = 4;
+  // Zero takes the server default.
+  uint64 lease_ttl_ms = 5;
+}
+
+message RunCeremonyStepResponse {
+  CeremonyInstanceState instance = 1;
+}
+
+message ApplyCeremonyTransitionRequest {
+  string ceremony_id = 1;
+  // The named trigger to fire. Which transitions are available right
+  // now is in CeremonyInstanceState.transitions.
+  string trigger = 2;
+}
+
+message ApplyCeremonyTransitionResponse {
+  CeremonyInstanceState instance = 1;
+}
+
+message ApproveCeremonyGuardRequest {
+  string ceremony_id = 1;
+  string guard_name = 2;
+}
+
+message ApproveCeremonyGuardResponse {
+  CeremonyInstanceState instance = 1;
+}
+
+message DeferCeremonyGuardRequest {
+  string ceremony_id = 1;
+  string guard_name = 2;
+  // Deferring is a decision, not a silence: what was decided, why,
+  // and what would make it worth revisiting. All three are required,
+  // because a deferral that records none of them is indistinguishable
+  // from nobody having looked.
+  string statement = 3;
+  string reason = 4;
+  repeated string reconsider_when = 5;
+}
+
+message DeferCeremonyGuardResponse {
+  CeremonyInstanceState instance = 1;
+}
+
+message RequestCeremonyInterventionRequest {
+  string ceremony_id = 1;
+  // Empty mints one server-side.
+  string intervention_id = 2;
+  string role_id = 3;
+  // "opinion", "investigation" or "action".
+  string kind = 4;
+  // Whom it is put to. Empty asks the whole table.
+  repeated string target_role_ids = 5;
+  string message = 6;
+  google.protobuf.Struct details = 7;
+  // Set when this item exists because of an answer to an earlier one,
+  // so a reader can follow how the session got here.
+  CeremonyInterventionProvenanceState provenance = 8;
+}
+
+message RequestCeremonyInterventionResponse {
+  CeremonyInstanceState instance = 1;
+}
+
+message RespondToCeremonyInterventionRequest {
+  string ceremony_id = 1;
+  string intervention_id = 2;
+  string role_id = 3;
+  string message = 4;
+  google.protobuf.Struct details = 5;
+}
+
+message RespondToCeremonyInterventionResponse {
+  CeremonyInstanceState instance = 1;
+}
+
+message CloseCeremonyInterventionRequest {
+  string ceremony_id = 1;
+  string intervention_id = 2;
+  string role_id = 3;
+}
+
+message CloseCeremonyInterventionResponse {
+  CeremonyInstanceState instance = 1;
+}
+
+// Gathering evidence needs a source to gather from, and the server
+// ships without one: until an operator wires a CeremonyEvidenceSource
+// adapter, this RPC answers NOT_FOUND rather than inventing a result.
+// The call exists so the surface is whole and so the failure is a
+// plain answer instead of a missing method.
+message CollectCeremonyEvidenceRequest {
+  string ceremony_id = 1;
+  string intervention_id = 2;
+  string role_id = 3;
+  // Where the evidence came from. It is recorded alongside the answer
+  // so a reader can tell what was looked at, not only what was said.
+  string source_id = 4;
+  string query = 5;
+  google.protobuf.Struct details = 6;
+}
+
+message CollectCeremonyEvidenceResponse {
+  CeremonyInstanceState instance = 1;
+}
+
+// Where a finding points. The structure matches the in-process
+// surface field for field, so one client can read either.
+message CeremonyDraftFinding {
+  // "error" blocks publication; "warning" describes a ceremony that
+  // can stall without being invalid.
+  string severity = 1;
+  // The element at fault: kind plus the identifiers naming it.
+  google.protobuf.Struct locus = 2;
+  string message = 3;
+}
+
+message CeremonyDraftSummary {
+  uint32 states = 1;
+  uint32 initial_states = 2;
+  uint32 terminal_states = 3;
+  uint32 transitions = 4;
+  uint32 steps = 5;
+  uint32 guards = 6;
+  uint32 roles = 7;
+}
+
+message ValidateCeremonyDraftRequest {
+  string definition_yaml = 1;
+}
+
+message ValidateCeremonyDraftResponse {
+  string ceremony = 1;
+  string version = 2;
+  bool publishable = 3;
+  uint32 error_count = 4;
+  uint32 warning_count = 5;
+  repeated CeremonyDraftFinding findings = 6;
+}
+
+message ExplainCeremonyDraftRequest {
+  string definition_yaml = 1;
+}
+
+message ExplainCeremonyDraftResponse {
+  string ceremony = 1;
+  string version = 2;
+  bool publishable = 3;
+  CeremonyDraftSummary summary = 4;
+  // The explanation, in the order it should be read: what the draft
+  // is, then what stops it, then what merely troubles it.
+  repeated string narrative = 5;
+}
+
+message PublishCeremonyDefinitionRequest {
+  string definition_yaml = 1;
+}
+
+message PublishCeremonyDefinitionResponse {
+  // "published", "already_published" or "version_occupied". Offering
+  // the same content under a version already holding it is not an
+  // error; offering different content under it is refused, and both
+  // digests come back so the caller can see what differed.
+  string outcome = 1;
+  string ceremony = 2;
+  string version = 3;
+  string digest = 4;
+  string published_digest = 5;
+  string offered_digest = 6;
 }
