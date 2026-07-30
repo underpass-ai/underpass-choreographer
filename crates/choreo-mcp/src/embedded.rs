@@ -20,6 +20,7 @@ mod embedded_run_ceremony_step_request;
 mod embedded_start_ceremony_request;
 mod embedded_start_published_ceremony_request;
 
+use choreo_app::usecases::CeremonyDraftView;
 use choreo_core::value_objects::CeremonyId;
 use choreo_embedded::EmbeddedChoreographer;
 use serde_json::Value;
@@ -127,7 +128,9 @@ impl ChoreoMcpToolBackend for EmbeddedChoreoMcpBackend {
                     let draft = request.parse()?;
                     let report = draft.analyze();
                     Ok(tool_success_result(
-                        EmbeddedCeremonyDraftPresenter::present_validation(&draft, &report),
+                        EmbeddedCeremonyDraftPresenter::present_validation(
+                            &CeremonyDraftView::project(&draft, &report),
+                        ),
                     ))
                 }
                 EXPLAIN_CEREMONY_DRAFT_TOOL => {
@@ -135,7 +138,9 @@ impl ChoreoMcpToolBackend for EmbeddedChoreoMcpBackend {
                     let draft = request.parse()?;
                     let report = draft.analyze();
                     Ok(tool_success_result(
-                        EmbeddedCeremonyDraftPresenter::present_explanation(&draft, &report),
+                        EmbeddedCeremonyDraftPresenter::present_explanation(
+                            &CeremonyDraftView::project(&draft, &report),
+                        ),
                     ))
                 }
                 PUBLISH_CEREMONY_DEFINITION_TOOL => {

@@ -55,6 +55,21 @@ fn struct_to_map(s: Option<PbStruct>) -> BTreeMap<String, Value> {
         .collect()
 }
 
+/// A JSON object as a proto `Struct`.
+///
+/// Anything that is not an object has no `Struct` form, and answering
+/// `None` says so; inventing a wrapper object would put a shape on the
+/// wire that the value never had.
+pub fn struct_from_json(value: &Value) -> Option<PbStruct> {
+    let object = value.as_object()?;
+    Some(PbStruct {
+        fields: object
+            .iter()
+            .map(|(key, value)| (key.clone(), json_to_pb_value(value)))
+            .collect(),
+    })
+}
+
 fn map_to_struct(map: &BTreeMap<String, Value>) -> PbStruct {
     PbStruct {
         fields: map

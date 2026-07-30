@@ -146,6 +146,14 @@ service ChoreographerService {
   rpc CloseCeremonyIntervention(CloseCeremonyInterventionRequest) returns (CloseCeremonyInterventionResponse);
   rpc CollectCeremonyEvidence(CollectCeremonyEvidenceRequest) returns (CollectCeremonyEvidenceResponse);
 
+  // Authoring. A draft is checked and explained before it is put in
+  // the catalogue, and publishing is what makes a version something
+  // an instance can be bound to. Validate and explain touch nothing:
+  // they answer about the YAML in the request and leave no trace.
+  rpc ValidateCeremonyDraft(ValidateCeremonyDraftRequest) returns (ValidateCeremonyDraftResponse);
+  rpc ExplainCeremonyDraft(ExplainCeremonyDraftRequest) returns (ExplainCeremonyDraftResponse);
+  rpc PublishCeremonyDefinition(PublishCeremonyDefinitionRequest) returns (PublishCeremonyDefinitionResponse);
+
   // ---- Observability --------------------------------------------------
 
   rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
@@ -923,4 +931,69 @@ message CollectCeremonyEvidenceRequest {
 
 message CollectCeremonyEvidenceResponse {
   CeremonyInstanceState instance = 1;
+}
+
+// Where a finding points. The structure matches the in-process
+// surface field for field, so one client can read either.
+message CeremonyDraftFinding {
+  // "error" blocks publication; "warning" describes a ceremony that
+  // can stall without being invalid.
+  string severity = 1;
+  // The element at fault: kind plus the identifiers naming it.
+  google.protobuf.Struct locus = 2;
+  string message = 3;
+}
+
+message CeremonyDraftSummary {
+  uint32 states = 1;
+  uint32 initial_states = 2;
+  uint32 terminal_states = 3;
+  uint32 transitions = 4;
+  uint32 steps = 5;
+  uint32 guards = 6;
+  uint32 roles = 7;
+}
+
+message ValidateCeremonyDraftRequest {
+  string definition_yaml = 1;
+}
+
+message ValidateCeremonyDraftResponse {
+  string ceremony = 1;
+  string version = 2;
+  bool publishable = 3;
+  uint32 error_count = 4;
+  uint32 warning_count = 5;
+  repeated CeremonyDraftFinding findings = 6;
+}
+
+message ExplainCeremonyDraftRequest {
+  string definition_yaml = 1;
+}
+
+message ExplainCeremonyDraftResponse {
+  string ceremony = 1;
+  string version = 2;
+  bool publishable = 3;
+  CeremonyDraftSummary summary = 4;
+  // The explanation, in the order it should be read: what the draft
+  // is, then what stops it, then what merely troubles it.
+  repeated string narrative = 5;
+}
+
+message PublishCeremonyDefinitionRequest {
+  string definition_yaml = 1;
+}
+
+message PublishCeremonyDefinitionResponse {
+  // "published", "already_published" or "version_occupied". Offering
+  // the same content under a version already holding it is not an
+  // error; offering different content under it is refused, and both
+  // digests come back so the caller can see what differed.
+  string outcome = 1;
+  string ceremony = 2;
+  string version = 3;
+  string digest = 4;
+  string published_digest = 5;
+  string offered_digest = 6;
 }

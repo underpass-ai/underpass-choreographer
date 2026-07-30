@@ -6,12 +6,13 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use choreo_app::services::AutoDispatchService;
 use choreo_app::usecases::{
-    ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase, CeremonyInstanceView,
-    CloseCeremonyInterventionUseCase, CollectCeremonyEvidenceUseCase, CreateCouncilInput,
-    CreateCouncilUseCase, DeferCeremonyGuardUseCase, DeleteCouncilUseCase, DeliberateUseCase,
-    GetCeremonyInstanceUseCase, GetDeliberationUseCase, ListCeremonyInstancesUseCase,
-    ListCouncilsUseCase, OrchestrateUseCase, PrepareCeremonyParticipantsUseCase,
-    RegisterAgentUseCase, RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
+    ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase, CeremonyDraftView,
+    CeremonyInstanceView, CloseCeremonyInterventionUseCase, CollectCeremonyEvidenceUseCase,
+    CreateCouncilInput, CreateCouncilUseCase, DeferCeremonyGuardUseCase, DeleteCouncilUseCase,
+    DeliberateUseCase, GetCeremonyInstanceUseCase, GetDeliberationUseCase,
+    ListCeremonyInstancesUseCase, ListCouncilsUseCase, OrchestrateUseCase,
+    PrepareCeremonyParticipantsUseCase, PublishCeremonyDefinitionUseCase, RegisterAgentUseCase,
+    RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
     RespondToCeremonyInterventionUseCase, RunCeremonyStepUseCase, RunCeremonyUseCase,
     RunCouncilDecisionUseCase, StartCeremonyUseCase, StartPublishedCeremonyUseCase,
     UnregisterAgentUseCase,
@@ -32,18 +33,20 @@ use super::mappers::{
     apply_ceremony_transition_input_from_proto, approve_ceremony_guard_input_from_proto,
     ceremony_instance_state_from, close_ceremony_intervention_input_from_proto,
     collect_ceremony_evidence_input_from_proto, council_summary_from,
-    defer_ceremony_guard_input_from_proto, deliberate_response_from, orchestrate_response_from,
-    output_contract_from_proto, output_contract_to_proto,
+    defer_ceremony_guard_input_from_proto, deliberate_response_from,
+    explain_ceremony_draft_response_from, orchestrate_response_from, output_contract_from_proto,
+    output_contract_to_proto, publish_ceremony_definition_response_from,
     request_ceremony_intervention_input_from_proto,
     respond_to_ceremony_intervention_input_from_proto, run_ceremony_input_from_proto,
     run_ceremony_response_from, run_ceremony_step_input_from_proto,
     run_council_decision_input_from_proto, run_council_decision_response_from,
     start_ceremony_from_proto, start_published_ceremony_input_from_proto, task_from_proto,
-    trigger_event_from_proto, StartCeremonyFromYaml,
+    trigger_event_from_proto, validate_ceremony_draft_response_from, StartCeremonyFromYaml,
 };
 use super::status::domain_error_to_status;
 use super::tracecontext::link_span_to_metadata;
 use crate::ceremony::CeremonyParticipantPlanAdapter;
+use crate::yaml::CeremonyDefinitionYaml;
 
 /// The gRPC service struct. Clone-friendly: every dependency is an
 /// `Arc` so multiple request tasks can share state without locking.
@@ -72,6 +75,7 @@ pub struct ChoreographerGrpcService {
     respond_to_ceremony_intervention: Arc<RespondToCeremonyInterventionUseCase>,
     close_ceremony_intervention: Arc<CloseCeremonyInterventionUseCase>,
     collect_ceremony_evidence: Arc<CollectCeremonyEvidenceUseCase>,
+    publish_ceremony_definition: Arc<PublishCeremonyDefinitionUseCase>,
     ceremony_definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
     prepare_ceremony_participants: Arc<PrepareCeremonyParticipantsUseCase>,
     contract_registry: Arc<dyn ContractRegistryPort>,
@@ -199,6 +203,7 @@ pub struct ChoreographerGrpcServiceBuilder {
     respond_to_ceremony_intervention: Option<Arc<RespondToCeremonyInterventionUseCase>>,
     close_ceremony_intervention: Option<Arc<CloseCeremonyInterventionUseCase>>,
     collect_ceremony_evidence: Option<Arc<CollectCeremonyEvidenceUseCase>>,
+    publish_ceremony_definition: Option<Arc<PublishCeremonyDefinitionUseCase>>,
     ceremony_definitions: Option<Arc<dyn CeremonyDefinitionRepositoryPort>>,
     prepare_ceremony_participants: Option<Arc<PrepareCeremonyParticipantsUseCase>>,
     contract_registry: Option<Arc<dyn ContractRegistryPort>>,
@@ -311,6 +316,11 @@ impl ChoreographerGrpcServiceBuilder {
         PrepareCeremonyParticipantsUseCase,
         prepare_ceremony_participants
     );
+    setter!(
+        publish_ceremony_definition,
+        PublishCeremonyDefinitionUseCase,
+        publish_ceremony_definition
+    );
     setter!(auto_dispatch, AutoDispatchService, auto_dispatch);
 
     #[must_use]
@@ -368,6 +378,7 @@ impl ChoreographerGrpcServiceBuilder {
             respond_to_ceremony_intervention: required!(self, respond_to_ceremony_intervention),
             close_ceremony_intervention: required!(self, close_ceremony_intervention),
             collect_ceremony_evidence: required!(self, collect_ceremony_evidence),
+            publish_ceremony_definition: required!(self, publish_ceremony_definition),
             ceremony_definitions: required!(self, ceremony_definitions, "port"),
             prepare_ceremony_participants: required!(self, prepare_ceremony_participants),
             contract_registry: required!(self, contract_registry, "port"),
@@ -995,6 +1006,56 @@ impl ChoreographerService for ChoreographerGrpcService {
         Ok(Response::new(pb::CollectCeremonyEvidenceResponse {
             instance: Some(state),
         }))
+    }
+
+    // Validating and explaining touch nothing: they answer about the
+    // YAML in the request. A draft is not a definition until someone
+    // publishes it, and that distinction is the point of having three
+    // calls instead of one.
+    #[tracing::instrument(name = "rpc.validate_ceremony_draft", skip_all)]
+    async fn validate_ceremony_draft(
+        &self,
+        request: Request<pb::ValidateCeremonyDraftRequest>,
+    ) -> GrpcResult<pb::ValidateCeremonyDraftResponse> {
+        link_span_to_metadata(&request);
+        let draft = CeremonyDefinitionYaml::parse_draft_str(&request.into_inner().definition_yaml)
+            .map_err(domain_error_to_status)?;
+        let report = draft.analyze();
+        Ok(Response::new(validate_ceremony_draft_response_from(
+            &CeremonyDraftView::project(&draft, &report),
+        )))
+    }
+
+    #[tracing::instrument(name = "rpc.explain_ceremony_draft", skip_all)]
+    async fn explain_ceremony_draft(
+        &self,
+        request: Request<pb::ExplainCeremonyDraftRequest>,
+    ) -> GrpcResult<pb::ExplainCeremonyDraftResponse> {
+        link_span_to_metadata(&request);
+        let draft = CeremonyDefinitionYaml::parse_draft_str(&request.into_inner().definition_yaml)
+            .map_err(domain_error_to_status)?;
+        let report = draft.analyze();
+        Ok(Response::new(explain_ceremony_draft_response_from(
+            &CeremonyDraftView::project(&draft, &report),
+        )))
+    }
+
+    #[tracing::instrument(name = "rpc.publish_ceremony_definition", skip_all)]
+    async fn publish_ceremony_definition(
+        &self,
+        request: Request<pb::PublishCeremonyDefinitionRequest>,
+    ) -> GrpcResult<pb::PublishCeremonyDefinitionResponse> {
+        link_span_to_metadata(&request);
+        let definition = CeremonyDefinitionYaml::parse_str(&request.into_inner().definition_yaml)
+            .map_err(domain_error_to_status)?;
+        let outcome = self
+            .publish_ceremony_definition
+            .execute(definition)
+            .await
+            .map_err(domain_error_to_status)?;
+        Ok(Response::new(publish_ceremony_definition_response_from(
+            &outcome,
+        )))
     }
 
     #[tracing::instrument(name = "rpc.get_ceremony_instance", skip_all)]

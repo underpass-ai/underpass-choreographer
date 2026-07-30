@@ -35,10 +35,11 @@ use choreo_app::usecases::{
     CollectCeremonyEvidenceUseCase, CreateCouncilUseCase, DeferCeremonyGuardUseCase,
     DeleteCouncilUseCase, DeliberateUseCase, GetCeremonyInstanceUseCase, GetDeliberationUseCase,
     ListCeremonyInstancesUseCase, ListCouncilsUseCase, OrchestrateUseCase,
-    PrepareCeremonyParticipantsUseCase, RegisterAgentUseCase, RequestCeremonyInterventionUseCase,
-    ResolveCeremonyDefinitionUseCase, RespondToCeremonyInterventionUseCase, RunCeremonyStepUseCase,
-    RunCeremonyUseCase, RunCouncilDecisionUseCase, StartCeremonyUseCase,
-    StartPublishedCeremonyUseCase, UnregisterAgentUseCase,
+    PrepareCeremonyParticipantsUseCase, PublishCeremonyDefinitionUseCase, RegisterAgentUseCase,
+    RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
+    RespondToCeremonyInterventionUseCase, RunCeremonyStepUseCase, RunCeremonyUseCase,
+    RunCouncilDecisionUseCase, StartCeremonyUseCase, StartPublishedCeremonyUseCase,
+    UnregisterAgentUseCase,
 };
 use choreo_core::error::DomainError;
 use choreo_core::ports::{
@@ -348,6 +349,9 @@ pub async fn compose() -> Result<Application, ComposeError> {
         Arc::new(NoopCeremonyEvidenceSource::new()),
         clock.clone(),
     ));
+    let publish_ceremony_definition = Arc::new(PublishCeremonyDefinitionUseCase::new(
+        ceremony_publications.clone(),
+    ));
 
     let create_council = Arc::new(CreateCouncilUseCase::new(
         clock.clone(),
@@ -415,6 +419,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         .respond_to_ceremony_intervention(respond_to_ceremony_intervention)
         .close_ceremony_intervention(close_ceremony_intervention)
         .collect_ceremony_evidence(collect_ceremony_evidence)
+        .publish_ceremony_definition(publish_ceremony_definition)
         .ceremony_definitions(ceremony_definitions.clone())
         .get_ceremony_instance(get_ceremony_instance)
         .list_ceremony_instances(list_ceremony_instances)

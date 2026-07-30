@@ -10,6 +10,7 @@
 
 mod agent;
 mod attributes;
+mod ceremony_authoring;
 mod ceremony_human_verbs;
 mod ceremony_instance;
 mod ceremony_lifecycle;
@@ -28,6 +29,10 @@ mod validation;
 
 // Helpers wired by the service module.
 pub(super) use attributes::attributes_from_struct;
+pub use ceremony_authoring::{
+    explain_ceremony_draft_response_from, publish_ceremony_definition_response_from,
+    validate_ceremony_draft_response_from,
+};
 pub use ceremony_human_verbs::{
     approve_ceremony_guard_input_from_proto, close_ceremony_intervention_input_from_proto,
     collect_ceremony_evidence_input_from_proto, defer_ceremony_guard_input_from_proto,
