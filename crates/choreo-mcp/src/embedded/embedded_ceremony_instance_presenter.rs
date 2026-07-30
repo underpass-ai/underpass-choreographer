@@ -1,5 +1,5 @@
 use choreo_core::entities::CeremonyInstance;
-use choreo_core::value_objects::{CeremonyId, GuardCondition, RoleId};
+use choreo_core::value_objects::{CeremonyDefinitionDigest, CeremonyId, GuardCondition, RoleId};
 use choreo_embedded::EmbeddedChoreographer;
 use serde_json::{json, Value};
 
@@ -104,7 +104,7 @@ impl EmbeddedCeremonyInstancePresenter {
             // unable to tell the two apart.
             "bound_definition_digest": instance
                 .bound_definition()
-                .map(|digest| digest.to_hex()),
+                .map(CeremonyDefinitionDigest::to_hex),
             "current_state": instance.current_state().as_str(),
             "completed": instance.is_completed(&definition),
             "next_step_id": next_step_id,
