@@ -7,6 +7,7 @@
 
 mod agent_registry;
 mod audit_journal;
+mod ceremony_definition_publications;
 mod ceremony_definition_repository;
 mod ceremony_instance_repository;
 mod ceremony_store;
@@ -18,6 +19,7 @@ mod statistics;
 
 pub use agent_registry::InMemoryAgentRegistry;
 pub use audit_journal::InMemoryAuditJournal;
+pub use ceremony_definition_publications::InMemoryCeremonyDefinitionPublications;
 pub use ceremony_definition_repository::InMemoryCeremonyDefinitionRepository;
 pub use ceremony_instance_repository::InMemoryCeremonyInstanceRepository;
 pub use ceremony_store::InMemoryCeremonyStore;

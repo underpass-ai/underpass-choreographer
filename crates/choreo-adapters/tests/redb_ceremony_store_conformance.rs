@@ -9,7 +9,8 @@
 
 use choreo_adapters::redb::RedbCeremonyStore;
 use choreo_core::conformance::{
-    AuditJournalConformance, CeremonyUnitOfWorkConformance, OutboxConformance,
+    AuditJournalConformance, CeremonyDefinitionPublicationConformance,
+    CeremonyUnitOfWorkConformance, OutboxConformance,
 };
 use tempfile::TempDir;
 
@@ -53,6 +54,17 @@ async fn redb_satisfies_the_outbox_contract() {
         .unwrap_or_else(|failure| panic!("{failure}"));
 
     assert_eq!(passed.len(), 7, "properties run: {passed:?}");
+}
+
+#[tokio::test]
+async fn redb_satisfies_the_publication_contract() {
+    let (_directory, store) = store();
+
+    let passed = CeremonyDefinitionPublicationConformance::run(&store)
+        .await
+        .unwrap_or_else(|failure| panic!("{failure}"));
+
+    assert_eq!(passed.len(), 5, "properties run: {passed:?}");
 }
 
 /// What no in-memory adapter can be asked: does anything survive the

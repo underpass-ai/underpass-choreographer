@@ -10,10 +10,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::DomainError;
 use crate::value_objects::{
-    CeremonyContext, CeremonyDescription, CeremonyGuard, CeremonyInputDefinition, CeremonyName,
-    CeremonyOutputDefinition, CeremonyRole, CeremonyState, CeremonyStep, CeremonyTransition,
-    CeremonyValidationReport, CeremonyVersion, GuardName, InputName, OutputName, RoleAction,
-    RoleId, StateId, StepExecutionRecord, StepId, TransitionTrigger,
+    CeremonyContext, CeremonyDefinitionDigest, CeremonyDescription, CeremonyGuard,
+    CeremonyInputDefinition, CeremonyName, CeremonyOutputDefinition, CeremonyRole, CeremonyState,
+    CeremonyStep, CeremonyTransition, CeremonyValidationReport, CeremonyVersion, GuardName,
+    InputName, OutputName, RoleAction, RoleId, StateId, StepExecutionRecord, StepId,
+    TransitionTrigger,
 };
 
 use super::ceremony_definition_analysis::CeremonyDefinitionParts;
@@ -269,6 +270,30 @@ impl CeremonyDefinition {
     ) -> Option<&CeremonyTransition> {
         self.available_transitions(state_id)
             .find(|transition| self.guards_are_satisfied(transition, records, context))
+    }
+
+    /// The identity of this definition's content.
+    ///
+    /// Computed over canonical JSON of the whole aggregate rather than
+    /// over the document it arrived in: two YAML files differing in
+    /// whitespace, key order or comments describe the same working
+    /// session and must agree, while any material difference must not.
+    ///
+    /// Encoding the aggregate through `serde` rather than by hand is
+    /// deliberate. A hand-written encoder that forgets a field produces
+    /// two materially different definitions with one digest, and
+    /// nothing would report it; here a field cannot be left out, and a
+    /// field added later changes the digest, which is correct because
+    /// it is material.
+    ///
+    /// Canonical because `serde_json` maps are ordered — see
+    /// `serde_json_emits_sorted_keys` for the guard that keeps that
+    /// assumption from being silently withdrawn.
+    pub fn digest(&self) -> Result<CeremonyDefinitionDigest, DomainError> {
+        let canonical = serde_json::to_vec(self).map_err(|_| DomainError::InvariantViolated {
+            reason: "ceremony definition cannot be rendered canonically",
+        })?;
+        Ok(CeremonyDefinitionDigest::of_canonical_form(&canonical))
     }
 
     /// Collect every defect in the definition instead of stopping at
@@ -933,6 +958,109 @@ mod tests {
                 what: "ceremony_guard.step"
             }
         ));
+    }
+
+    /// The digest is canonical only because `serde_json` orders object
+    /// keys. Enabling `preserve_order` anywhere in the dependency graph
+    /// — including through feature unification by a crate nobody here
+    /// chose — would withdraw that silently and change every digest.
+    /// This is what makes it loud instead.
+    #[test]
+    fn serde_json_emits_sorted_keys() {
+        let mut out_of_order = serde_json::Map::new();
+        out_of_order.insert("zulu".to_owned(), serde_json::Value::from(1));
+        out_of_order.insert("alpha".to_owned(), serde_json::Value::from(2));
+
+        assert_eq!(
+            serde_json::to_string(&serde_json::Value::Object(out_of_order)).unwrap(),
+            r#"{"alpha":2,"zulu":1}"#,
+            "serde_json is no longer emitting sorted keys, so the definition digest is not canonical"
+        );
+    }
+
+    #[test]
+    fn the_same_definition_always_digests_the_same() {
+        assert_eq!(
+            valid_definition().digest().unwrap(),
+            valid_definition().digest().unwrap()
+        );
+    }
+
+    #[test]
+    fn a_material_difference_changes_the_digest() {
+        let baseline = valid_definition().digest().unwrap();
+        let renamed = definition(
+            vec![
+                CeremonyState::initial(state_id("drafting")),
+                CeremonyState::terminal(state_id("finished")),
+            ],
+            vec![CeremonyTransition::new(
+                state_id("drafting"),
+                state_id("finished"),
+                trigger("finish"),
+                Vec::new(),
+            )
+            .unwrap()],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .unwrap()
+        .digest()
+        .unwrap();
+
+        assert_ne!(baseline, renamed);
+    }
+
+    #[test]
+    fn transition_order_is_material_to_the_digest() {
+        // Declaration order decides which transition fires first when
+        // several are enabled, so two definitions that differ only in
+        // that order are different working sessions.
+        let states = || {
+            vec![
+                CeremonyState::initial(state_id("drafting")),
+                CeremonyState::terminal(state_id("done")),
+                CeremonyState::terminal(state_id("cancelled")),
+            ]
+        };
+        let finish = || {
+            CeremonyTransition::new(
+                state_id("drafting"),
+                state_id("done"),
+                trigger("finish"),
+                Vec::new(),
+            )
+            .unwrap()
+        };
+        let cancel = || {
+            CeremonyTransition::new(
+                state_id("drafting"),
+                state_id("cancelled"),
+                trigger("cancel"),
+                Vec::new(),
+            )
+            .unwrap()
+        };
+
+        let first = definition(
+            states(),
+            vec![finish(), cancel()],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .unwrap();
+        let swapped = definition(
+            states(),
+            vec![cancel(), finish()],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .unwrap();
+
+        assert_ne!(first.digest().unwrap(), swapped.digest().unwrap());
     }
 
     #[test]

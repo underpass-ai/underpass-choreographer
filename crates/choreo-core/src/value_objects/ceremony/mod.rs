@@ -1,6 +1,7 @@
 //! Value objects for declarative ceremony execution.
 
 mod ceremony_context;
+mod ceremony_definition_digest;
 mod ceremony_description;
 mod ceremony_evidence_source_id;
 mod ceremony_guard;
@@ -56,6 +57,7 @@ mod step_timeout;
 mod transition_trigger;
 
 pub use ceremony_context::CeremonyContext;
+pub use ceremony_definition_digest::CeremonyDefinitionDigest;
 pub use ceremony_description::CeremonyDescription;
 pub use ceremony_evidence_source_id::CeremonyEvidenceSourceId;
 pub use ceremony_guard::CeremonyGuard;

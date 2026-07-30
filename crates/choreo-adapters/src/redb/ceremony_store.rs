@@ -15,24 +15,29 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use choreo_core::entities::{
-    AuditFact, AuditRecord, CeremonyCommit, CeremonyInstance, CommitOutcome,
+    AuditFact, AuditRecord, CeremonyCommit, CeremonyInstance, CommitOutcome, PublicationOutcome,
+    PublishedCeremonyDefinition,
 };
 use choreo_core::error::DomainError;
-use choreo_core::ports::{AuditJournalPort, CeremonyUnitOfWorkPort, OutboxPort};
+use choreo_core::ports::{
+    AuditJournalPort, CeremonyDefinitionPublicationPort, CeremonyUnitOfWorkPort, OutboxPort,
+};
 use choreo_core::value_objects::{
-    CeremonyId, CeremonyRevision, ClaimedOutboxMessage, DurationMs, EventId, OutboxAttempt,
-    OutboxMessage, OutboxQuarantineReason,
+    CeremonyDefinitionDigest, CeremonyId, CeremonyName, CeremonyRevision, CeremonyVersion,
+    ClaimedOutboxMessage, DurationMs, EventId, OutboxAttempt, OutboxMessage,
+    OutboxQuarantineReason,
 };
 use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use super::error::{encoding_failure, join_failure, store_failure};
-use super::keys::{ceremony_of, scope_range, scoped};
+use super::keys::{ceremony_of, published, scope_range, scoped};
 
 const CEREMONIES: TableDefinition<&str, &[u8]> = TableDefinition::new("ceremony_instances");
 const JOURNAL: TableDefinition<&[u8], &[u8]> = TableDefinition::new("audit_journal");
 const OUTBOX: TableDefinition<&[u8], &[u8]> = TableDefinition::new("outbox");
+const PUBLICATIONS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("published_definitions");
 
 /// A ceremony's stored state and the revision that guards it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -94,6 +99,9 @@ impl RedbCeremonyStore {
             write
                 .open_table(OUTBOX)
                 .map_err(|error| store_failure(error, "open outbox table"))?;
+            write
+                .open_table(PUBLICATIONS)
+                .map_err(|error| store_failure(error, "open publications table"))?;
         }
         write
             .commit()
@@ -498,4 +506,135 @@ fn read_outbox(
         ));
     }
     Ok(entries)
+}
+
+/// A published definition and the digest it was sealed with.
+///
+/// The digest is stored beside the definition rather than recomputed on
+/// read: a stored definition whose recomputed digest disagrees with the
+/// stored one is evidence the file was edited, and that is worth being
+/// able to see.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct StoredPublication {
+    definition: choreo_core::entities::CeremonyDefinition,
+    digest: CeremonyDefinitionDigest,
+}
+
+impl StoredPublication {
+    fn seal(published: &PublishedCeremonyDefinition) -> Self {
+        Self {
+            definition: published.definition().clone(),
+            digest: published.digest(),
+        }
+    }
+
+    fn restore(self) -> Result<PublishedCeremonyDefinition, DomainError> {
+        PublishedCeremonyDefinition::seal(self.definition)
+    }
+}
+
+#[async_trait]
+impl CeremonyDefinitionPublicationPort for RedbCeremonyStore {
+    /// The occupant is read and the slot written inside one write
+    /// transaction, so two callers cannot publish different content
+    /// under one version.
+    async fn publish(
+        &self,
+        definition: PublishedCeremonyDefinition,
+    ) -> Result<PublicationOutcome, DomainError> {
+        self.blocking("publish", move |database| {
+            let key = published(definition.name(), definition.version());
+            let write = database
+                .begin_write()
+                .map_err(|error| store_failure(error, "begin publish"))?;
+            let outcome = {
+                let mut publications = write
+                    .open_table(PUBLICATIONS)
+                    .map_err(|error| store_failure(error, "open publications"))?;
+                let occupant: Option<StoredPublication> = publications
+                    .get(key.as_slice())
+                    .map_err(|error| store_failure(error, "read publication"))?
+                    .map(|value| decode(value.value(), "decode publication"))
+                    .transpose()?;
+
+                match occupant {
+                    Some(occupant) if occupant.digest == definition.digest() => {
+                        PublicationOutcome::AlreadyPublished(occupant.restore()?)
+                    }
+                    Some(occupant) => PublicationOutcome::VersionOccupied {
+                        published: occupant.digest,
+                        offered: definition.digest(),
+                    },
+                    None => {
+                        publications
+                            .insert(
+                                key.as_slice(),
+                                encode(
+                                    &StoredPublication::seal(&definition),
+                                    "encode publication",
+                                )?
+                                .as_slice(),
+                            )
+                            .map_err(|error| store_failure(error, "store publication"))?;
+                        PublicationOutcome::Published(definition)
+                    }
+                }
+            };
+
+            if outcome.is_conflict() {
+                return Ok(outcome);
+            }
+            write
+                .commit()
+                .map_err(|error| store_failure(error, "commit publish"))?;
+            Ok(outcome)
+        })
+        .await
+    }
+
+    async fn published(
+        &self,
+        name: &CeremonyName,
+        version: &CeremonyVersion,
+    ) -> Result<Option<PublishedCeremonyDefinition>, DomainError> {
+        let key = published(name, version);
+        self.blocking("published", move |database| {
+            let read = database
+                .begin_read()
+                .map_err(|error| store_failure(error, "begin read"))?;
+            let publications = read
+                .open_table(PUBLICATIONS)
+                .map_err(|error| store_failure(error, "open publications"))?;
+            let stored: Option<StoredPublication> = publications
+                .get(key.as_slice())
+                .map_err(|error| store_failure(error, "read publication"))?
+                .map(|value| decode(value.value(), "decode publication"))
+                .transpose()?;
+            stored.map(StoredPublication::restore).transpose()
+        })
+        .await
+    }
+
+    async fn catalogue(&self) -> Result<Vec<PublishedCeremonyDefinition>, DomainError> {
+        self.blocking("catalogue", move |database| {
+            let read = database
+                .begin_read()
+                .map_err(|error| store_failure(error, "begin read"))?;
+            let publications = read
+                .open_table(PUBLICATIONS)
+                .map_err(|error| store_failure(error, "open publications"))?;
+            let mut catalogue = Vec::new();
+            for entry in publications
+                .range::<&[u8]>(..)
+                .map_err(|error| store_failure(error, "scan publications"))?
+            {
+                let (_, value) =
+                    entry.map_err(|error| store_failure(error, "read publication entry"))?;
+                let stored: StoredPublication = decode(value.value(), "decode publication")?;
+                catalogue.push(stored.restore()?);
+            }
+            Ok(catalogue)
+        })
+        .await
+    }
 }

@@ -10,7 +10,7 @@
 //! convention: identifiers reject control characters, and `0x00` is
 //! one, so no identifier can contain the byte that ends it.
 
-use choreo_core::value_objects::CeremonyId;
+use choreo_core::value_objects::{CeremonyId, CeremonyName, CeremonyVersion};
 
 pub(super) const SEPARATOR: u8 = 0;
 const ORDINAL_BYTES: usize = 8;
@@ -39,6 +39,23 @@ pub(super) fn ceremony_of(key: &[u8]) -> Option<&[u8]> {
     key.len()
         .checked_sub(ORDINAL_BYTES + 1)
         .map(|end| &key[..end])
+}
+
+/// Key for a published definition: the name length-prefixed, then the
+/// version.
+///
+/// Length-prefixed rather than separated, because unlike a scoped
+/// record this key needs no ordering — and a length prefix is
+/// unambiguous without assuming anything about which characters a name
+/// may contain.
+pub(super) fn published(name: &CeremonyName, version: &CeremonyVersion) -> Vec<u8> {
+    let name = name.as_str().as_bytes();
+    let version = version.as_str().as_bytes();
+    let mut key = Vec::with_capacity(2 + name.len() + version.len());
+    key.extend_from_slice(&(name.len() as u16).to_be_bytes());
+    key.extend_from_slice(name);
+    key.extend_from_slice(version);
+    key
 }
 
 #[cfg(test)]
@@ -70,6 +87,22 @@ mod tests {
             prefix_neighbour > end,
             "a ceremony whose id extends another's must not fall inside its range"
         );
+    }
+
+    #[test]
+    fn a_name_and_version_boundary_cannot_be_shifted() {
+        // Without the length prefix, `plan` + `1.0` and `plan1` + `.0`
+        // would produce the same bytes.
+        let left = published(
+            &CeremonyName::new("plan").unwrap(),
+            &CeremonyVersion::new("1.0").unwrap(),
+        );
+        let right = published(
+            &CeremonyName::new("plan1").unwrap(),
+            &CeremonyVersion::new(".0").unwrap(),
+        );
+
+        assert_ne!(left, right);
     }
 
     #[test]

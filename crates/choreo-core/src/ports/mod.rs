@@ -19,6 +19,7 @@ mod agent_factory;
 mod agent_registry;
 mod agent_resolver;
 mod audit_journal;
+mod ceremony_definition_publication;
 mod ceremony_definition_repository;
 mod ceremony_definition_source;
 mod ceremony_evidence_request;
@@ -51,6 +52,7 @@ pub use agent_resolver::AgentResolverPort;
 pub use audit_journal::AuditJournalPort;
 pub use ceremony_transcript_store::CeremonyTranscriptStorePort;
 
+pub use ceremony_definition_publication::CeremonyDefinitionPublicationPort;
 pub use ceremony_definition_repository::CeremonyDefinitionRepositoryPort;
 pub use ceremony_definition_source::CeremonyDefinitionSourcePort;
 pub use ceremony_evidence_request::CeremonyEvidenceRequest;

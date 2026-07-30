@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "snake_case")]
 pub enum AuditEventType {
     CeremonyDefinitionValidated,
+    CeremonyDefinitionPublished,
     CeremonyInstanceStarted,
     StepStarted,
     StepCompleted,
@@ -31,6 +32,7 @@ impl AuditEventType {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::CeremonyDefinitionValidated => "ceremony_definition_validated",
+            Self::CeremonyDefinitionPublished => "ceremony_definition_published",
             Self::CeremonyInstanceStarted => "ceremony_instance_started",
             Self::StepStarted => "step_started",
             Self::StepCompleted => "step_completed",
