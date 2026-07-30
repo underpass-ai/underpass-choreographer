@@ -28,4 +28,29 @@ impl ApplyCeremonyTransitionInput {
             trigger,
         }
     }
+
+    #[must_use]
+    pub fn instance_id(&self) -> &CeremonyId {
+        &self.instance_id
+    }
+
+    #[must_use]
+    pub fn definition_name(&self) -> &CeremonyName {
+        &self.definition_name
+    }
+
+    #[must_use]
+    pub fn definition_version(&self) -> &CeremonyVersion {
+        &self.definition_version
+    }
+
+    #[must_use]
+    pub fn role_id(&self) -> &RoleId {
+        &self.role_id
+    }
+
+    #[must_use]
+    pub fn trigger(&self) -> &TransitionTrigger {
+        &self.trigger
+    }
 }

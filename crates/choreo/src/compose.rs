@@ -31,10 +31,12 @@ use choreo_adapters::validators::{
 };
 use choreo_app::services::AutoDispatchService;
 use choreo_app::usecases::{
-    CreateCouncilUseCase, DeleteCouncilUseCase, DeliberateUseCase, GetCeremonyInstanceUseCase,
-    GetDeliberationUseCase, ListCeremonyInstancesUseCase, ListCouncilsUseCase, OrchestrateUseCase,
-    PrepareCeremonyParticipantsUseCase, RegisterAgentUseCase, ResolveCeremonyDefinitionUseCase,
-    RunCeremonyUseCase, RunCouncilDecisionUseCase, UnregisterAgentUseCase,
+    ApplyCeremonyTransitionUseCase, CreateCouncilUseCase, DeleteCouncilUseCase, DeliberateUseCase,
+    GetCeremonyInstanceUseCase, GetDeliberationUseCase, ListCeremonyInstancesUseCase,
+    ListCouncilsUseCase, OrchestrateUseCase, PrepareCeremonyParticipantsUseCase,
+    RegisterAgentUseCase, ResolveCeremonyDefinitionUseCase, RunCeremonyStepUseCase,
+    RunCeremonyUseCase, RunCouncilDecisionUseCase, StartCeremonyUseCase,
+    StartPublishedCeremonyUseCase, UnregisterAgentUseCase,
 };
 use choreo_core::error::DomainError;
 use choreo_core::ports::{
@@ -270,12 +272,39 @@ pub async fn compose() -> Result<Application, ComposeError> {
         RunCeremonyUseCase::new(
             ceremony_definitions.clone(),
             ceremony_instances.clone(),
-            ceremony_step_handler,
-            ceremony_transcript_store,
+            ceremony_step_handler.clone(),
+            ceremony_transcript_store.clone(),
             clock.clone(),
         )
         .with_metrics(metrics_recorder.clone()),
     );
+    // Advancing a session one move at a time. The transcript store is
+    // shared with the whole-run use case above: what a step said has
+    // to be there for the next step whichever way the run was driven.
+    let start_ceremony = Arc::new(StartCeremonyUseCase::new(
+        ceremony_definitions.clone(),
+        ceremony_instances.clone(),
+        clock.clone(),
+    ));
+    let start_published_ceremony = Arc::new(StartPublishedCeremonyUseCase::new(
+        ceremony_publications.clone(),
+        ceremony_instances.clone(),
+        clock.clone(),
+    ));
+    let run_ceremony_step = Arc::new(
+        RunCeremonyStepUseCase::new(
+            ceremony_definitions.clone(),
+            ceremony_instances.clone(),
+            ceremony_step_handler,
+            clock.clone(),
+        )
+        .with_transcript_store(ceremony_transcript_store),
+    );
+    let apply_ceremony_transition = Arc::new(ApplyCeremonyTransitionUseCase::new(
+        ceremony_definitions.clone(),
+        ceremony_instances.clone(),
+        clock.clone(),
+    ));
 
     let create_council = Arc::new(CreateCouncilUseCase::new(
         clock.clone(),
@@ -337,6 +366,11 @@ pub async fn compose() -> Result<Application, ComposeError> {
         .unregister_agent(unregister_agent)
         .run_council_decision(run_council_decision)
         .run_ceremony(run_ceremony)
+        .start_ceremony(start_ceremony)
+        .start_published_ceremony(start_published_ceremony)
+        .run_ceremony_step(run_ceremony_step)
+        .apply_ceremony_transition(apply_ceremony_transition)
+        .ceremony_definitions(ceremony_definitions.clone())
         .get_ceremony_instance(get_ceremony_instance)
         .list_ceremony_instances(list_ceremony_instances)
         .resolve_ceremony_definition(resolve_ceremony_definition)

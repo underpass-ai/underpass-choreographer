@@ -121,9 +121,18 @@ service ChoreographerService {
   // Read a live ceremony without advancing it. The response is the
   // same view the embedded distribution exposes, so a client sees one
   // working session whichever way it reached the engine.
-
   rpc GetCeremonyInstance(GetCeremonyInstanceRequest) returns (GetCeremonyInstanceResponse);
   rpc ListCeremonyInstances(ListCeremonyInstancesRequest) returns (ListCeremonyInstancesResponse);
+
+  // Advance a ceremony one move at a time. RunCeremony above runs a
+  // whole session in a single call, which is right for a ceremony that
+  // needs nobody; these are for one that does. Every one of them
+  // answers with the instance as it stands afterwards, so a caller
+  // never has to follow a mutation with a read to learn what changed.
+  rpc StartCeremony(StartCeremonyRequest) returns (StartCeremonyResponse);
+  rpc StartPublishedCeremony(StartPublishedCeremonyRequest) returns (StartPublishedCeremonyResponse);
+  rpc RunCeremonyStep(RunCeremonyStepRequest) returns (RunCeremonyStepResponse);
+  rpc ApplyCeremonyTransition(ApplyCeremonyTransitionRequest) returns (ApplyCeremonyTransitionResponse);
 
   // ---- Observability --------------------------------------------------
 
@@ -760,4 +769,59 @@ message ListCeremonyInstancesRequest {}
 
 message ListCeremonyInstancesResponse {
   repeated CeremonyInstanceState instances = 1;
+}
+
+message StartCeremonyRequest {
+  // Identifier for the session about to exist. Required here, unlike
+  // in the tool surface that mints one: a server that invents an id
+  // gives a client no way to retry a start it never saw answered.
+  string ceremony_id = 1;
+  string definition_yaml = 2;
+  google.protobuf.Struct context = 3;
+}
+
+message StartCeremonyResponse {
+  CeremonyInstanceState instance = 1;
+}
+
+message StartPublishedCeremonyRequest {
+  string ceremony_id = 1;
+  // Name and version of an already-published definition. The instance
+  // records the digest it resolved to, which is what makes it possible
+  // to tell later whether what ran is still what is published.
+  string ceremony = 2;
+  string version = 3;
+  google.protobuf.Struct context = 4;
+}
+
+message StartPublishedCeremonyResponse {
+  CeremonyInstanceState instance = 1;
+}
+
+message RunCeremonyStepRequest {
+  string ceremony_id = 1;
+  string step_id = 2;
+  // Who holds the step lease. Empty takes the server default.
+  string lease_owner_id = 3;
+  // Repeating a call with the same key must not run the step twice.
+  // Empty mints a fresh key server-side, which is accepted but is the
+  // same as asking for no guarantee: a retry will run the step again.
+  string idempotency_key = 4;
+  // Zero takes the server default.
+  uint64 lease_ttl_ms = 5;
+}
+
+message RunCeremonyStepResponse {
+  CeremonyInstanceState instance = 1;
+}
+
+message ApplyCeremonyTransitionRequest {
+  string ceremony_id = 1;
+  // The named trigger to fire. Which transitions are available right
+  // now is in CeremonyInstanceState.transitions.
+  string trigger = 2;
+}
+
+message ApplyCeremonyTransitionResponse {
+  CeremonyInstanceState instance = 1;
 }

@@ -38,4 +38,44 @@ impl RunCeremonyStepInput {
             lease_ttl,
         }
     }
+
+    #[must_use]
+    pub fn instance_id(&self) -> &CeremonyId {
+        &self.instance_id
+    }
+
+    #[must_use]
+    pub fn definition_name(&self) -> &CeremonyName {
+        &self.definition_name
+    }
+
+    #[must_use]
+    pub fn definition_version(&self) -> &CeremonyVersion {
+        &self.definition_version
+    }
+
+    #[must_use]
+    pub fn role_id(&self) -> &RoleId {
+        &self.role_id
+    }
+
+    #[must_use]
+    pub fn step_id(&self) -> &StepId {
+        &self.step_id
+    }
+
+    #[must_use]
+    pub fn lease_owner_id(&self) -> &LeaseOwnerId {
+        &self.lease_owner_id
+    }
+
+    #[must_use]
+    pub fn idempotency_key(&self) -> &IdempotencyKey {
+        &self.idempotency_key
+    }
+
+    #[must_use]
+    pub const fn lease_ttl(&self) -> DurationMs {
+        self.lease_ttl
+    }
 }
