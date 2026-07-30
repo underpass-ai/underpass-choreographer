@@ -18,6 +18,7 @@ use choreo_adapters::postgres::{
     PostgresAgentRegistry, PostgresConfig, PostgresCouncilRegistry, PostgresDeliberationRepository,
     PostgresPool, PostgresPoolError, PostgresStatistics,
 };
+use choreo_adapters::redb::RedbCeremonyStore;
 use choreo_adapters::runtime::{
     ExecutorBackendConfig, RuntimeExecutor, RuntimeExecutorConnectError,
 };
@@ -42,7 +43,7 @@ use choreo_core::ports::{
     ValidatorPort,
 };
 use thiserror::Error;
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::seeding::SeedingError;
 
@@ -85,6 +86,9 @@ pub enum ComposeError {
 
     #[error("runtime executor setup failed: {0}")]
     RuntimeExecutor(#[from] RuntimeExecutorConnectError),
+
+    #[error("ceremony store setup failed: {0}")]
+    CeremonyStore(String),
 }
 
 /// Pick the scoring policy and wire the optional LLM judge.
@@ -186,8 +190,30 @@ pub async fn compose() -> Result<Application, ComposeError> {
         Arc::new(InMemoryContractRegistry::new());
     let ceremony_definitions: Arc<dyn CeremonyDefinitionRepositoryPort> =
         Arc::new(InMemoryCeremonyDefinitionRepository::new());
+    // Ceremony state is durable only when a store path is configured.
+    // Leaving it in memory is a valid choice for a throwaway
+    // deployment and a silent data-loss bug in any other, so an
+    // unconfigured server says what it is giving up rather than
+    // discovering it at the first restart.
+    // Ceremony state is durable only when a store path is configured.
+    // Leaving it in memory is a valid choice for a throwaway
+    // deployment and a silent data-loss bug in any other, so an
+    // unconfigured server says what it is giving up rather than
+    // discovering it at the first restart.
     let ceremony_instances: Arc<dyn CeremonyInstanceRepositoryPort> =
-        Arc::new(InMemoryCeremonyInstanceRepository::new());
+        if let Some(path) = service_config.ceremony_store_path.as_deref() {
+            let store = RedbCeremonyStore::open(path)
+                .map_err(|error| ComposeError::CeremonyStore(format!("at {path}: {error}")))?;
+            info!(path, "ceremony state is durable");
+            Arc::new(store)
+        } else {
+            warn!(
+                "CHOREO_CEREMONY_STORE_PATH is unset: ceremony state is held in memory. Step \
+             leases, idempotency keys and pending human guards will not survive a restart."
+            );
+            Arc::new(InMemoryCeremonyInstanceRepository::new())
+        };
+
     let ceremony_transcript_store: Arc<dyn CeremonyTranscriptStorePort> =
         Arc::new(InMemoryCeremonyTranscriptStore::new());
 

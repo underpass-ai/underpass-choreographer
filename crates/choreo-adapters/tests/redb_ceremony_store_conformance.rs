@@ -115,6 +115,15 @@ mod support {
     };
     use time::OffsetDateTime;
 
+    pub fn instance(ceremony_id: &CeremonyId) -> CeremonyInstance {
+        CeremonyInstance::start(
+            ceremony_id.clone(),
+            &definition(),
+            CeremonyContext::empty(),
+            OffsetDateTime::UNIX_EPOCH,
+        )
+    }
+
     pub fn commit(
         ceremony_id: &CeremonyId,
         expected: ExpectedRevision,
@@ -166,4 +175,65 @@ mod support {
         )
         .unwrap()
     }
+}
+
+#[tokio::test]
+async fn instances_survive_reopening_the_store() {
+    use choreo_core::ports::CeremonyInstanceRepositoryPort;
+    use choreo_core::value_objects::CeremonyId;
+
+    let directory = TempDir::new().expect("a temporary directory");
+    let path = directory.path().join("ceremonies.redb");
+    let ceremony = CeremonyId::new("survives-as-instance").unwrap();
+
+    {
+        let store = RedbCeremonyStore::open(&path).expect("the store opens");
+        store
+            .save(&support::instance(&ceremony))
+            .await
+            .expect("the instance is stored");
+    }
+
+    let reopened = RedbCeremonyStore::open(&path).expect("the store reopens");
+
+    assert!(reopened.exists(&ceremony).await.unwrap());
+    assert_eq!(reopened.get(&ceremony).await.unwrap().id(), &ceremony);
+    assert_eq!(reopened.list().await.unwrap().len(), 1);
+}
+
+/// The repository port carries no expected revision — it has nowhere to
+/// put one. Advancing the revision on every save is what stops that
+/// weaker path from quietly defeating the transactional one: a commit
+/// still holding the revision it read now conflicts, as it should.
+#[tokio::test]
+async fn saving_outside_a_unit_of_work_makes_a_stale_commit_conflict() {
+    use choreo_core::ports::{CeremonyInstanceRepositoryPort, CeremonyUnitOfWorkPort};
+    use choreo_core::value_objects::{CeremonyId, ExpectedRevision};
+
+    let (_directory, store) = store();
+    let ceremony = CeremonyId::new("racing-paths").unwrap();
+
+    let committed = store
+        .commit(support::commit(&ceremony, ExpectedRevision::New, 1))
+        .await
+        .unwrap();
+    let observed = committed.committed_revision().unwrap();
+
+    // Someone writes through the repository while the caller above
+    // still believes it holds the current revision.
+    store.save(&support::instance(&ceremony)).await.unwrap();
+
+    let outcome = store
+        .commit(support::commit(
+            &ceremony,
+            ExpectedRevision::Exactly(observed),
+            2,
+        ))
+        .await
+        .unwrap();
+
+    assert!(
+        outcome.is_conflict(),
+        "a commit against a revision that was overwritten was accepted"
+    );
 }

@@ -25,6 +25,7 @@ use tracing::debug;
 /// | `CHOREO_TRIGGER_SUBJECT`         | `choreo.trigger.>`    |
 /// | `CHOREO_PUBLISH_PREFIX`          | `choreo`              |
 /// | `CHOREO_POSTGRES_URL`            | (unset)               |
+/// | `CHOREO_CEREMONY_STORE_PATH`     | (unset)               |
 /// | `CHOREO_GRPC_TLS_MODE`           | `none`                |
 /// | `CHOREO_GRPC_TLS_CERT_PATH`      | (unset)               |
 /// | `CHOREO_GRPC_TLS_KEY_PATH`       | (unset)               |
@@ -57,6 +58,7 @@ struct Defaults {
     trigger_subject: String,
     publish_prefix: String,
     postgres_url: String,
+    ceremony_store_path: String,
     grpc_tls_mode: String,
     grpc_tls_cert_path: String,
     grpc_tls_key_path: String,
@@ -73,6 +75,7 @@ impl Default for Defaults {
             trigger_subject: "choreo.trigger.>".to_owned(),
             publish_prefix: "choreo".to_owned(),
             postgres_url: String::new(),
+            ceremony_store_path: String::new(),
             grpc_tls_mode: "none".to_owned(),
             grpc_tls_cert_path: String::new(),
             grpc_tls_key_path: String::new(),
@@ -100,6 +103,8 @@ impl ConfigurationPort for EnvConfiguration {
             Some(loaded.postgres_url)
         };
 
+        let ceremony_store_path = nonempty(&loaded.ceremony_store_path);
+
         let grpc_tls = build_grpc_tls(
             &loaded.grpc_tls_mode,
             &loaded.grpc_tls_cert_path,
@@ -115,6 +120,7 @@ impl ConfigurationPort for EnvConfiguration {
             trigger_subject: loaded.trigger_subject,
             publish_prefix: loaded.publish_prefix,
             postgres_url,
+            ceremony_store_path,
             grpc_tls,
         })
     }

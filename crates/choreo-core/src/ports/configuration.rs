@@ -21,6 +21,15 @@ pub struct ServiceConfig {
     /// in-memory repository is wired. Empty-string is treated as
     /// unset so the chart can carry a placeholder default.
     pub postgres_url: Option<String>,
+    /// When set, ceremony state, its audit journal and its outbox
+    /// persist to an embedded store at this path; otherwise they are
+    /// held in memory.
+    ///
+    /// Unset is a deliberate choice, not a default that happens to be
+    /// safe: step leases, idempotency keys and pending human guards
+    /// exist to survive failure, and in memory they survive nothing.
+    /// A server left volatile says so at startup.
+    pub ceremony_store_path: Option<String>,
     /// Transport security for the gRPC server.
     pub grpc_tls: GrpcTlsConfig,
 }

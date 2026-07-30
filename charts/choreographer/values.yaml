@@ -196,6 +196,21 @@ executor:
 # Postgres adapter goes through it atomically; migrations apply on
 # startup.
 persistence:
+  # Durable ceremony state: instances, their audit journal and their
+  # outbox. Off by default, and an unconfigured server says at startup
+  # that step leases, idempotency keys and pending human guards will
+  # not survive a restart.
+  #
+  # The embedded store takes an exclusive file lock and serves one
+  # process, so enabling this pins the deployment to a single replica.
+  # The chart refuses any other value rather than letting two pods
+  # contend for one file.
+  ceremonies:
+    enabled: false
+    mountPath: /var/lib/choreographer
+    size: 1Gi
+    storageClass: ""
+
   postgres:
     enabled: false
     # One of the two URL sources below must be set when enabled.

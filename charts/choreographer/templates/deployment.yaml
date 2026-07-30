@@ -5,6 +5,9 @@ metadata:
   labels:
     {{- include "choreographer.labels" . | nindent 4 }}
 spec:
+{{- if and .Values.persistence.ceremonies.enabled (gt (int .Values.replicaCount) 1) }}
+{{- fail "persistence.ceremonies.enabled=true requires replicaCount=1: the embedded ceremony store takes an exclusive file lock and serves a single process" }}
+{{- end }}
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
@@ -59,6 +62,11 @@ spec:
       {{- end }}
       {{- if or .Values.tmpVolume.enabled (ne $tlsMode "none") $runtimeTlsMounted }}
       volumes:
+        {{- if .Values.persistence.ceremonies.enabled }}
+        - name: ceremonies
+          persistentVolumeClaim:
+            claimName: {{ include "choreographer.fullname" . }}-ceremonies
+        {{- end }}
         {{- if .Values.tmpVolume.enabled }}
         - name: tmp
           emptyDir:
@@ -89,6 +97,10 @@ spec:
             {{- toYaml .Values.securityContext | nindent 12 }}
           {{- if or .Values.tmpVolume.enabled (ne $tlsMode "none") $runtimeTlsMounted }}
           volumeMounts:
+            {{- if .Values.persistence.ceremonies.enabled }}
+            - name: ceremonies
+              mountPath: {{ .Values.persistence.ceremonies.mountPath | quote }}
+            {{- end }}
             {{- if .Values.tmpVolume.enabled }}
             - name: tmp
               mountPath: /tmp
@@ -180,6 +192,10 @@ spec:
               value: {{ . | quote }}
             {{- end }}
             {{- end }}
+            {{- end }}
+            {{- if .Values.persistence.ceremonies.enabled }}
+            - name: CHOREO_CEREMONY_STORE_PATH
+              value: {{ printf "%s/ceremonies.redb" .Values.persistence.ceremonies.mountPath | quote }}
             {{- end }}
             {{- if .Values.persistence.postgres.enabled }}
             {{- if and .Values.persistence.postgres.urlFromSecret.name .Values.persistence.postgres.urlFromSecret.key }}

@@ -20,7 +20,8 @@ use choreo_core::entities::{
 };
 use choreo_core::error::DomainError;
 use choreo_core::ports::{
-    AuditJournalPort, CeremonyDefinitionPublicationPort, CeremonyUnitOfWorkPort, OutboxPort,
+    AuditJournalPort, CeremonyDefinitionPublicationPort, CeremonyInstanceRepositoryPort,
+    CeremonyUnitOfWorkPort, OutboxPort,
 };
 use choreo_core::value_objects::{
     CeremonyDefinitionDigest, CeremonyId, CeremonyName, CeremonyRevision, CeremonyVersion,
@@ -634,6 +635,115 @@ impl CeremonyDefinitionPublicationPort for RedbCeremonyStore {
                 catalogue.push(stored.restore()?);
             }
             Ok(catalogue)
+        })
+        .await
+    }
+}
+
+#[async_trait]
+impl CeremonyInstanceRepositoryPort for RedbCeremonyStore {
+    /// Store an instance outside a unit of work.
+    ///
+    /// This is the path every ceremony use case takes today, and it
+    /// carries no optimistic concurrency: it cannot, because the port
+    /// has nowhere to put an expected revision. Making it durable is
+    /// still strictly better than holding it in memory, and the
+    /// transactional path stays available for callers that need both.
+    ///
+    /// The revision advances on every save even though nothing checks
+    /// it here. That is deliberate: a concurrent
+    /// [`CeremonyUnitOfWorkPort::commit`] holding a stale expectation
+    /// then conflicts as it should, so the weaker path cannot quietly
+    /// defeat the stronger one.
+    async fn save(&self, instance: &CeremonyInstance) -> Result<(), DomainError> {
+        let instance = instance.clone();
+        self.blocking("save instance", move |database| {
+            let key = instance.id().as_str().to_owned();
+            let write = database
+                .begin_write()
+                .map_err(|error| store_failure(error, "begin save"))?;
+            {
+                let mut ceremonies = write
+                    .open_table(CEREMONIES)
+                    .map_err(|error| store_failure(error, "open ceremonies"))?;
+                let stored: Option<StoredCeremony> = ceremonies
+                    .get(key.as_str())
+                    .map_err(|error| store_failure(error, "read ceremony"))?
+                    .map(|value| decode(value.value(), "decode ceremony"))
+                    .transpose()?;
+                let revision =
+                    stored.map_or(CeremonyRevision::INITIAL, |stored| stored.revision.next());
+                ceremonies
+                    .insert(
+                        key.as_str(),
+                        encode(&StoredCeremony { revision, instance }, "encode ceremony")?
+                            .as_slice(),
+                    )
+                    .map_err(|error| store_failure(error, "store ceremony"))?;
+            }
+            write
+                .commit()
+                .map_err(|error| store_failure(error, "commit save"))?;
+            Ok(())
+        })
+        .await
+    }
+
+    async fn get(&self, id: &CeremonyId) -> Result<CeremonyInstance, DomainError> {
+        self.stored_instance(id)
+            .await?
+            .ok_or(DomainError::NotFound {
+                what: "ceremony_instance",
+            })
+    }
+
+    async fn list(&self) -> Result<Vec<CeremonyInstance>, DomainError> {
+        self.blocking("list instances", move |database| {
+            let read = database
+                .begin_read()
+                .map_err(|error| store_failure(error, "begin read"))?;
+            let ceremonies = read
+                .open_table(CEREMONIES)
+                .map_err(|error| store_failure(error, "open ceremonies"))?;
+            let mut instances = Vec::new();
+            for entry in ceremonies
+                .range::<&str>(..)
+                .map_err(|error| store_failure(error, "scan ceremonies"))?
+            {
+                let (_, value) =
+                    entry.map_err(|error| store_failure(error, "read ceremony entry"))?;
+                let stored: StoredCeremony = decode(value.value(), "decode ceremony")?;
+                instances.push(stored.instance);
+            }
+            Ok(instances)
+        })
+        .await
+    }
+
+    async fn exists(&self, id: &CeremonyId) -> Result<bool, DomainError> {
+        Ok(self.stored_instance(id).await?.is_some())
+    }
+}
+
+impl RedbCeremonyStore {
+    async fn stored_instance(
+        &self,
+        id: &CeremonyId,
+    ) -> Result<Option<CeremonyInstance>, DomainError> {
+        let key = id.as_str().to_owned();
+        self.blocking("read instance", move |database| {
+            let read = database
+                .begin_read()
+                .map_err(|error| store_failure(error, "begin read"))?;
+            let ceremonies = read
+                .open_table(CEREMONIES)
+                .map_err(|error| store_failure(error, "open ceremonies"))?;
+            let stored: Option<StoredCeremony> = ceremonies
+                .get(key.as_str())
+                .map_err(|error| store_failure(error, "read ceremony"))?
+                .map(|value| decode(value.value(), "decode ceremony"))
+                .transpose()?;
+            Ok(stored.map(|stored| stored.instance))
         })
         .await
     }
