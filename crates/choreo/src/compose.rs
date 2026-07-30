@@ -7,9 +7,10 @@ use choreo_adapters::ceremony::DeliberatingCeremonyStepHandler;
 use choreo_adapters::clock::SystemClock;
 use choreo_adapters::config::EnvConfiguration;
 use choreo_adapters::memory::{
-    InMemoryAgentRegistry, InMemoryCeremonyDefinitionRepository,
-    InMemoryCeremonyInstanceRepository, InMemoryCeremonyTranscriptStore, InMemoryContractRegistry,
-    InMemoryCouncilRegistry, InMemoryDeliberationRepository, InMemoryStatistics,
+    InMemoryAgentRegistry, InMemoryCeremonyDefinitionPublications,
+    InMemoryCeremonyDefinitionRepository, InMemoryCeremonyInstanceRepository,
+    InMemoryCeremonyTranscriptStore, InMemoryContractRegistry, InMemoryCouncilRegistry,
+    InMemoryDeliberationRepository, InMemoryStatistics,
 };
 use choreo_adapters::metrics::PrometheusMetricsRecorder;
 use choreo_adapters::nats::{NatsConfig, NatsMessaging, NatsTriggerSubscriber};
@@ -30,17 +31,18 @@ use choreo_adapters::validators::{
 };
 use choreo_app::services::AutoDispatchService;
 use choreo_app::usecases::{
-    CreateCouncilUseCase, DeleteCouncilUseCase, DeliberateUseCase, GetDeliberationUseCase,
-    ListCouncilsUseCase, OrchestrateUseCase, PrepareCeremonyParticipantsUseCase,
-    RegisterAgentUseCase, RunCeremonyUseCase, RunCouncilDecisionUseCase, UnregisterAgentUseCase,
+    CreateCouncilUseCase, DeleteCouncilUseCase, DeliberateUseCase, GetCeremonyInstanceUseCase,
+    GetDeliberationUseCase, ListCeremonyInstancesUseCase, ListCouncilsUseCase, OrchestrateUseCase,
+    PrepareCeremonyParticipantsUseCase, RegisterAgentUseCase, ResolveCeremonyDefinitionUseCase,
+    RunCeremonyUseCase, RunCouncilDecisionUseCase, UnregisterAgentUseCase,
 };
 use choreo_core::error::DomainError;
 use choreo_core::ports::{
-    AgentFactoryPort, AgentRegistryPort, AgentResolverPort, CeremonyDefinitionRepositoryPort,
-    CeremonyInstanceRepositoryPort, CeremonyStepHandlerPort, CeremonyTranscriptStorePort,
-    ConfigurationPort, ContractRegistryPort, CouncilRegistryPort, DeliberationRepositoryPort,
-    ExecutorPort, MessagingPort, MetricsRecorderPort, ScoringPort, ServiceConfig, StatisticsPort,
-    ValidatorPort,
+    AgentFactoryPort, AgentRegistryPort, AgentResolverPort, CeremonyDefinitionPublicationPort,
+    CeremonyDefinitionRepositoryPort, CeremonyInstanceRepositoryPort, CeremonyStepHandlerPort,
+    CeremonyTranscriptStorePort, ConfigurationPort, ContractRegistryPort, CouncilRegistryPort,
+    DeliberationRepositoryPort, ExecutorPort, MessagingPort, MetricsRecorderPort, ScoringPort,
+    ServiceConfig, StatisticsPort, ValidatorPort,
 };
 use thiserror::Error;
 use tracing::{info, warn};
@@ -200,19 +202,29 @@ pub async fn compose() -> Result<Application, ComposeError> {
     // deployment and a silent data-loss bug in any other, so an
     // unconfigured server says what it is giving up rather than
     // discovering it at the first restart.
-    let ceremony_instances: Arc<dyn CeremonyInstanceRepositoryPort> =
-        if let Some(path) = service_config.ceremony_store_path.as_deref() {
-            let store = RedbCeremonyStore::open(path)
-                .map_err(|error| ComposeError::CeremonyStore(format!("at {path}: {error}")))?;
-            info!(path, "ceremony state is durable");
-            Arc::new(store)
-        } else {
-            warn!(
-                "CHOREO_CEREMONY_STORE_PATH is unset: ceremony state is held in memory. Step \
+    // One store serves both ports when durable: an instance and the
+    // published definition it is bound to have to survive together, or
+    // a restart leaves instances pointing at versions that are gone.
+    let (ceremony_instances, ceremony_publications): (
+        Arc<dyn CeremonyInstanceRepositoryPort>,
+        Arc<dyn CeremonyDefinitionPublicationPort>,
+    ) = if let Some(path) = service_config.ceremony_store_path.as_deref() {
+        let store = Arc::new(
+            RedbCeremonyStore::open(path)
+                .map_err(|error| ComposeError::CeremonyStore(format!("at {path}: {error}")))?,
+        );
+        info!(path, "ceremony state is durable");
+        (store.clone(), store)
+    } else {
+        warn!(
+            "CHOREO_CEREMONY_STORE_PATH is unset: ceremony state is held in memory. Step \
              leases, idempotency keys and pending human guards will not survive a restart."
-            );
-            Arc::new(InMemoryCeremonyInstanceRepository::new())
-        };
+        );
+        (
+            Arc::new(InMemoryCeremonyInstanceRepository::new()),
+            Arc::new(InMemoryCeremonyDefinitionPublications::new()),
+        )
+    };
 
     let ceremony_transcript_store: Arc<dyn CeremonyTranscriptStorePort> =
         Arc::new(InMemoryCeremonyTranscriptStore::new());
@@ -256,8 +268,8 @@ pub async fn compose() -> Result<Application, ComposeError> {
     ));
     let run_ceremony = Arc::new(
         RunCeremonyUseCase::new(
-            ceremony_definitions,
-            ceremony_instances,
+            ceremony_definitions.clone(),
+            ceremony_instances.clone(),
             ceremony_step_handler,
             ceremony_transcript_store,
             clock.clone(),
@@ -304,6 +316,16 @@ pub async fn compose() -> Result<Application, ComposeError> {
     // factory can finish wiring.
     let nats_subscriber = nats_subscriber_factory.map(|factory| factory(auto_dispatch.clone()));
 
+    let get_ceremony_instance =
+        Arc::new(GetCeremonyInstanceUseCase::new(ceremony_instances.clone()));
+    let list_ceremony_instances = Arc::new(ListCeremonyInstancesUseCase::new(
+        ceremony_instances.clone(),
+    ));
+    let resolve_ceremony_definition = Arc::new(ResolveCeremonyDefinitionUseCase::new(
+        ceremony_definitions.clone(),
+        ceremony_publications.clone(),
+    ));
+
     let grpc_service = choreo_adapters::grpc::ChoreographerGrpcService::builder()
         .deliberate(deliberate)
         .orchestrate(orchestrate)
@@ -315,6 +337,9 @@ pub async fn compose() -> Result<Application, ComposeError> {
         .unregister_agent(unregister_agent)
         .run_council_decision(run_council_decision)
         .run_ceremony(run_ceremony)
+        .get_ceremony_instance(get_ceremony_instance)
+        .list_ceremony_instances(list_ceremony_instances)
+        .resolve_ceremony_definition(resolve_ceremony_definition)
         .prepare_ceremony_participants(prepare_ceremony_participants)
         .contract_registry(contract_registry.clone())
         .auto_dispatch(auto_dispatch)

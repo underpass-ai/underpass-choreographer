@@ -6,14 +6,15 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use choreo_app::services::AutoDispatchService;
 use choreo_app::usecases::{
-    CreateCouncilInput, CreateCouncilUseCase, DeleteCouncilUseCase, DeliberateUseCase,
-    GetDeliberationUseCase, ListCouncilsUseCase, OrchestrateUseCase,
-    PrepareCeremonyParticipantsUseCase, RegisterAgentUseCase, RunCeremonyUseCase,
-    RunCouncilDecisionUseCase, UnregisterAgentUseCase,
+    CeremonyInstanceView, CreateCouncilInput, CreateCouncilUseCase, DeleteCouncilUseCase,
+    DeliberateUseCase, GetCeremonyInstanceUseCase, GetDeliberationUseCase,
+    ListCeremonyInstancesUseCase, ListCouncilsUseCase, OrchestrateUseCase,
+    PrepareCeremonyParticipantsUseCase, RegisterAgentUseCase, ResolveCeremonyDefinitionUseCase,
+    RunCeremonyUseCase, RunCouncilDecisionUseCase, UnregisterAgentUseCase,
 };
 use choreo_core::error::DomainError;
 use choreo_core::ports::{AgentDescriptor, ContractRegistryPort, StatisticsPort};
-use choreo_core::value_objects::{AgentId, AgentKind, Specialty, TaskId};
+use choreo_core::value_objects::{AgentId, AgentKind, CeremonyId, Specialty, TaskId};
 use choreo_proto::v1 as pb;
 use choreo_proto::v1::choreographer_service_server::{
     ChoreographerService, ChoreographerServiceServer,
@@ -22,10 +23,11 @@ use tonic::{Request, Response, Status};
 use tracing::debug;
 
 use super::mappers::{
-    council_summary_from, deliberate_response_from, orchestrate_response_from,
-    output_contract_from_proto, output_contract_to_proto, run_ceremony_input_from_proto,
-    run_ceremony_response_from, run_council_decision_input_from_proto,
-    run_council_decision_response_from, task_from_proto, trigger_event_from_proto,
+    ceremony_instance_state_from, council_summary_from, deliberate_response_from,
+    orchestrate_response_from, output_contract_from_proto, output_contract_to_proto,
+    run_ceremony_input_from_proto, run_ceremony_response_from,
+    run_council_decision_input_from_proto, run_council_decision_response_from, task_from_proto,
+    trigger_event_from_proto,
 };
 use super::status::domain_error_to_status;
 use super::tracecontext::link_span_to_metadata;
@@ -45,6 +47,9 @@ pub struct ChoreographerGrpcService {
     unregister_agent: Arc<UnregisterAgentUseCase>,
     run_council_decision: Arc<RunCouncilDecisionUseCase>,
     run_ceremony: Arc<RunCeremonyUseCase>,
+    get_ceremony_instance: Arc<GetCeremonyInstanceUseCase>,
+    list_ceremony_instances: Arc<ListCeremonyInstancesUseCase>,
+    resolve_ceremony_definition: Arc<ResolveCeremonyDefinitionUseCase>,
     prepare_ceremony_participants: Arc<PrepareCeremonyParticipantsUseCase>,
     contract_registry: Arc<dyn ContractRegistryPort>,
     auto_dispatch: Arc<AutoDispatchService>,
@@ -63,6 +68,26 @@ impl ChoreographerGrpcService {
     #[must_use]
     pub fn builder() -> ChoreographerGrpcServiceBuilder {
         ChoreographerGrpcServiceBuilder::default()
+    }
+
+    /// Resolve an instance's definition and derive the view every
+    /// transport renders.
+    ///
+    /// The definition is resolved through the shared use case, so a
+    /// bound instance is checked against the digest it recorded here
+    /// exactly as it is in the embedded distribution.
+    async fn project(
+        &self,
+        instance: &choreo_core::entities::CeremonyInstance,
+    ) -> Result<pb::CeremonyInstanceState, Status> {
+        let definition = self
+            .resolve_ceremony_definition
+            .execute(instance)
+            .await
+            .map_err(domain_error_to_status)?;
+        let view =
+            CeremonyInstanceView::project(instance, &definition).map_err(domain_error_to_status)?;
+        Ok(ceremony_instance_state_from(&view))
     }
 
     /// Wrap this service into a Tonic `Server` middleware.
@@ -86,6 +111,9 @@ pub struct ChoreographerGrpcServiceBuilder {
     unregister_agent: Option<Arc<UnregisterAgentUseCase>>,
     run_council_decision: Option<Arc<RunCouncilDecisionUseCase>>,
     run_ceremony: Option<Arc<RunCeremonyUseCase>>,
+    get_ceremony_instance: Option<Arc<GetCeremonyInstanceUseCase>>,
+    list_ceremony_instances: Option<Arc<ListCeremonyInstancesUseCase>>,
+    resolve_ceremony_definition: Option<Arc<ResolveCeremonyDefinitionUseCase>>,
     prepare_ceremony_participants: Option<Arc<PrepareCeremonyParticipantsUseCase>>,
     contract_registry: Option<Arc<dyn ContractRegistryPort>>,
     auto_dispatch: Option<Arc<AutoDispatchService>>,
@@ -124,6 +152,21 @@ impl ChoreographerGrpcServiceBuilder {
         run_council_decision
     );
     setter!(run_ceremony, RunCeremonyUseCase, run_ceremony);
+    setter!(
+        get_ceremony_instance,
+        GetCeremonyInstanceUseCase,
+        get_ceremony_instance
+    );
+    setter!(
+        list_ceremony_instances,
+        ListCeremonyInstancesUseCase,
+        list_ceremony_instances
+    );
+    setter!(
+        resolve_ceremony_definition,
+        ResolveCeremonyDefinitionUseCase,
+        resolve_ceremony_definition
+    );
     setter!(
         prepare_ceremony_participants,
         PrepareCeremonyParticipantsUseCase,
@@ -190,6 +233,21 @@ impl ChoreographerGrpcServiceBuilder {
             run_ceremony: self.run_ceremony.ok_or(DomainError::InvariantViolated {
                 reason: "grpc: run_ceremony use case is required",
             })?,
+            get_ceremony_instance: self.get_ceremony_instance.ok_or(
+                DomainError::InvariantViolated {
+                    reason: "grpc: get_ceremony_instance use case is required",
+                },
+            )?,
+            list_ceremony_instances: self.list_ceremony_instances.ok_or(
+                DomainError::InvariantViolated {
+                    reason: "grpc: list_ceremony_instances use case is required",
+                },
+            )?,
+            resolve_ceremony_definition: self.resolve_ceremony_definition.ok_or(
+                DomainError::InvariantViolated {
+                    reason: "grpc: resolve_ceremony_definition use case is required",
+                },
+            )?,
             prepare_ceremony_participants: self.prepare_ceremony_participants.ok_or(
                 DomainError::InvariantViolated {
                     reason: "grpc: prepare_ceremony_participants use case is required",
@@ -608,6 +666,45 @@ impl ChoreographerService for ChoreographerGrpcService {
             "run_ceremony rpc ok"
         );
         Ok(Response::new(run_ceremony_response_from(&output)))
+    }
+
+    #[tracing::instrument(name = "rpc.get_ceremony_instance", skip_all)]
+    async fn get_ceremony_instance(
+        &self,
+        request: Request<pb::GetCeremonyInstanceRequest>,
+    ) -> GrpcResult<pb::GetCeremonyInstanceResponse> {
+        link_span_to_metadata(&request);
+        let ceremony_id =
+            CeremonyId::new(request.into_inner().ceremony_id).map_err(domain_error_to_status)?;
+        let instance = self
+            .get_ceremony_instance
+            .execute(&ceremony_id)
+            .await
+            .map_err(domain_error_to_status)?;
+        let state = self.project(&instance).await?;
+        Ok(Response::new(pb::GetCeremonyInstanceResponse {
+            instance: Some(state),
+        }))
+    }
+
+    #[tracing::instrument(name = "rpc.list_ceremony_instances", skip_all)]
+    async fn list_ceremony_instances(
+        &self,
+        request: Request<pb::ListCeremonyInstancesRequest>,
+    ) -> GrpcResult<pb::ListCeremonyInstancesResponse> {
+        link_span_to_metadata(&request);
+        let instances = self
+            .list_ceremony_instances
+            .execute()
+            .await
+            .map_err(domain_error_to_status)?;
+        let mut states = Vec::with_capacity(instances.len());
+        for instance in &instances {
+            states.push(self.project(instance).await?);
+        }
+        Ok(Response::new(pb::ListCeremonyInstancesResponse {
+            instances: states,
+        }))
     }
 
     #[tracing::instrument(name = "rpc.get_status", skip_all)]

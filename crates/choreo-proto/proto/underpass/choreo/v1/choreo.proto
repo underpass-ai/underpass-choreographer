@@ -118,6 +118,13 @@ service ChoreographerService {
   // both execution trace and a Mermaid sequence diagram.
   rpc RunCeremony(RunCeremonyRequest) returns (RunCeremonyResponse);
 
+  // Read a live ceremony without advancing it. The response is the
+  // same view the embedded distribution exposes, so a client sees one
+  // working session whichever way it reached the engine.
+
+  rpc GetCeremonyInstance(GetCeremonyInstanceRequest) returns (GetCeremonyInstanceResponse);
+  rpc ListCeremonyInstances(ListCeremonyInstancesRequest) returns (ListCeremonyInstancesResponse);
+
   // ---- Observability --------------------------------------------------
 
   rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
@@ -614,4 +621,143 @@ message RunCeremonyResponse {
   bool completed = 5;
   repeated CeremonyStepExecution steps = 6;
   string mermaid_sequence = 7;
+}
+
+// ============================================================================
+// Live ceremony state
+// ============================================================================
+
+// A step as it stands right now.
+//
+// Distinct from CeremonyStepExecution, which is the trace of a finished
+// run: this is current state, and it can report a failure a completed
+// trace would never contain.
+message CeremonyStepState {
+  string step_id = 1;
+  string state_id = 2;
+  string status = 3;
+  uint32 attempt = 4;
+  // Structured output produced so far. Empty for a step that has not
+  // run or produces none.
+  google.protobuf.Struct output = 5;
+  // Why the step failed, when it did. Empty otherwise.
+  string error = 6;
+}
+
+// A guard on an outgoing transition.
+message CeremonyTransitionGuard {
+  string name = 1;
+  // "human" when only a person can satisfy it, "automated" otherwise.
+  string kind = 2;
+  bool satisfied = 3;
+}
+
+// A transition leaving the current state.
+message CeremonyAvailableTransition {
+  string trigger = 1;
+  string to = 2;
+  // Whether every guard holds, so the transition can be applied now.
+  bool enabled = 3;
+  repeated CeremonyTransitionGuard guards = 4;
+}
+
+// A human guard whose decision was postponed, with the reason.
+message CeremonyGuardDeferralState {
+  string guard_name = 1;
+  string statement = 2;
+  string reason = 3;
+  // What would make the decision worth revisiting. A deferral without
+  // this is a decision quietly dropped.
+  repeated string reconsider_when = 4;
+  string deferred_at = 5;
+}
+
+// Who an intervention is addressed to. Empty role_ids means the whole
+// table rather than nobody, which is why the kind is explicit.
+message CeremonyInterventionTargetState {
+  // "table" or "roles".
+  string kind = 1;
+  repeated string role_ids = 2;
+}
+
+// A message inside an intervention: what was said, plus whatever
+// structured data came with it.
+message CeremonyInterventionMessage {
+  string message = 1;
+  google.protobuf.Struct details = 2;
+}
+
+// Where a follow-up intervention came from, when it was opened off the
+// back of an earlier answer.
+message CeremonyInterventionProvenanceState {
+  string source_intervention_id = 1;
+  string source_response_role_id = 2;
+  string selected_role_id = 3;
+}
+
+message CeremonyInterventionResponseState {
+  string role_id = 1;
+  CeremonyInterventionMessage content = 2;
+  // Serialized evidence pack attached to the answer, when one was.
+  string evidence_pack = 3;
+  string responded_at = 4;
+}
+
+// A topic opened inside a working session.
+message CeremonyInterventionState {
+  string intervention_id = 1;
+  string kind = 2;
+  string status = 3;
+  string requested_by = 4;
+  CeremonyInterventionTargetState target = 5;
+  CeremonyInterventionMessage request = 6;
+  // Absent unless this intervention was opened from another one.
+  CeremonyInterventionProvenanceState provenance = 7;
+  repeated CeremonyInterventionResponseState responses = 8;
+  string created_at = 9;
+  string updated_at = 10;
+  // Empty while the intervention is still open.
+  string closed_at = 11;
+}
+
+// Everything a caller needs to decide what to do next with a working
+// session: where it is, what blocks it, and what it has recorded.
+message CeremonyInstanceState {
+  string ceremony_id = 1;
+  string definition_name = 2;
+  string definition_version = 3;
+  // Digest of the published definition this instance is bound to.
+  // Empty when it was started from a definition supplied for the run:
+  // an instance that is not governed must not look governed.
+  string bound_definition_digest = 4;
+  string current_state = 5;
+  bool completed = 6;
+  // The next step ready to run. Empty when none is.
+  string next_step_id = 7;
+  // Guards blocking progress that only a person can satisfy. This is
+  // the field a client turns into "waiting for you".
+  repeated string waiting_for_human = 8;
+  repeated CeremonyGuardDeferralState guard_deferrals = 9;
+  repeated CeremonyAvailableTransition transitions = 10;
+  repeated CeremonyStepState steps = 11;
+  repeated CeremonyInterventionState interventions = 12;
+  repeated string open_intervention_ids = 13;
+  google.protobuf.Struct context = 14;
+}
+
+message GetCeremonyInstanceRequest {
+  string ceremony_id = 1;
+}
+
+// Each RPC owns its response type by convention, all wrapping the same
+// state message so every way of reaching a working session describes it
+// identically.
+message GetCeremonyInstanceResponse {
+  CeremonyInstanceState instance = 1;
+}
+
+message ListCeremonyInstancesRequest {}
+
+message ListCeremonyInstancesResponse {
+  repeated CeremonyInstanceState instances = 1;
 }

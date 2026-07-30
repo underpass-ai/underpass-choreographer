@@ -10,10 +10,11 @@ use choreo_app::usecases::{
     ListCeremonyDefinitionsUseCase, ListCeremonyInstancesUseCase, MountCeremonyDefinitionsOutput,
     MountCeremonyDefinitionsUseCase, PublishCeremonyDefinitionUseCase,
     RequestCeremonyInterventionInput, RequestCeremonyInterventionUseCase,
-    RespondToCeremonyInterventionInput, RespondToCeremonyInterventionUseCase, RunCeremonyInput,
-    RunCeremonyOutput, RunCeremonyStepInput, RunCeremonyStepOutput, RunCeremonyStepUseCase,
-    RunCeremonyUseCase, StartCeremonyInput, StartCeremonyStepInput, StartCeremonyStepUseCase,
-    StartCeremonyUseCase, StartPublishedCeremonyUseCase,
+    ResolveCeremonyDefinitionUseCase, RespondToCeremonyInterventionInput,
+    RespondToCeremonyInterventionUseCase, RunCeremonyInput, RunCeremonyOutput,
+    RunCeremonyStepInput, RunCeremonyStepOutput, RunCeremonyStepUseCase, RunCeremonyUseCase,
+    StartCeremonyInput, StartCeremonyStepInput, StartCeremonyStepUseCase, StartCeremonyUseCase,
+    StartPublishedCeremonyUseCase,
 };
 use choreo_core::entities::{
     CeremonyDefinition, CeremonyInstance, PublicationOutcome, PublishedCeremonyDefinition,
@@ -176,40 +177,18 @@ impl EmbeddedChoreographer {
         self.publications.catalogue().await
     }
 
-    /// The definition an instance actually runs.
+    /// The definition an instance actually runs, binding included.
     ///
-    /// A bound instance is resolved from the published catalogue and
-    /// **checked against the digest it recorded**. That check is the
-    /// reason for storing the digest at all: without it, a name and a
-    /// version are a promise that whatever answers to them today is
-    /// what ran, and a reader has no way to tell when it is not.
-    ///
-    /// An unbound instance is resolved from the definition repository,
-    /// where nothing can be checked — which is the honest difference
-    /// between the two ways of starting a working session.
+    /// Delegates to the shared use case rather than holding the rule,
+    /// so the embedded and deployable distributions cannot drift apart
+    /// on what a bound instance means.
     pub async fn definition_for(
         &self,
         instance: &CeremonyInstance,
     ) -> Result<CeremonyDefinition, DomainError> {
-        let Some(digest) = instance.bound_definition() else {
-            return self
-                .definition(instance.definition_name(), instance.definition_version())
-                .await;
-        };
-
-        let published = self
-            .publications
-            .published(instance.definition_name(), instance.definition_version())
-            .await?
-            .ok_or(DomainError::NotFound {
-                what: "published_ceremony_definition",
-            })?;
-        if published.digest() != digest {
-            return Err(DomainError::InvariantViolated {
-                reason: "the published definition no longer matches the digest this instance ran",
-            });
-        }
-        Ok(published.into_definition())
+        ResolveCeremonyDefinitionUseCase::new(self.definitions.clone(), self.publications.clone())
+            .execute(instance)
+            .await
     }
 
     /// Start an instance bound to a published definition's digest.

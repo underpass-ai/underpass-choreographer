@@ -1,5 +1,6 @@
+use choreo_app::usecases::CeremonyInstanceView;
 use choreo_core::entities::CeremonyInstance;
-use choreo_core::value_objects::{CeremonyDefinitionDigest, CeremonyId, GuardCondition, RoleId};
+use choreo_core::value_objects::{CeremonyDefinitionDigest, CeremonyId, RoleId, StepId};
 use choreo_embedded::EmbeddedChoreographer;
 use serde_json::{json, Value};
 
@@ -15,81 +16,53 @@ impl EmbeddedCeremonyInstancePresenter {
         ceremony_id: &CeremonyId,
     ) -> Result<Value, String> {
         let (definition, instance) = load_instance_definition(choreographer, ceremony_id).await?;
-        let steps = definition
-            .steps_in_declaration_order()
-            .map(|step| {
-                let record = instance
-                    .step_record(step.id())
-                    .expect("started ceremony must have one record per declared step");
-                json!({
-                    "step_id": step.id().as_str(),
-                    "state_id": step.state_id().as_str(),
-                    "status": record.status().as_label(),
-                    "attempt": record.attempt().get(),
-                    "output": record.output().attributes().as_map(),
-                    "error": record.error_message().map(ToString::to_string),
-                })
-            })
-            .collect::<Vec<_>>();
-        let transitions = definition
-            .available_transitions(instance.current_state())
-            .map(|transition| {
-                let guards = transition
-                    .required_guards()
-                    .iter()
-                    .map(|guard_name| {
-                        let guard = definition
-                            .guards()
-                            .get(guard_name)
-                            .expect("validated transition must reference a declared guard");
-                        json!({
-                            "name": guard_name.as_str(),
-                            "kind": if matches!(guard.condition(), GuardCondition::HumanApproval) {
-                                "human"
-                            } else {
-                                "automated"
-                            },
-                            "satisfied": guard.is_satisfied(
-                                instance.step_records(),
-                                instance.context(),
-                            ),
-                        })
-                    })
-                    .collect::<Vec<_>>();
-                json!({
-                    "trigger": transition.trigger().as_str(),
-                    "to_state": transition.to().as_str(),
-                    "enabled": definition.guards_are_satisfied(
-                        transition,
-                        instance.step_records(),
-                        instance.context(),
-                    ),
-                    "guards": guards,
-                })
-            })
-            .collect::<Vec<_>>();
-        let waiting_for_human = transitions
+        // Derived once in the application layer and rendered here. The
+        // gRPC adapter renders the same view, which is what keeps one
+        // working session from looking like two depending on how a
+        // client reached it.
+        let view = CeremonyInstanceView::project(&instance, &definition)
+            .map_err(|error| format!("ceremony instance could not be projected: {error}"))?;
+
+        let steps = view
+            .steps()
             .iter()
-            .filter(|transition| {
-                transition["guards"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .filter(|guard| guard["kind"] == "automated")
-                    .all(|guard| guard["satisfied"] == true)
+            .map(|step| {
+                json!({
+                    "step_id": step.step().id().as_str(),
+                    "state_id": step.step().state_id().as_str(),
+                    "status": step.record().status().as_label(),
+                    "attempt": step.record().attempt().get(),
+                    "output": step.record().output().attributes().as_map(),
+                    "error": step.record().error_message().map(ToString::to_string),
+                })
             })
-            .flat_map(|transition| transition["guards"].as_array().into_iter().flatten())
-            .filter(|guard| guard["kind"] == "human" && guard["satisfied"] == false)
-            .filter_map(|guard| guard["name"].as_str().map(str::to_owned))
             .collect::<Vec<_>>();
-        let next_step_id = definition
-            .steps_for_state(instance.current_state())
-            .find(|step| {
-                instance
-                    .step_record(step.id())
-                    .is_some_and(|record| !record.status().is_success())
+        let transitions = view
+            .transitions()
+            .iter()
+            .map(|transition| {
+                json!({
+                    "trigger": transition.transition().trigger().as_str(),
+                    "to_state": transition.transition().to().as_str(),
+                    "enabled": transition.is_enabled(),
+                    "guards": transition
+                        .guards()
+                        .iter()
+                        .map(|guard| json!({
+                            "name": guard.name().as_str(),
+                            "kind": if guard.is_human() { "human" } else { "automated" },
+                            "satisfied": guard.is_satisfied(),
+                        }))
+                        .collect::<Vec<_>>(),
+                })
             })
-            .map(|step| step.id().as_str());
+            .collect::<Vec<_>>();
+        let waiting_for_human = view
+            .waiting_for_human()
+            .iter()
+            .map(|name| name.as_str())
+            .collect::<Vec<_>>();
+        let next_step_id = view.next_step_id().map(StepId::as_str);
         let interventions = intervention_values(&instance);
         let open_intervention_ids = open_intervention_ids(&instance);
         let guard_deferrals = guard_deferral_values(&instance);
@@ -106,7 +79,7 @@ impl EmbeddedCeremonyInstancePresenter {
                 .bound_definition()
                 .map(CeremonyDefinitionDigest::to_hex),
             "current_state": instance.current_state().as_str(),
-            "completed": instance.is_completed(&definition),
+            "completed": view.is_completed(),
             "next_step_id": next_step_id,
             "waiting_for_human": waiting_for_human,
             "guard_deferrals": guard_deferrals,

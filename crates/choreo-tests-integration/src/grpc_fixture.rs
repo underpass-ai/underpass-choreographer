@@ -24,9 +24,10 @@ use choreo_adapters::ceremony::DeliberatingCeremonyStepHandler;
 use choreo_adapters::clock::SystemClock;
 use choreo_adapters::grpc::ChoreographerGrpcService;
 use choreo_adapters::memory::{
-    InMemoryAgentRegistry, InMemoryCeremonyDefinitionRepository,
-    InMemoryCeremonyInstanceRepository, InMemoryCeremonyTranscriptStore, InMemoryContractRegistry,
-    InMemoryCouncilRegistry, InMemoryDeliberationRepository, InMemoryStatistics,
+    InMemoryAgentRegistry, InMemoryCeremonyDefinitionPublications,
+    InMemoryCeremonyDefinitionRepository, InMemoryCeremonyInstanceRepository,
+    InMemoryCeremonyTranscriptStore, InMemoryContractRegistry, InMemoryCouncilRegistry,
+    InMemoryDeliberationRepository, InMemoryStatistics,
 };
 use choreo_adapters::noop::{NoopExecutor, NoopMessaging};
 use choreo_adapters::scoring::UniformScoring;
@@ -36,14 +37,15 @@ use choreo_adapters::validators::{
 };
 use choreo_app::services::AutoDispatchService;
 use choreo_app::usecases::{
-    CreateCouncilUseCase, DeleteCouncilUseCase, DeliberateUseCase, GetDeliberationUseCase,
-    ListCouncilsUseCase, OrchestrateUseCase, PrepareCeremonyParticipantsUseCase,
-    RegisterAgentUseCase, RunCeremonyUseCase, RunCouncilDecisionUseCase, UnregisterAgentUseCase,
+    CreateCouncilUseCase, DeleteCouncilUseCase, DeliberateUseCase, GetCeremonyInstanceUseCase,
+    GetDeliberationUseCase, ListCeremonyInstancesUseCase, ListCouncilsUseCase, OrchestrateUseCase,
+    PrepareCeremonyParticipantsUseCase, RegisterAgentUseCase, ResolveCeremonyDefinitionUseCase,
+    RunCeremonyUseCase, RunCouncilDecisionUseCase, UnregisterAgentUseCase,
 };
 use choreo_core::ports::{
-    AgentRegistryPort, AgentResolverPort, CeremonyDefinitionRepositoryPort,
-    CeremonyInstanceRepositoryPort, CeremonyStepHandlerPort, ContractRegistryPort,
-    CouncilRegistryPort, ValidatorPort,
+    AgentRegistryPort, AgentResolverPort, CeremonyDefinitionPublicationPort,
+    CeremonyDefinitionRepositoryPort, CeremonyInstanceRepositoryPort, CeremonyStepHandlerPort,
+    ContractRegistryPort, CouncilRegistryPort, ValidatorPort,
 };
 use tokio::sync::oneshot;
 use tonic::transport::{Certificate, Channel, Endpoint, Identity, Server, ServerTlsConfig};
@@ -108,6 +110,8 @@ impl GrpcFixture {
             Arc::new(InMemoryCeremonyDefinitionRepository::new());
         let ceremony_instances: Arc<dyn CeremonyInstanceRepositoryPort> =
             Arc::new(InMemoryCeremonyInstanceRepository::new());
+        let ceremony_publications: Arc<dyn CeremonyDefinitionPublicationPort> =
+            Arc::new(InMemoryCeremonyDefinitionPublications::new());
         let agent_registry = Arc::new(InMemoryAgentRegistry::new());
         let agent_resolver: Arc<dyn AgentResolverPort> = agent_registry.clone();
         // `new()` yields a factory that supports only the always-on
@@ -143,8 +147,8 @@ impl GrpcFixture {
             repository.clone(),
         ));
         let run_ceremony = Arc::new(RunCeremonyUseCase::new(
-            ceremony_definitions,
-            ceremony_instances,
+            ceremony_definitions.clone(),
+            ceremony_instances.clone(),
             ceremony_step_handler,
             Arc::new(InMemoryCeremonyTranscriptStore::new()),
             clock.clone(),
@@ -187,6 +191,16 @@ impl GrpcFixture {
             .unregister_agent(unregister_agent)
             .run_council_decision(run_council_decision)
             .run_ceremony(run_ceremony)
+            .get_ceremony_instance(Arc::new(GetCeremonyInstanceUseCase::new(
+                ceremony_instances.clone(),
+            )))
+            .list_ceremony_instances(Arc::new(ListCeremonyInstancesUseCase::new(
+                ceremony_instances.clone(),
+            )))
+            .resolve_ceremony_definition(Arc::new(ResolveCeremonyDefinitionUseCase::new(
+                ceremony_definitions.clone(),
+                ceremony_publications.clone(),
+            )))
             .prepare_ceremony_participants(prepare_ceremony_participants)
             .contract_registry(contract_registry.clone())
             .auto_dispatch(auto_dispatch)
@@ -269,6 +283,8 @@ impl GrpcFixture {
             Arc::new(InMemoryCeremonyDefinitionRepository::new());
         let ceremony_instances: Arc<dyn CeremonyInstanceRepositoryPort> =
             Arc::new(InMemoryCeremonyInstanceRepository::new());
+        let ceremony_publications: Arc<dyn CeremonyDefinitionPublicationPort> =
+            Arc::new(InMemoryCeremonyDefinitionPublications::new());
         let agent_registry = Arc::new(InMemoryAgentRegistry::new());
         let agent_resolver: Arc<dyn AgentResolverPort> = agent_registry.clone();
         let agent_factory = Arc::new(DispatchingAgentFactory::new());
@@ -302,8 +318,8 @@ impl GrpcFixture {
             repository.clone(),
         ));
         let run_ceremony = Arc::new(RunCeremonyUseCase::new(
-            ceremony_definitions,
-            ceremony_instances,
+            ceremony_definitions.clone(),
+            ceremony_instances.clone(),
             ceremony_step_handler,
             Arc::new(InMemoryCeremonyTranscriptStore::new()),
             clock.clone(),
@@ -347,6 +363,16 @@ impl GrpcFixture {
             .run_council_decision(run_council_decision)
             .run_ceremony(run_ceremony)
             .prepare_ceremony_participants(prepare_ceremony_participants)
+            .get_ceremony_instance(Arc::new(GetCeremonyInstanceUseCase::new(
+                ceremony_instances.clone(),
+            )))
+            .list_ceremony_instances(Arc::new(ListCeremonyInstancesUseCase::new(
+                ceremony_instances.clone(),
+            )))
+            .resolve_ceremony_definition(Arc::new(ResolveCeremonyDefinitionUseCase::new(
+                ceremony_definitions.clone(),
+                ceremony_publications.clone(),
+            )))
             .contract_registry(contract_registry.clone())
             .auto_dispatch(auto_dispatch)
             .statistics(statistics.clone())

@@ -10,6 +10,7 @@
 
 mod agent;
 mod attributes;
+mod ceremony_instance;
 mod context;
 mod council;
 mod deliberation;
@@ -25,6 +26,7 @@ mod validation;
 
 // Helpers wired by the service module.
 pub(super) use attributes::attributes_from_struct;
+pub use ceremony_instance::ceremony_instance_state_from;
 pub(super) use council::council_summary_from;
 pub(super) use deliberation::{deliberate_response_from, orchestrate_response_from};
 pub(super) use event::trigger_event_from_proto;
