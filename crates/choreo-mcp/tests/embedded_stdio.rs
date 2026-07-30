@@ -1032,6 +1032,51 @@ async fn an_instance_started_from_a_published_version_carries_its_digest() {
 }
 
 #[tokio::test]
+async fn a_published_instance_can_actually_be_advanced() {
+    let server = ChoreoMcpServer::embedded();
+
+    send(&server, publish_call(1, PUBLISHABLE_CEREMONY_YAML)).await;
+    send(
+        &server,
+        tool_call(
+            2,
+            "choreo_start_published_ceremony",
+            &json!({
+                "ceremony_id": "advanced-bound",
+                "ceremony": "publishable_ceremony",
+                "version": "1.0"
+            }),
+        ),
+    )
+    .await;
+
+    // Publishing writes to the catalogue and nowhere else. Until the
+    // step resolved its definition from the instance, this call came
+    // back "not found: ceremony_definition" — a session that could be
+    // opened and never moved.
+    let stepped = send(
+        &server,
+        tool_call(
+            3,
+            "choreo_run_ceremony_step",
+            &json!({ "ceremony_id": "advanced-bound", "step_id": "work" }),
+        ),
+    )
+    .await;
+
+    assert_ne!(
+        stepped["result"]["isError"], true,
+        "a published ceremony must be advanceable: {stepped:?}"
+    );
+    let instance = structured(&stepped);
+    assert_eq!(instance["steps"][0]["status"], "completed");
+    assert!(
+        instance["bound_definition_digest"].is_string(),
+        "advancing must not quietly unbind the session"
+    );
+}
+
+#[tokio::test]
 async fn an_instance_started_from_a_supplied_definition_claims_no_binding() {
     let server = ChoreoMcpServer::embedded();
 

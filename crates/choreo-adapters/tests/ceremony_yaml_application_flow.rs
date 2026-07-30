@@ -6,14 +6,15 @@ use std::sync::Arc;
 
 use choreo_adapters::clock::SystemClock;
 use choreo_adapters::memory::{
-    InMemoryCeremonyDefinitionRepository, InMemoryCeremonyInstanceRepository,
-    InMemoryCeremonyTranscriptStore,
+    InMemoryCeremonyDefinitionPublications, InMemoryCeremonyDefinitionRepository,
+    InMemoryCeremonyInstanceRepository, InMemoryCeremonyTranscriptStore,
 };
 use choreo_adapters::noop::NoopCeremonyStepHandler;
 use choreo_adapters::yaml::FileSystemCeremonyDefinitionSource;
 use choreo_app::usecases::{
     ApplyCeremonyTransitionInput, ApplyCeremonyTransitionUseCase, MountCeremonyDefinitionsUseCase,
-    RunCeremonyStepInput, RunCeremonyStepUseCase, StartCeremonyInput, StartCeremonyUseCase,
+    ResolveCeremonyDefinitionUseCase, RunCeremonyStepInput, RunCeremonyStepUseCase,
+    StartCeremonyInput, StartCeremonyUseCase,
 };
 use choreo_core::ports::CeremonyDefinitionRepositoryPort;
 use choreo_core::value_objects::{
@@ -114,8 +115,14 @@ async fn yaml_definition_can_drive_the_application_ceremony_flow() {
         &StateId::new("COLLECTING_VOICES").unwrap()
     );
 
-    let run_step = RunCeremonyStepUseCase::new(
+    // Nothing is published here, so the resolver falls through to the
+    // repository — the unbound half of the same rule.
+    let resolve_definition = Arc::new(ResolveCeremonyDefinitionUseCase::new(
         definitions.clone(),
+        Arc::new(InMemoryCeremonyDefinitionPublications::new()),
+    ));
+    let run_step = RunCeremonyStepUseCase::new(
+        resolve_definition.clone(),
         instances.clone(),
         handler,
         clock.clone(),
@@ -124,8 +131,6 @@ async fn yaml_definition_can_drive_the_application_ceremony_flow() {
     let step_output = run_step
         .execute(RunCeremonyStepInput::new(
             CeremonyId::new("meeting-1").unwrap(),
-            definition_name.clone(),
-            definition_version.clone(),
             RoleId::new("FACILITATOR").unwrap(),
             StepId::new("roundtable").unwrap(),
             LeaseOwnerId::new("runner-1").unwrap(),
@@ -137,12 +142,10 @@ async fn yaml_definition_can_drive_the_application_ceremony_flow() {
     assert_eq!(step_output.attempt(), StepAttempt::FIRST);
     assert_eq!(step_output.result().status(), StepStatus::Completed);
 
-    let transition = ApplyCeremonyTransitionUseCase::new(definitions, instances, clock);
+    let transition = ApplyCeremonyTransitionUseCase::new(resolve_definition, instances, clock);
     let completed = transition
         .execute(ApplyCeremonyTransitionInput::new(
             CeremonyId::new("meeting-1").unwrap(),
-            definition_name,
-            definition_version,
             RoleId::new("FACILITATOR").unwrap(),
             TransitionTrigger::new("meeting_done").unwrap(),
         ))

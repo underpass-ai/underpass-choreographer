@@ -118,6 +118,10 @@ impl GrpcFixture {
             Arc::new(InMemoryCeremonyInstanceRepository::new());
         let ceremony_publications: Arc<dyn CeremonyDefinitionPublicationPort> =
             Arc::new(InMemoryCeremonyDefinitionPublications::new());
+        let resolve_ceremony_definition = Arc::new(ResolveCeremonyDefinitionUseCase::new(
+            ceremony_definitions.clone(),
+            ceremony_publications.clone(),
+        ));
         let agent_registry = Arc::new(InMemoryAgentRegistry::new());
         let agent_resolver: Arc<dyn AgentResolverPort> = agent_registry.clone();
         // `new()` yields a factory that supports only the always-on
@@ -173,7 +177,7 @@ impl GrpcFixture {
         ));
         let run_ceremony_step = Arc::new(
             RunCeremonyStepUseCase::new(
-                ceremony_definitions.clone(),
+                resolve_ceremony_definition.clone(),
                 ceremony_instances.clone(),
                 ceremony_step_handler,
                 clock.clone(),
@@ -181,7 +185,7 @@ impl GrpcFixture {
             .with_transcript_store(ceremony_transcript_store),
         );
         let apply_ceremony_transition = Arc::new(ApplyCeremonyTransitionUseCase::new(
-            ceremony_definitions.clone(),
+            resolve_ceremony_definition.clone(),
             ceremony_instances.clone(),
             clock.clone(),
         ));
@@ -234,10 +238,7 @@ impl GrpcFixture {
             .list_ceremony_instances(Arc::new(ListCeremonyInstancesUseCase::new(
                 ceremony_instances.clone(),
             )))
-            .resolve_ceremony_definition(Arc::new(ResolveCeremonyDefinitionUseCase::new(
-                ceremony_definitions.clone(),
-                ceremony_publications.clone(),
-            )))
+            .resolve_ceremony_definition(resolve_ceremony_definition.clone())
             .prepare_ceremony_participants(prepare_ceremony_participants)
             .contract_registry(contract_registry.clone())
             .auto_dispatch(auto_dispatch)
@@ -323,6 +324,10 @@ impl GrpcFixture {
             Arc::new(InMemoryCeremonyInstanceRepository::new());
         let ceremony_publications: Arc<dyn CeremonyDefinitionPublicationPort> =
             Arc::new(InMemoryCeremonyDefinitionPublications::new());
+        let resolve_ceremony_definition = Arc::new(ResolveCeremonyDefinitionUseCase::new(
+            ceremony_definitions.clone(),
+            ceremony_publications.clone(),
+        ));
         let agent_registry = Arc::new(InMemoryAgentRegistry::new());
         let agent_resolver: Arc<dyn AgentResolverPort> = agent_registry.clone();
         let agent_factory = Arc::new(DispatchingAgentFactory::new());
@@ -376,7 +381,7 @@ impl GrpcFixture {
         ));
         let run_ceremony_step = Arc::new(
             RunCeremonyStepUseCase::new(
-                ceremony_definitions.clone(),
+                resolve_ceremony_definition.clone(),
                 ceremony_instances.clone(),
                 ceremony_step_handler,
                 clock.clone(),
@@ -384,7 +389,7 @@ impl GrpcFixture {
             .with_transcript_store(ceremony_transcript_store),
         );
         let apply_ceremony_transition = Arc::new(ApplyCeremonyTransitionUseCase::new(
-            ceremony_definitions.clone(),
+            resolve_ceremony_definition.clone(),
             ceremony_instances.clone(),
             clock.clone(),
         ));
@@ -438,10 +443,7 @@ impl GrpcFixture {
             .list_ceremony_instances(Arc::new(ListCeremonyInstancesUseCase::new(
                 ceremony_instances.clone(),
             )))
-            .resolve_ceremony_definition(Arc::new(ResolveCeremonyDefinitionUseCase::new(
-                ceremony_definitions.clone(),
-                ceremony_publications.clone(),
-            )))
+            .resolve_ceremony_definition(resolve_ceremony_definition.clone())
             .contract_registry(contract_registry.clone())
             .auto_dispatch(auto_dispatch)
             .statistics(statistics.clone())

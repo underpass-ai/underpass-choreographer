@@ -4,14 +4,13 @@ use std::sync::Arc;
 
 use choreo_core::entities::CeremonyInstance;
 use choreo_core::error::DomainError;
-use choreo_core::ports::{
-    CeremonyDefinitionRepositoryPort, CeremonyInstanceRepositoryPort, ClockPort,
-};
+use choreo_core::ports::{CeremonyInstanceRepositoryPort, ClockPort};
 
 use super::apply_ceremony_transition_input::ApplyCeremonyTransitionInput;
+use super::resolve_ceremony_definition_use_case::ResolveCeremonyDefinitionUseCase;
 
 pub struct ApplyCeremonyTransitionUseCase {
-    definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
+    definitions: Arc<ResolveCeremonyDefinitionUseCase>,
     instances: Arc<dyn CeremonyInstanceRepositoryPort>,
     clock: Arc<dyn ClockPort>,
 }
@@ -25,7 +24,7 @@ impl std::fmt::Debug for ApplyCeremonyTransitionUseCase {
 impl ApplyCeremonyTransitionUseCase {
     #[must_use]
     pub fn new(
-        definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
+        definitions: Arc<ResolveCeremonyDefinitionUseCase>,
         instances: Arc<dyn CeremonyInstanceRepositoryPort>,
         clock: Arc<dyn ClockPort>,
     ) -> Self {
@@ -45,11 +44,14 @@ impl ApplyCeremonyTransitionUseCase {
         &self,
         input: ApplyCeremonyTransitionInput,
     ) -> Result<CeremonyInstance, DomainError> {
-        let definition = self
-            .definitions
-            .get(&input.definition_name, &input.definition_version)
-            .await?;
         let mut instance = self.instances.get(&input.instance_id).await?;
+        // Resolved from the instance, never from the request: a session
+        // bound to a published version must be advanced by the very
+        // definition it recorded, and one that is unbound has only the
+        // repository to go to. Reading coordinates off the caller made
+        // a bound session unadvanceable, because publishing writes to
+        // the catalogue and not to the repository.
+        let definition = self.definitions.execute(&instance).await?;
         instance.apply_transition_as(
             &definition,
             &input.role_id,
@@ -71,8 +73,8 @@ mod tests {
 
     use super::*;
     use crate::usecases::ceremony_test_support::{
-        ceremony_id, definition, definition_name, now, role_id, started_instance, step_id, trigger,
-        version, DefinitionRepositoryFake, FixedClock, InstanceRepositoryFake,
+        ceremony_id, definition, definition_resolver, now, role_id, started_instance, step_id,
+        trigger, DefinitionRepositoryFake, FixedClock, InstanceRepositoryFake,
     };
 
     #[tokio::test]
@@ -105,7 +107,7 @@ mod tests {
             .unwrap();
         instances.save(&instance).await.unwrap();
         let usecase = ApplyCeremonyTransitionUseCase::new(
-            definitions,
+            definition_resolver(definitions),
             instances.clone(),
             Arc::new(FixedClock::new(now())),
         );
@@ -113,8 +115,6 @@ mod tests {
         let transitioned = usecase
             .execute(ApplyCeremonyTransitionInput::new(
                 ceremony_id(),
-                definition_name(),
-                version(),
                 role_id(),
                 trigger(),
             ))
@@ -141,7 +141,7 @@ mod tests {
             .await
             .unwrap();
         let usecase = ApplyCeremonyTransitionUseCase::new(
-            definitions,
+            definition_resolver(definitions),
             instances,
             Arc::new(FixedClock::new(now())),
         );
@@ -149,8 +149,6 @@ mod tests {
         let err = usecase
             .execute(ApplyCeremonyTransitionInput::new(
                 ceremony_id(),
-                definition_name(),
-                version(),
                 role_id(),
                 trigger(),
             ))

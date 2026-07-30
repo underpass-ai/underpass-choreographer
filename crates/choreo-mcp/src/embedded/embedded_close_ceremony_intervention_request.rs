@@ -3,7 +3,7 @@ use choreo_core::value_objects::{CeremonyId, CeremonyInterventionId, RoleId};
 use choreo_embedded::EmbeddedChoreographer;
 use serde_json::Value;
 
-use super::embedded_request_fields::{load_instance_definition, required_string};
+use super::embedded_request_fields::required_string;
 
 /// Validated MCP request that closes a dynamic ceremony intervention.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -18,12 +18,9 @@ impl EmbeddedCloseCeremonyInterventionRequest {
         self,
         choreographer: &EmbeddedChoreographer,
     ) -> Result<CeremonyId, String> {
-        let (_, instance) = load_instance_definition(choreographer, &self.ceremony).await?;
         choreographer
             .close_intervention(CloseCeremonyInterventionInput::new(
                 self.ceremony.clone(),
-                instance.definition_name().clone(),
-                instance.definition_version().clone(),
                 self.intervention,
                 self.role,
             ))

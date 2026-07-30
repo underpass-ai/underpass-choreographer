@@ -4,15 +4,13 @@ use std::sync::Arc;
 
 use choreo_core::entities::CeremonyInstance;
 use choreo_core::error::DomainError;
-use choreo_core::ports::{
-    CeremonyDefinitionRepositoryPort, CeremonyEvidenceSourcePort, CeremonyInstanceRepositoryPort,
-    ClockPort,
-};
+use choreo_core::ports::{CeremonyEvidenceSourcePort, CeremonyInstanceRepositoryPort, ClockPort};
 
+use super::resolve_ceremony_definition_use_case::ResolveCeremonyDefinitionUseCase;
 use super::CollectCeremonyEvidenceInput;
 
 pub struct CollectCeremonyEvidenceUseCase {
-    definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
+    definitions: Arc<ResolveCeremonyDefinitionUseCase>,
     instances: Arc<dyn CeremonyInstanceRepositoryPort>,
     evidence_source: Arc<dyn CeremonyEvidenceSourcePort>,
     clock: Arc<dyn ClockPort>,
@@ -29,7 +27,7 @@ impl std::fmt::Debug for CollectCeremonyEvidenceUseCase {
 impl CollectCeremonyEvidenceUseCase {
     #[must_use]
     pub fn new(
-        definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
+        definitions: Arc<ResolveCeremonyDefinitionUseCase>,
         instances: Arc<dyn CeremonyInstanceRepositoryPort>,
         evidence_source: Arc<dyn CeremonyEvidenceSourcePort>,
         clock: Arc<dyn ClockPort>,
@@ -56,11 +54,14 @@ impl CollectCeremonyEvidenceUseCase {
         &self,
         input: CollectCeremonyEvidenceInput,
     ) -> Result<CeremonyInstance, DomainError> {
-        let definition = self
-            .definitions
-            .get(&input.definition_name, &input.definition_version)
-            .await?;
         let mut instance = self.instances.get(&input.instance_id).await?;
+        // Resolved from the instance, never from the request: a session
+        // bound to a published version must be advanced by the very
+        // definition it recorded, and one that is unbound has only the
+        // repository to go to. Reading coordinates off the caller made
+        // a bound session unadvanceable, because publishing writes to
+        // the catalogue and not to the repository.
+        let definition = self.definitions.execute(&instance).await?;
         let request = instance.prepare_evidence_request_as(
             &definition,
             input.intervention_id,
@@ -98,8 +99,8 @@ mod tests {
 
     use super::*;
     use crate::usecases::ceremony_test_support::{
-        ceremony_id, definition, definition_name, now, respondent_role_id, role_id,
-        started_instance, version, DefinitionRepositoryFake, FixedClock, InstanceRepositoryFake,
+        ceremony_id, definition, definition_resolver, now, respondent_role_id, role_id,
+        started_instance, DefinitionRepositoryFake, FixedClock, InstanceRepositoryFake,
     };
 
     #[derive(Debug)]
@@ -165,7 +166,7 @@ mod tests {
             .unwrap();
         instances.save(&instance).await.unwrap();
         let usecase = CollectCeremonyEvidenceUseCase::new(
-            definitions,
+            definition_resolver(definitions),
             instances.clone(),
             Arc::new(EvidenceSourceFake {
                 pack: evidence_pack(),
@@ -176,8 +177,6 @@ mod tests {
         let instance = usecase
             .execute(CollectCeremonyEvidenceInput::new(
                 ceremony_id(),
-                definition_name(),
-                version(),
                 intervention_id.clone(),
                 respondent_role_id(),
                 CeremonyEvidenceSourceId::new("observability").unwrap(),

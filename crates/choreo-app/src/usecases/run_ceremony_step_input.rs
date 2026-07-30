@@ -1,13 +1,10 @@
 use choreo_core::value_objects::{
-    CeremonyId, CeremonyName, CeremonyVersion, DurationMs, IdempotencyKey, LeaseOwnerId, RoleId,
-    StepId,
+    CeremonyId, DurationMs, IdempotencyKey, LeaseOwnerId, RoleId, StepId,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunCeremonyStepInput {
     pub(crate) instance_id: CeremonyId,
-    pub(crate) definition_name: CeremonyName,
-    pub(crate) definition_version: CeremonyVersion,
     pub(crate) role_id: RoleId,
     pub(crate) step_id: StepId,
     pub(crate) lease_owner_id: LeaseOwnerId,
@@ -19,8 +16,6 @@ impl RunCeremonyStepInput {
     #[must_use]
     pub fn new(
         instance_id: CeremonyId,
-        definition_name: CeremonyName,
-        definition_version: CeremonyVersion,
         role_id: RoleId,
         step_id: StepId,
         lease_owner_id: LeaseOwnerId,
@@ -29,8 +24,6 @@ impl RunCeremonyStepInput {
     ) -> Self {
         Self {
             instance_id,
-            definition_name,
-            definition_version,
             role_id,
             step_id,
             lease_owner_id,
@@ -42,16 +35,6 @@ impl RunCeremonyStepInput {
     #[must_use]
     pub fn instance_id(&self) -> &CeremonyId {
         &self.instance_id
-    }
-
-    #[must_use]
-    pub fn definition_name(&self) -> &CeremonyName {
-        &self.definition_name
-    }
-
-    #[must_use]
-    pub fn definition_version(&self) -> &CeremonyVersion {
-        &self.definition_version
     }
 
     #[must_use]

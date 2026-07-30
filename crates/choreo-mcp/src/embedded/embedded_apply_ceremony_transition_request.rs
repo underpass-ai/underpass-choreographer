@@ -17,7 +17,7 @@ impl EmbeddedApplyCeremonyTransitionRequest {
         self,
         choreographer: &EmbeddedChoreographer,
     ) -> Result<CeremonyId, String> {
-        let (definition, instance) =
+        let (definition, _instance) =
             load_instance_definition(choreographer, &self.ceremony_id).await?;
         let role_id = definition
             .role_id_for_transition(&self.trigger)
@@ -25,8 +25,6 @@ impl EmbeddedApplyCeremonyTransitionRequest {
         choreographer
             .apply_transition(ApplyCeremonyTransitionInput::new(
                 self.ceremony_id.clone(),
-                instance.definition_name().clone(),
-                instance.definition_version().clone(),
                 role_id,
                 self.trigger,
             ))

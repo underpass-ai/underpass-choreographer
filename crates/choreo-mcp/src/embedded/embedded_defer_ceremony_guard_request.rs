@@ -3,7 +3,7 @@ use choreo_core::value_objects::{CeremonyGuardDeferralContent, CeremonyId, Guard
 use choreo_embedded::EmbeddedChoreographer;
 use serde_json::Value;
 
-use super::embedded_request_fields::{load_instance_definition, required_string, required_strings};
+use super::embedded_request_fields::{required_string, required_strings};
 
 /// Validated MCP request for one explicit human guard deferral.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -18,12 +18,9 @@ impl EmbeddedDeferCeremonyGuardRequest {
         self,
         choreographer: &EmbeddedChoreographer,
     ) -> Result<CeremonyId, String> {
-        let (_, instance) = load_instance_definition(choreographer, &self.ceremony_id).await?;
         choreographer
             .defer_guard(DeferCeremonyGuardInput::new(
                 self.ceremony_id.clone(),
-                instance.definition_name().clone(),
-                instance.definition_version().clone(),
                 self.guard_name,
                 self.content,
             ))

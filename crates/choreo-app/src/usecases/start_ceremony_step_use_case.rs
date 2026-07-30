@@ -3,15 +3,14 @@
 use std::sync::Arc;
 
 use choreo_core::error::DomainError;
-use choreo_core::ports::{
-    CeremonyDefinitionRepositoryPort, CeremonyInstanceRepositoryPort, ClockPort,
-};
+use choreo_core::ports::{CeremonyInstanceRepositoryPort, ClockPort};
 use choreo_core::value_objects::{StepAttempt, StepLease};
 
+use super::resolve_ceremony_definition_use_case::ResolveCeremonyDefinitionUseCase;
 use super::start_ceremony_step_input::StartCeremonyStepInput;
 
 pub struct StartCeremonyStepUseCase {
-    definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
+    definitions: Arc<ResolveCeremonyDefinitionUseCase>,
     instances: Arc<dyn CeremonyInstanceRepositoryPort>,
     clock: Arc<dyn ClockPort>,
 }
@@ -25,7 +24,7 @@ impl std::fmt::Debug for StartCeremonyStepUseCase {
 impl StartCeremonyStepUseCase {
     #[must_use]
     pub fn new(
-        definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
+        definitions: Arc<ResolveCeremonyDefinitionUseCase>,
         instances: Arc<dyn CeremonyInstanceRepositoryPort>,
         clock: Arc<dyn ClockPort>,
     ) -> Self {
@@ -42,11 +41,14 @@ impl StartCeremonyStepUseCase {
         fields(ceremony_id = %input.instance_id, step_id = %input.step_id)
     )]
     pub async fn execute(&self, input: StartCeremonyStepInput) -> Result<StepAttempt, DomainError> {
-        let definition = self
-            .definitions
-            .get(&input.definition_name, &input.definition_version)
-            .await?;
         let mut instance = self.instances.get(&input.instance_id).await?;
+        // Resolved from the instance, never from the request: a session
+        // bound to a published version must be advanced by the very
+        // definition it recorded, and one that is unbound has only the
+        // repository to go to. Reading coordinates off the caller made
+        // a bound session unadvanceable, because publishing writes to
+        // the catalogue and not to the repository.
+        let definition = self.definitions.execute(&instance).await?;
         let now = self.clock.now();
         let lease = StepLease::acquire(
             input.lease_owner_id,
@@ -72,8 +74,8 @@ mod tests {
 
     use super::*;
     use crate::usecases::ceremony_test_support::{
-        ceremony_id, definition, definition_name, idempotency_key, lease_owner, lease_ttl, now,
-        role_id, started_instance, step_id, version, DefinitionRepositoryFake, FixedClock,
+        ceremony_id, definition, definition_resolver, idempotency_key, lease_owner, lease_ttl, now,
+        role_id, started_instance, step_id, DefinitionRepositoryFake, FixedClock,
         InstanceRepositoryFake,
     };
 
@@ -87,7 +89,7 @@ mod tests {
             .await
             .unwrap();
         let usecase = StartCeremonyStepUseCase::new(
-            definitions,
+            definition_resolver(definitions),
             instances.clone(),
             Arc::new(FixedClock::new(now())),
         );
@@ -95,8 +97,6 @@ mod tests {
         let attempt = usecase
             .execute(StartCeremonyStepInput::new(
                 ceremony_id(),
-                definition_name(),
-                version(),
                 role_id(),
                 step_id(),
                 lease_owner(),
@@ -122,13 +122,14 @@ mod tests {
             .save(&started_instance(&definition))
             .await
             .unwrap();
-        let usecase =
-            StartCeremonyStepUseCase::new(definitions, instances, Arc::new(FixedClock::new(now())));
+        let usecase = StartCeremonyStepUseCase::new(
+            definition_resolver(definitions),
+            instances,
+            Arc::new(FixedClock::new(now())),
+        );
         usecase
             .execute(StartCeremonyStepInput::new(
                 ceremony_id(),
-                definition_name(),
-                version(),
                 role_id(),
                 step_id(),
                 lease_owner(),
@@ -141,8 +142,6 @@ mod tests {
         let err = usecase
             .execute(StartCeremonyStepInput::new(
                 ceremony_id(),
-                definition_name(),
-                version(),
                 role_id(),
                 step_id(),
                 lease_owner(),
@@ -165,15 +164,13 @@ mod tests {
             .await
             .unwrap();
         let first = StartCeremonyStepUseCase::new(
-            definitions.clone(),
+            definition_resolver(definitions.clone()),
             instances.clone(),
             Arc::new(FixedClock::new(now())),
         );
         first
             .execute(StartCeremonyStepInput::new(
                 ceremony_id(),
-                definition_name(),
-                version(),
                 role_id(),
                 step_id(),
                 lease_owner(),
@@ -183,7 +180,7 @@ mod tests {
             .await
             .unwrap();
         let second = StartCeremonyStepUseCase::new(
-            definitions,
+            definition_resolver(definitions),
             instances,
             Arc::new(FixedClock::new(now() + Duration::seconds(61))),
         );
@@ -191,8 +188,6 @@ mod tests {
         let attempt = second
             .execute(StartCeremonyStepInput::new(
                 ceremony_id(),
-                definition_name(),
-                version(),
                 role_id(),
                 step_id(),
                 lease_owner(),

@@ -213,7 +213,7 @@ async fn a_step_that_belongs_to_another_state_is_refused() {
 }
 
 #[tokio::test]
-async fn a_published_ceremony_starts_bound_to_the_digest_it_runs() {
+async fn a_published_ceremony_is_bound_to_its_digest_and_can_be_advanced() {
     let fixture = GrpcFixture::start().await;
     let definition = CeremonyDefinitionYaml::parse_str(EDITORIAL_MEETING_CEREMONY)
         .expect("the fixture ceremony should parse");
@@ -250,11 +250,28 @@ async fn a_published_ceremony_starts_bound_to_the_digest_it_runs() {
     assert_eq!(started.current_state, "OPENING");
     assert_eq!(started.next_step_id, "open_room");
 
-    // Advancing it is deliberately not asserted here. A published
-    // definition is written to the catalogue and nowhere else, while
-    // the step and transition use cases resolve from the definition
-    // repository, so a bound session can be started and then not
-    // moved. That is an engine defect, not a wiring one — it fails the
-    // same way in the in-process distribution — and it is fixed where
-    // it lives rather than papered over here.
+    // And it is advanced by exactly the same calls as any other. The
+    // definition it runs lives only in the catalogue, so this only
+    // works because the step resolves from the session's binding
+    // rather than from the definition repository.
+    let after_step = client
+        .run_ceremony_step(RunCeremonyStepRequest {
+            ceremony_id: ceremony_id.to_owned(),
+            step_id: "open_room".to_owned(),
+            lease_owner_id: "integration-test".to_owned(),
+            idempotency_key: "integration-published-open-room".to_owned(),
+            lease_ttl_ms: 60_000,
+        })
+        .await
+        .expect("a published ceremony must be advanceable")
+        .into_inner()
+        .instance
+        .expect("a step that ran must come back with its session");
+
+    assert_eq!(
+        after_step.bound_definition_digest,
+        digest.to_string(),
+        "advancing must not quietly unbind the session"
+    );
+    assert_eq!(read(&mut client, ceremony_id).await, after_step);
 }

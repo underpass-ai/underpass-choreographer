@@ -151,8 +151,6 @@ async fn host_can_drive_a_human_guard_incrementally() {
     let transitioned = embedded
         .apply_transition(ApplyCeremonyTransitionInput::new(
             ceremony_id.clone(),
-            definition.name().clone(),
-            definition.version().clone(),
             RoleId::new("APPROVER").unwrap(),
             TransitionTrigger::new("approve").unwrap(),
         ))

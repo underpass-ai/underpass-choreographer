@@ -26,7 +26,7 @@ impl EmbeddedRunCeremonyStepRequest {
         self,
         choreographer: &EmbeddedChoreographer,
     ) -> Result<CeremonyId, String> {
-        let (definition, instance) =
+        let (definition, _instance) =
             load_instance_definition(choreographer, &self.ceremony_id).await?;
         let role_id = definition
             .role_id_for_step(&self.step_id)
@@ -35,8 +35,6 @@ impl EmbeddedRunCeremonyStepRequest {
         choreographer
             .run_step(RunCeremonyStepInput::new(
                 self.ceremony_id.clone(),
-                instance.definition_name().clone(),
-                instance.definition_version().clone(),
                 role_id,
                 self.step_id,
                 self.lease_owner_id,

@@ -4,19 +4,19 @@ use std::sync::Arc;
 
 use choreo_core::error::DomainError;
 use choreo_core::ports::{
-    CeremonyDefinitionRepositoryPort, CeremonyInstanceRepositoryPort, CeremonyStepHandlerPort,
-    CeremonyStepHandlerRequest, CeremonyTranscriptStorePort, ClockPort,
-    NoopCeremonyTranscriptStore,
+    CeremonyInstanceRepositoryPort, CeremonyStepHandlerPort, CeremonyStepHandlerRequest,
+    CeremonyTranscriptStorePort, ClockPort, NoopCeremonyTranscriptStore,
 };
 use choreo_core::value_objects::{
     CeremonyStepContribution, StepErrorMessage, StepLease, StepResult,
 };
 
+use super::resolve_ceremony_definition_use_case::ResolveCeremonyDefinitionUseCase;
 use super::run_ceremony_step_input::RunCeremonyStepInput;
 use super::run_ceremony_step_output::RunCeremonyStepOutput;
 
 pub struct RunCeremonyStepUseCase {
-    definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
+    definitions: Arc<ResolveCeremonyDefinitionUseCase>,
     instances: Arc<dyn CeremonyInstanceRepositoryPort>,
     handler: Arc<dyn CeremonyStepHandlerPort>,
     transcript_store: Arc<dyn CeremonyTranscriptStorePort>,
@@ -32,7 +32,7 @@ impl std::fmt::Debug for RunCeremonyStepUseCase {
 impl RunCeremonyStepUseCase {
     #[must_use]
     pub fn new(
-        definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
+        definitions: Arc<ResolveCeremonyDefinitionUseCase>,
         instances: Arc<dyn CeremonyInstanceRepositoryPort>,
         handler: Arc<dyn CeremonyStepHandlerPort>,
         clock: Arc<dyn ClockPort>,
@@ -67,11 +67,14 @@ impl RunCeremonyStepUseCase {
         &self,
         input: RunCeremonyStepInput,
     ) -> Result<RunCeremonyStepOutput, DomainError> {
-        let definition = self
-            .definitions
-            .get(&input.definition_name, &input.definition_version)
-            .await?;
         let mut instance = self.instances.get(&input.instance_id).await?;
+        // Resolved from the instance, never from the request: a session
+        // bound to a published version must be advanced by the very
+        // definition it recorded, and one that is unbound has only the
+        // repository to go to. Reading coordinates off the caller made
+        // a bound session unadvanceable, because publishing writes to
+        // the catalogue and not to the repository.
+        let definition = self.definitions.execute(&instance).await?;
         let step = definition
             .step(&input.step_id)
             .cloned()
@@ -155,10 +158,62 @@ mod tests {
 
     use super::*;
     use crate::usecases::ceremony_test_support::{
-        ceremony_id, definition, definition_name, idempotency_key, lease_owner, lease_ttl, now,
-        role_id, started_instance, step_id, version, ContextStoreFake, DefinitionRepositoryFake,
-        FixedClock, InstanceRepositoryFake, StepHandlerFake,
+        approval_definition, ceremony_id, definition, definition_resolver, idempotency_key,
+        lease_owner, lease_ttl, now, resolver_with, role_id, started_instance, step_id,
+        ContextStoreFake, DefinitionRepositoryFake, FixedClock, InstanceRepositoryFake,
+        PublicationsFake, StepHandlerFake,
     };
+
+    /// The regression this whole change exists for. Publishing writes
+    /// to the catalogue and nowhere else, so a session bound to a
+    /// published version used to be startable and then unadvanceable:
+    /// the step resolved its definition from the repository, which had
+    /// never heard of it. Here the repository deliberately holds a
+    /// different ceremony, so the step can only run if resolution
+    /// followed the binding.
+    #[tokio::test]
+    async fn a_bound_session_runs_the_definition_it_was_published_from() {
+        let publications = Arc::new(PublicationsFake::default());
+        let published = publications.seed(definition()).await;
+        let elsewhere = Arc::new(DefinitionRepositoryFake::new(approval_definition()));
+        let instances = Arc::new(InstanceRepositoryFake::default());
+        instances
+            .save(&choreo_core::entities::CeremonyInstance::start_bound(
+                ceremony_id(),
+                &published,
+                choreo_core::value_objects::CeremonyContext::empty(),
+                now(),
+            ))
+            .await
+            .unwrap();
+        let usecase = RunCeremonyStepUseCase::new(
+            resolver_with(elsewhere, publications),
+            instances.clone(),
+            Arc::new(StepHandlerFake::succeeding(
+                StepResult::completed(StepOutput::empty()).unwrap(),
+            )),
+            Arc::new(FixedClock::new(now())),
+        );
+
+        let output = usecase
+            .execute(RunCeremonyStepInput::new(
+                ceremony_id(),
+                role_id(),
+                step_id(),
+                lease_owner(),
+                idempotency_key("bound-1"),
+                lease_ttl(),
+            ))
+            .await
+            .expect("a bound session must be advanceable by what it is bound to");
+
+        assert_eq!(output.result().status(), StepStatus::Completed);
+        assert_eq!(
+            output.instance().bound_definition(),
+            Some(published.digest()),
+            "advancing must not quietly unbind the session"
+        );
+    }
 
     #[tokio::test]
     async fn invokes_handler_and_persists_completed_result() {
@@ -174,7 +229,7 @@ mod tests {
         ));
         let transcript_store = Arc::new(ContextStoreFake::default());
         let usecase = RunCeremonyStepUseCase::new(
-            definitions,
+            definition_resolver(definitions),
             instances.clone(),
             handler.clone(),
             Arc::new(FixedClock::new(now())),
@@ -184,8 +239,6 @@ mod tests {
         let output = usecase
             .execute(RunCeremonyStepInput::new(
                 ceremony_id(),
-                definition_name(),
-                version(),
                 role_id(),
                 step_id(),
                 lease_owner(),
@@ -231,7 +284,7 @@ mod tests {
             reason: "handler rejected step",
         }));
         let usecase = RunCeremonyStepUseCase::new(
-            definitions,
+            definition_resolver(definitions),
             instances.clone(),
             handler,
             Arc::new(FixedClock::new(now())),
@@ -240,8 +293,6 @@ mod tests {
         let output = usecase
             .execute(RunCeremonyStepInput::new(
                 ceremony_id(),
-                definition_name(),
-                version(),
                 role_id(),
                 step_id(),
                 lease_owner(),
@@ -283,7 +334,7 @@ mod tests {
             StepResult::completed(StepOutput::empty()).unwrap(),
         ));
         let usecase = RunCeremonyStepUseCase::new(
-            definitions,
+            definition_resolver(definitions),
             instances,
             handler.clone(),
             Arc::new(FixedClock::new(now())),
@@ -292,8 +343,6 @@ mod tests {
         let err = usecase
             .execute(RunCeremonyStepInput::new(
                 ceremony_id(),
-                definition_name(),
-                version(),
                 role_id(),
                 step_id(),
                 lease_owner(),

@@ -60,10 +60,10 @@ pub fn start_published_ceremony_input_from_proto(
     ))
 }
 
-/// The instance supplies the definition coordinates rather than the
-/// request: what an instance runs is settled when it starts, and a
-/// caller must not be able to point a running session at another
-/// definition by naming one.
+/// The session is named, never the definition. What an instance runs
+/// is settled when it starts — and resolved from the instance by the
+/// use case — so there is nothing here a caller could use to point a
+/// running session at a definition of their choosing.
 pub fn run_ceremony_step_input_from_proto(
     request: pb::RunCeremonyStepRequest,
     definition: &CeremonyDefinition,
@@ -89,8 +89,6 @@ pub fn run_ceremony_step_input_from_proto(
 
     Ok(RunCeremonyStepInput::new(
         instance.id().clone(),
-        instance.definition_name().clone(),
-        instance.definition_version().clone(),
         role_id,
         step_id,
         lease_owner_id,
@@ -108,8 +106,6 @@ pub fn apply_ceremony_transition_input_from_proto(
     let role_id = definition.role_id_for_transition(&trigger)?;
     Ok(ApplyCeremonyTransitionInput::new(
         instance.id().clone(),
-        instance.definition_name().clone(),
-        instance.definition_version().clone(),
         role_id,
         trigger,
     ))
@@ -199,7 +195,7 @@ mod tests {
     }
 
     #[test]
-    fn definition_coordinates_come_from_the_instance_not_the_request() {
+    fn the_session_acted_on_is_the_one_loaded_not_the_one_named() {
         let definition = definition();
         let instance = started_instance(&definition);
 
@@ -216,7 +212,5 @@ mod tests {
         .unwrap();
 
         assert_eq!(input.instance_id(), instance.id());
-        assert_eq!(input.definition_name(), instance.definition_name());
-        assert_eq!(input.definition_version(), instance.definition_version());
     }
 }

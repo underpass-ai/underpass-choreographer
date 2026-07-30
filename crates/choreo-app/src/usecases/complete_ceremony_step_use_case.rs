@@ -4,14 +4,13 @@ use std::sync::Arc;
 
 use choreo_core::entities::CeremonyInstance;
 use choreo_core::error::DomainError;
-use choreo_core::ports::{
-    CeremonyDefinitionRepositoryPort, CeremonyInstanceRepositoryPort, ClockPort,
-};
+use choreo_core::ports::{CeremonyInstanceRepositoryPort, ClockPort};
 
 use super::complete_ceremony_step_input::CompleteCeremonyStepInput;
+use super::resolve_ceremony_definition_use_case::ResolveCeremonyDefinitionUseCase;
 
 pub struct CompleteCeremonyStepUseCase {
-    definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
+    definitions: Arc<ResolveCeremonyDefinitionUseCase>,
     instances: Arc<dyn CeremonyInstanceRepositoryPort>,
     clock: Arc<dyn ClockPort>,
 }
@@ -25,7 +24,7 @@ impl std::fmt::Debug for CompleteCeremonyStepUseCase {
 impl CompleteCeremonyStepUseCase {
     #[must_use]
     pub fn new(
-        definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
+        definitions: Arc<ResolveCeremonyDefinitionUseCase>,
         instances: Arc<dyn CeremonyInstanceRepositoryPort>,
         clock: Arc<dyn ClockPort>,
     ) -> Self {
@@ -45,11 +44,14 @@ impl CompleteCeremonyStepUseCase {
         &self,
         input: CompleteCeremonyStepInput,
     ) -> Result<CeremonyInstance, DomainError> {
-        let definition = self
-            .definitions
-            .get(&input.definition_name, &input.definition_version)
-            .await?;
         let mut instance = self.instances.get(&input.instance_id).await?;
+        // Resolved from the instance, never from the request: a session
+        // bound to a published version must be advanced by the very
+        // definition it recorded, and one that is unbound has only the
+        // repository to go to. Reading coordinates off the caller made
+        // a bound session unadvanceable, because publishing writes to
+        // the catalogue and not to the repository.
+        let definition = self.definitions.execute(&instance).await?;
         instance.apply_step_result(&definition, &input.step_id, input.result, self.clock.now())?;
         self.instances.save(&instance).await?;
         Ok(instance)
@@ -65,9 +67,8 @@ mod tests {
 
     use super::*;
     use crate::usecases::ceremony_test_support::{
-        ceremony_id, definition, definition_name, idempotency_key, lease_owner, now, role_id,
-        started_instance, step_id, version, DefinitionRepositoryFake, FixedClock,
-        InstanceRepositoryFake,
+        ceremony_id, definition, definition_resolver, idempotency_key, lease_owner, now, role_id,
+        started_instance, step_id, DefinitionRepositoryFake, FixedClock, InstanceRepositoryFake,
     };
 
     #[tokio::test]
@@ -88,7 +89,7 @@ mod tests {
             .unwrap();
         instances.save(&instance).await.unwrap();
         let usecase = CompleteCeremonyStepUseCase::new(
-            definitions,
+            definition_resolver(definitions),
             instances.clone(),
             Arc::new(FixedClock::new(now())),
         );
@@ -96,8 +97,6 @@ mod tests {
         let completed = usecase
             .execute(CompleteCeremonyStepInput::new(
                 ceremony_id(),
-                definition_name(),
-                version(),
                 step_id(),
                 StepResult::completed(StepOutput::empty()).unwrap(),
             ))

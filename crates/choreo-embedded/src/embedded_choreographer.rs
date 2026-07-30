@@ -186,9 +186,19 @@ impl EmbeddedChoreographer {
         &self,
         instance: &CeremonyInstance,
     ) -> Result<CeremonyDefinition, DomainError> {
-        ResolveCeremonyDefinitionUseCase::new(self.definitions.clone(), self.publications.clone())
-            .execute(instance)
-            .await
+        self.resolve_definition().execute(instance).await
+    }
+
+    /// How every verb that advances a session finds what it is running.
+    /// A bound session resolves from the catalogue and is checked
+    /// against the digest it recorded; an unbound one has only the
+    /// repository. Handing this to the use cases is what lets a
+    /// published session be advanced at all.
+    fn resolve_definition(&self) -> Arc<ResolveCeremonyDefinitionUseCase> {
+        Arc::new(ResolveCeremonyDefinitionUseCase::new(
+            self.definitions.clone(),
+            self.publications.clone(),
+        ))
     }
 
     /// Start an instance bound to a published definition's digest.
@@ -229,7 +239,7 @@ impl EmbeddedChoreographer {
         input: DeferCeremonyGuardInput,
     ) -> Result<CeremonyInstance, DomainError> {
         DeferCeremonyGuardUseCase::new(
-            self.definitions.clone(),
+            self.resolve_definition(),
             self.instances.clone(),
             self.clock.clone(),
         )
@@ -242,7 +252,7 @@ impl EmbeddedChoreographer {
         input: RequestCeremonyInterventionInput,
     ) -> Result<CeremonyInstance, DomainError> {
         RequestCeremonyInterventionUseCase::new(
-            self.definitions.clone(),
+            self.resolve_definition(),
             self.instances.clone(),
             self.clock.clone(),
         )
@@ -255,7 +265,7 @@ impl EmbeddedChoreographer {
         input: RespondToCeremonyInterventionInput,
     ) -> Result<CeremonyInstance, DomainError> {
         RespondToCeremonyInterventionUseCase::new(
-            self.definitions.clone(),
+            self.resolve_definition(),
             self.instances.clone(),
             self.clock.clone(),
         )
@@ -268,7 +278,7 @@ impl EmbeddedChoreographer {
         input: CollectCeremonyEvidenceInput,
     ) -> Result<CeremonyInstance, DomainError> {
         CollectCeremonyEvidenceUseCase::new(
-            self.definitions.clone(),
+            self.resolve_definition(),
             self.instances.clone(),
             self.evidence_source.clone(),
             self.clock.clone(),
@@ -282,7 +292,7 @@ impl EmbeddedChoreographer {
         input: CloseCeremonyInterventionInput,
     ) -> Result<CeremonyInstance, DomainError> {
         CloseCeremonyInterventionUseCase::new(
-            self.definitions.clone(),
+            self.resolve_definition(),
             self.instances.clone(),
             self.clock.clone(),
         )
@@ -295,7 +305,7 @@ impl EmbeddedChoreographer {
         input: StartCeremonyStepInput,
     ) -> Result<StepAttempt, DomainError> {
         StartCeremonyStepUseCase::new(
-            self.definitions.clone(),
+            self.resolve_definition(),
             self.instances.clone(),
             self.clock.clone(),
         )
@@ -308,7 +318,7 @@ impl EmbeddedChoreographer {
         input: RunCeremonyStepInput,
     ) -> Result<RunCeremonyStepOutput, DomainError> {
         RunCeremonyStepUseCase::new(
-            self.definitions.clone(),
+            self.resolve_definition(),
             self.instances.clone(),
             self.step_handler.clone(),
             self.clock.clone(),
@@ -323,7 +333,7 @@ impl EmbeddedChoreographer {
         input: CompleteCeremonyStepInput,
     ) -> Result<CeremonyInstance, DomainError> {
         CompleteCeremonyStepUseCase::new(
-            self.definitions.clone(),
+            self.resolve_definition(),
             self.instances.clone(),
             self.clock.clone(),
         )
@@ -336,7 +346,7 @@ impl EmbeddedChoreographer {
         input: ApplyCeremonyTransitionInput,
     ) -> Result<CeremonyInstance, DomainError> {
         ApplyCeremonyTransitionUseCase::new(
-            self.definitions.clone(),
+            self.resolve_definition(),
             self.instances.clone(),
             self.clock.clone(),
         )

@@ -4,14 +4,13 @@ use std::sync::Arc;
 
 use choreo_core::entities::CeremonyInstance;
 use choreo_core::error::DomainError;
-use choreo_core::ports::{
-    CeremonyDefinitionRepositoryPort, CeremonyInstanceRepositoryPort, ClockPort,
-};
+use choreo_core::ports::{CeremonyInstanceRepositoryPort, ClockPort};
 
+use super::resolve_ceremony_definition_use_case::ResolveCeremonyDefinitionUseCase;
 use super::DeferCeremonyGuardInput;
 
 pub struct DeferCeremonyGuardUseCase {
-    definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
+    definitions: Arc<ResolveCeremonyDefinitionUseCase>,
     instances: Arc<dyn CeremonyInstanceRepositoryPort>,
     clock: Arc<dyn ClockPort>,
 }
@@ -25,7 +24,7 @@ impl std::fmt::Debug for DeferCeremonyGuardUseCase {
 impl DeferCeremonyGuardUseCase {
     #[must_use]
     pub fn new(
-        definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
+        definitions: Arc<ResolveCeremonyDefinitionUseCase>,
         instances: Arc<dyn CeremonyInstanceRepositoryPort>,
         clock: Arc<dyn ClockPort>,
     ) -> Self {
@@ -45,11 +44,14 @@ impl DeferCeremonyGuardUseCase {
         &self,
         input: DeferCeremonyGuardInput,
     ) -> Result<CeremonyInstance, DomainError> {
-        let definition = self
-            .definitions
-            .get(&input.definition_name, &input.definition_version)
-            .await?;
         let mut instance = self.instances.get(&input.instance_id).await?;
+        // Resolved from the instance, never from the request: a session
+        // bound to a published version must be advanced by the very
+        // definition it recorded, and one that is unbound has only the
+        // repository to go to. Reading coordinates off the caller made
+        // a bound session unadvanceable, because publishing writes to
+        // the catalogue and not to the repository.
+        let definition = self.definitions.execute(&instance).await?;
         instance.defer_guard(
             &definition,
             input.guard_name,
@@ -68,7 +70,7 @@ mod tests {
 
     use super::*;
     use crate::usecases::ceremony_test_support::{
-        approval_definition, approval_definition_name, ceremony_id, now, started_instance, version,
+        approval_definition, ceremony_id, definition_resolver, now, started_instance,
         DefinitionRepositoryFake, FixedClock, InstanceRepositoryFake,
     };
 
@@ -82,7 +84,7 @@ mod tests {
             .await
             .unwrap();
         let usecase = DeferCeremonyGuardUseCase::new(
-            definitions,
+            definition_resolver(definitions),
             instances.clone(),
             Arc::new(FixedClock::new(now())),
         );
@@ -91,8 +93,6 @@ mod tests {
         let deferred = usecase
             .execute(DeferCeremonyGuardInput::new(
                 ceremony_id(),
-                approval_definition_name(),
-                version(),
                 guard_name.clone(),
                 CeremonyGuardDeferralContent::new(
                     "I do not know.",

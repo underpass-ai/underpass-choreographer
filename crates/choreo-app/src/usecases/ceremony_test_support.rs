@@ -1,11 +1,15 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use async_trait::async_trait;
-use choreo_core::entities::{CeremonyDefinition, CeremonyInstance};
+use choreo_core::entities::{
+    CeremonyDefinition, CeremonyInstance, PublicationOutcome, PublishedCeremonyDefinition,
+};
 use choreo_core::error::DomainError;
 use choreo_core::ports::{
-    CeremonyDefinitionRepositoryPort, CeremonyInstanceRepositoryPort, CeremonyStepHandlerPort,
-    CeremonyStepHandlerRequest, CeremonyTranscriptStorePort, ClockPort,
+    CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort,
+    CeremonyInstanceRepositoryPort, CeremonyStepHandlerPort, CeremonyStepHandlerRequest,
+    CeremonyTranscriptStorePort, ClockPort,
 };
 use choreo_core::value_objects::{
     CeremonyContext, CeremonyGuard, CeremonyId, CeremonyName, CeremonyRole, CeremonyState,
@@ -17,6 +21,8 @@ use choreo_core::value_objects::{
 use time::macros::datetime;
 use time::OffsetDateTime;
 use tokio::sync::RwLock;
+
+use super::resolve_ceremony_definition_use_case::ResolveCeremonyDefinitionUseCase;
 
 #[derive(Debug, Clone, Copy)]
 pub(super) struct FixedClock {
@@ -415,4 +421,83 @@ pub(super) fn approval_definition() -> CeremonyDefinition {
 
 pub(super) fn started_instance(definition: &CeremonyDefinition) -> CeremonyInstance {
     CeremonyInstance::start(ceremony_id(), definition, CeremonyContext::empty(), now())
+}
+
+/// The published catalogue. Empty by default, because most tests run
+/// an unbound session; seed it when the point of the test is a session
+/// that is bound to what it runs.
+#[derive(Debug, Default)]
+pub(super) struct PublicationsFake {
+    published: RwLock<BTreeMap<(String, String), PublishedCeremonyDefinition>>,
+}
+
+impl PublicationsFake {
+    pub(super) async fn seed(&self, definition: CeremonyDefinition) -> PublishedCeremonyDefinition {
+        let sealed = PublishedCeremonyDefinition::seal(definition).unwrap();
+        self.published.write().await.insert(
+            (
+                sealed.name().as_str().to_owned(),
+                sealed.version().as_str().to_owned(),
+            ),
+            sealed.clone(),
+        );
+        sealed
+    }
+}
+
+#[async_trait]
+impl CeremonyDefinitionPublicationPort for PublicationsFake {
+    async fn publish(
+        &self,
+        definition: PublishedCeremonyDefinition,
+    ) -> Result<PublicationOutcome, DomainError> {
+        let key = (
+            definition.name().as_str().to_owned(),
+            definition.version().as_str().to_owned(),
+        );
+        let mut published = self.published.write().await;
+        if let Some(occupant) = published.get(&key) {
+            return Ok(PublicationOutcome::VersionOccupied {
+                published: occupant.digest(),
+                offered: definition.digest(),
+            });
+        }
+        published.insert(key, definition.clone());
+        Ok(PublicationOutcome::Published(definition))
+    }
+
+    async fn published(
+        &self,
+        name: &CeremonyName,
+        version: &CeremonyVersion,
+    ) -> Result<Option<PublishedCeremonyDefinition>, DomainError> {
+        Ok(self
+            .published
+            .read()
+            .await
+            .get(&(name.as_str().to_owned(), version.as_str().to_owned()))
+            .cloned())
+    }
+
+    async fn catalogue(&self) -> Result<Vec<PublishedCeremonyDefinition>, DomainError> {
+        Ok(self.published.read().await.values().cloned().collect())
+    }
+}
+
+/// The resolver every use case that advances a session now takes. Most
+/// tests want the plain repository behind it and nothing published.
+pub(super) fn definition_resolver(
+    definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
+) -> Arc<ResolveCeremonyDefinitionUseCase> {
+    resolver_with(definitions, Arc::new(PublicationsFake::default()))
+}
+
+pub(super) fn resolver_with(
+    definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
+    publications: Arc<dyn CeremonyDefinitionPublicationPort>,
+) -> Arc<ResolveCeremonyDefinitionUseCase> {
+    Arc::new(ResolveCeremonyDefinitionUseCase::new(
+        definitions,
+        publications,
+    ))
 }

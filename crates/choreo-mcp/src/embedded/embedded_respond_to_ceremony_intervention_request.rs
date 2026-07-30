@@ -5,9 +5,7 @@ use choreo_core::value_objects::{
 use choreo_embedded::EmbeddedChoreographer;
 use serde_json::Value;
 
-use super::embedded_request_fields::{
-    load_instance_definition, optional_attributes, required_string,
-};
+use super::embedded_request_fields::{optional_attributes, required_string};
 
 /// Validated MCP request that records one role's intervention response.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -23,12 +21,9 @@ impl EmbeddedRespondToCeremonyInterventionRequest {
         self,
         choreographer: &EmbeddedChoreographer,
     ) -> Result<CeremonyId, String> {
-        let (_, instance) = load_instance_definition(choreographer, &self.ceremony_id).await?;
         choreographer
             .respond_to_intervention(RespondToCeremonyInterventionInput::new(
                 self.ceremony_id.clone(),
-                instance.definition_name().clone(),
-                instance.definition_version().clone(),
                 self.intervention_id,
                 self.role_id,
                 self.content,

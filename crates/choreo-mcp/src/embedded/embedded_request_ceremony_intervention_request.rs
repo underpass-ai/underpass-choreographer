@@ -8,8 +8,7 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use super::embedded_request_fields::{
-    load_instance_definition, optional_attributes, optional_role_ids, optional_string,
-    required_string,
+    optional_attributes, optional_role_ids, optional_string, required_string,
 };
 
 /// Validated MCP request that opens a dynamic ceremony intervention.
@@ -29,11 +28,8 @@ impl EmbeddedRequestCeremonyInterventionRequest {
         self,
         choreographer: &EmbeddedChoreographer,
     ) -> Result<CeremonyId, String> {
-        let (_, instance) = load_instance_definition(choreographer, &self.ceremony_id).await?;
         let mut input = RequestCeremonyInterventionInput::new(
             self.ceremony_id.clone(),
-            instance.definition_name().clone(),
-            instance.definition_version().clone(),
             self.intervention_id,
             self.role_id,
             self.kind,

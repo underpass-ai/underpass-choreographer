@@ -278,6 +278,13 @@ pub async fn compose() -> Result<Application, ComposeError> {
         )
         .with_metrics(metrics_recorder.clone()),
     );
+    // How every verb that advances a session finds what it is running:
+    // from the catalogue when the session is bound to a published
+    // version, from the repository when it is not.
+    let resolve_ceremony_definition = Arc::new(ResolveCeremonyDefinitionUseCase::new(
+        ceremony_definitions.clone(),
+        ceremony_publications.clone(),
+    ));
     // Advancing a session one move at a time. The transcript store is
     // shared with the whole-run use case above: what a step said has
     // to be there for the next step whichever way the run was driven.
@@ -293,7 +300,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
     ));
     let run_ceremony_step = Arc::new(
         RunCeremonyStepUseCase::new(
-            ceremony_definitions.clone(),
+            resolve_ceremony_definition.clone(),
             ceremony_instances.clone(),
             ceremony_step_handler,
             clock.clone(),
@@ -301,7 +308,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         .with_transcript_store(ceremony_transcript_store),
     );
     let apply_ceremony_transition = Arc::new(ApplyCeremonyTransitionUseCase::new(
-        ceremony_definitions.clone(),
+        resolve_ceremony_definition.clone(),
         ceremony_instances.clone(),
         clock.clone(),
     ));
@@ -350,10 +357,6 @@ pub async fn compose() -> Result<Application, ComposeError> {
     let list_ceremony_instances = Arc::new(ListCeremonyInstancesUseCase::new(
         ceremony_instances.clone(),
     ));
-    let resolve_ceremony_definition = Arc::new(ResolveCeremonyDefinitionUseCase::new(
-        ceremony_definitions.clone(),
-        ceremony_publications.clone(),
-    ));
 
     let grpc_service = choreo_adapters::grpc::ChoreographerGrpcService::builder()
         .deliberate(deliberate)
@@ -373,7 +376,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         .ceremony_definitions(ceremony_definitions.clone())
         .get_ceremony_instance(get_ceremony_instance)
         .list_ceremony_instances(list_ceremony_instances)
-        .resolve_ceremony_definition(resolve_ceremony_definition)
+        .resolve_ceremony_definition(resolve_ceremony_definition.clone())
         .prepare_ceremony_participants(prepare_ceremony_participants)
         .contract_registry(contract_registry.clone())
         .auto_dispatch(auto_dispatch)
