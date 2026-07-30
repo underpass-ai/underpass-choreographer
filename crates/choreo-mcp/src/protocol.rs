@@ -28,6 +28,8 @@ pub(crate) const CLOSE_CEREMONY_INTERVENTION_TOOL: &str = "choreo_close_ceremony
 pub(crate) const COLLECT_CEREMONY_EVIDENCE_TOOL: &str = "choreo_collect_ceremony_evidence";
 pub(crate) const VALIDATE_CEREMONY_DRAFT_TOOL: &str = "choreo_validate_ceremony_draft";
 pub(crate) const EXPLAIN_CEREMONY_DRAFT_TOOL: &str = "choreo_explain_ceremony_draft";
+pub(crate) const PUBLISH_CEREMONY_DEFINITION_TOOL: &str = "choreo_publish_ceremony_definition";
+pub(crate) const START_PUBLISHED_CEREMONY_TOOL: &str = "choreo_start_published_ceremony";
 
 const GRPC_TOOL_NAMES: [&str; 17] = [
     "choreo_deliberate",
@@ -109,7 +111,35 @@ fn authoring_tool_catalog() -> Vec<Value> {
             "Describe what a ceremony draft declares and what would block its publication, in prose meant to be read back and corrected.",
             ceremony_draft_schema(),
         ),
+        tool_def(
+            PUBLISH_CEREMONY_DEFINITION_TOOL,
+            "Fix a validated draft to an immutable version identified by a content digest. Republishing identical content is a no-op; different content under a taken version is refused, never overwritten.",
+            ceremony_draft_schema(),
+        ),
+        tool_def(
+            START_PUBLISHED_CEREMONY_TOOL,
+            "Start a ceremony from a published version, binding the instance to that definition's digest so which one ran can be checked afterwards rather than taken on trust.",
+            start_published_ceremony_schema(),
+        ),
     ]
+}
+
+fn start_published_ceremony_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ceremony", "version"],
+        "properties": {
+            "ceremony": string_schema("Name of the published ceremony to run."),
+            "version": string_schema("Published version to bind this instance to."),
+            "ceremony_id": string_schema("Identifier for the new instance. Generated when omitted."),
+            "context": {
+                "type": "object",
+                "description": "Opening context for the working session.",
+                "additionalProperties": true
+            }
+        }
+    })
 }
 
 fn ceremony_draft_schema() -> Value {
@@ -970,9 +1000,11 @@ mod tests {
         let all_names = catalog_tool_names();
         let unique_names = all_names.iter().collect::<std::collections::BTreeSet<_>>();
 
-        assert_eq!(all_names.len(), 30);
+        assert_eq!(all_names.len(), 32);
         assert_eq!(unique_names.len(), all_names.len());
         assert!(all_names.contains(&VALIDATE_CEREMONY_DRAFT_TOOL.to_owned()));
+        assert!(all_names.contains(&PUBLISH_CEREMONY_DEFINITION_TOOL.to_owned()));
+        assert!(all_names.contains(&START_PUBLISHED_CEREMONY_TOOL.to_owned()));
         assert!(all_names.contains(&EXPLAIN_CEREMONY_DRAFT_TOOL.to_owned()));
         assert!(all_names.contains(&START_CEREMONY_TOOL.to_owned()));
         assert!(all_names.contains(&APPROVE_CEREMONY_GUARD_TOOL.to_owned()));

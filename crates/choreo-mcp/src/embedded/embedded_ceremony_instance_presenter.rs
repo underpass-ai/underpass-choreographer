@@ -98,6 +98,13 @@ impl EmbeddedCeremonyInstancePresenter {
             "ceremony_id": instance.id().as_str(),
             "definition_name": definition.name().as_str(),
             "definition_version": definition.version().as_str(),
+            // Present whether this instance runs a definition that can
+            // be looked up and checked, or one supplied for the run.
+            // Binding it and not saying so would leave the caller
+            // unable to tell the two apart.
+            "bound_definition_digest": instance
+                .bound_definition()
+                .map(|digest| digest.to_hex()),
             "current_state": instance.current_state().as_str(),
             "completed": instance.is_completed(&definition),
             "next_step_id": next_step_id,

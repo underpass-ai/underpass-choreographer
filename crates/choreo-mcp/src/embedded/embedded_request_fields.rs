@@ -116,7 +116,7 @@ pub(super) async fn load_instance_definition(
         .await
         .map_err(|error| format!("failed to load ceremony instance: {error}"))?;
     let definition = choreographer
-        .definition(instance.definition_name(), instance.definition_version())
+        .definition_for(&instance)
         .await
         .map_err(|error| format!("failed to load ceremony definition: {error}"))?;
     Ok((definition, instance))

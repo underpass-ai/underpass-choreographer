@@ -8,17 +8,21 @@ use choreo_app::usecases::{
     CompleteCeremonyStepUseCase, DeferCeremonyGuardInput, DeferCeremonyGuardUseCase,
     GetCeremonyDefinitionUseCase, GetCeremonyInstanceUseCase, GetCeremonyTranscriptUseCase,
     ListCeremonyDefinitionsUseCase, ListCeremonyInstancesUseCase, MountCeremonyDefinitionsOutput,
-    MountCeremonyDefinitionsUseCase, RequestCeremonyInterventionInput,
-    RequestCeremonyInterventionUseCase, RespondToCeremonyInterventionInput,
-    RespondToCeremonyInterventionUseCase, RunCeremonyInput, RunCeremonyOutput,
-    RunCeremonyStepInput, RunCeremonyStepOutput, RunCeremonyStepUseCase, RunCeremonyUseCase,
-    StartCeremonyInput, StartCeremonyStepInput, StartCeremonyStepUseCase, StartCeremonyUseCase,
+    MountCeremonyDefinitionsUseCase, PublishCeremonyDefinitionUseCase,
+    RequestCeremonyInterventionInput, RequestCeremonyInterventionUseCase,
+    RespondToCeremonyInterventionInput, RespondToCeremonyInterventionUseCase, RunCeremonyInput,
+    RunCeremonyOutput, RunCeremonyStepInput, RunCeremonyStepOutput, RunCeremonyStepUseCase,
+    RunCeremonyUseCase, StartCeremonyInput, StartCeremonyStepInput, StartCeremonyStepUseCase,
+    StartCeremonyUseCase, StartPublishedCeremonyUseCase,
 };
-use choreo_core::entities::{CeremonyDefinition, CeremonyInstance};
+use choreo_core::entities::{
+    CeremonyDefinition, CeremonyInstance, PublicationOutcome, PublishedCeremonyDefinition,
+};
 use choreo_core::error::DomainError;
 use choreo_core::ports::{
-    CeremonyDefinitionRepositoryPort, CeremonyEvidenceSourcePort, CeremonyInstanceRepositoryPort,
-    CeremonyStepHandlerPort, CeremonyTranscriptStorePort, ClockPort, MetricsRecorderPort,
+    CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort,
+    CeremonyEvidenceSourcePort, CeremonyInstanceRepositoryPort, CeremonyStepHandlerPort,
+    CeremonyTranscriptStorePort, ClockPort, MetricsRecorderPort,
 };
 use choreo_core::value_objects::{
     CeremonyId, CeremonyName, CeremonyTranscript, CeremonyVersion, StepAttempt,
@@ -30,6 +34,7 @@ use crate::{EmbeddedChoreographerBuilder, InProcessCeremonyDefinitionSource, VER
 #[derive(Clone)]
 pub struct EmbeddedChoreographer {
     definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
+    publications: Arc<dyn CeremonyDefinitionPublicationPort>,
     instances: Arc<dyn CeremonyInstanceRepositoryPort>,
     transcript_store: Arc<dyn CeremonyTranscriptStorePort>,
     step_handler: Arc<dyn CeremonyStepHandlerPort>,
@@ -41,6 +46,7 @@ pub struct EmbeddedChoreographer {
 impl EmbeddedChoreographer {
     pub(crate) fn new(
         definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
+        publications: Arc<dyn CeremonyDefinitionPublicationPort>,
         instances: Arc<dyn CeremonyInstanceRepositoryPort>,
         transcript_store: Arc<dyn CeremonyTranscriptStorePort>,
         step_handler: Arc<dyn CeremonyStepHandlerPort>,
@@ -50,6 +56,7 @@ impl EmbeddedChoreographer {
     ) -> Self {
         Self {
             definitions,
+            publications,
             instances,
             transcript_store,
             step_handler,
@@ -139,6 +146,82 @@ impl EmbeddedChoreographer {
             self.clock.clone(),
         )
         .with_metrics(self.metrics.clone())
+        .execute(input)
+        .await
+    }
+
+    /// Fix a definition to an immutable version.
+    pub async fn publish_definition(
+        &self,
+        definition: CeremonyDefinition,
+    ) -> Result<PublicationOutcome, DomainError> {
+        PublishCeremonyDefinitionUseCase::new(self.publications.clone())
+            .execute(definition)
+            .await
+    }
+
+    /// The published definition under a name and version, if any.
+    pub async fn published_definition(
+        &self,
+        name: &CeremonyName,
+        version: &CeremonyVersion,
+    ) -> Result<Option<PublishedCeremonyDefinition>, DomainError> {
+        self.publications.published(name, version).await
+    }
+
+    /// Every published definition.
+    pub async fn published_definitions(
+        &self,
+    ) -> Result<Vec<PublishedCeremonyDefinition>, DomainError> {
+        self.publications.catalogue().await
+    }
+
+    /// The definition an instance actually runs.
+    ///
+    /// A bound instance is resolved from the published catalogue and
+    /// **checked against the digest it recorded**. That check is the
+    /// reason for storing the digest at all: without it, a name and a
+    /// version are a promise that whatever answers to them today is
+    /// what ran, and a reader has no way to tell when it is not.
+    ///
+    /// An unbound instance is resolved from the definition repository,
+    /// where nothing can be checked — which is the honest difference
+    /// between the two ways of starting a working session.
+    pub async fn definition_for(
+        &self,
+        instance: &CeremonyInstance,
+    ) -> Result<CeremonyDefinition, DomainError> {
+        let Some(digest) = instance.bound_definition() else {
+            return self
+                .definition(instance.definition_name(), instance.definition_version())
+                .await;
+        };
+
+        let published = self
+            .publications
+            .published(instance.definition_name(), instance.definition_version())
+            .await?
+            .ok_or(DomainError::NotFound {
+                what: "published_ceremony_definition",
+            })?;
+        if published.digest() != digest {
+            return Err(DomainError::InvariantViolated {
+                reason: "the published definition no longer matches the digest this instance ran",
+            });
+        }
+        Ok(published.into_definition())
+    }
+
+    /// Start an instance bound to a published definition's digest.
+    pub async fn start_published(
+        &self,
+        input: StartCeremonyInput,
+    ) -> Result<CeremonyInstance, DomainError> {
+        StartPublishedCeremonyUseCase::new(
+            self.publications.clone(),
+            self.instances.clone(),
+            self.clock.clone(),
+        )
         .execute(input)
         .await
     }

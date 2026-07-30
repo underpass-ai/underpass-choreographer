@@ -9,6 +9,8 @@ mod embedded_close_ceremony_intervention_request;
 mod embedded_collect_ceremony_evidence_request;
 mod embedded_defer_ceremony_guard_request;
 mod embedded_get_ceremony_instance_request;
+mod embedded_publication_presenter;
+mod embedded_publish_ceremony_definition_request;
 mod embedded_request_ceremony_intervention_request;
 mod embedded_request_fields;
 mod embedded_respond_to_ceremony_intervention_request;
@@ -16,6 +18,7 @@ mod embedded_run_ceremony_presenter;
 mod embedded_run_ceremony_request;
 mod embedded_run_ceremony_step_request;
 mod embedded_start_ceremony_request;
+mod embedded_start_published_ceremony_request;
 
 use choreo_core::value_objects::CeremonyId;
 use choreo_embedded::EmbeddedChoreographer;
@@ -26,8 +29,9 @@ use crate::protocol::{
     tool_success_result, APPLY_CEREMONY_TRANSITION_TOOL, APPROVE_CEREMONY_GUARD_TOOL,
     CLOSE_CEREMONY_INTERVENTION_TOOL, COLLECT_CEREMONY_EVIDENCE_TOOL, DEFER_CEREMONY_GUARD_TOOL,
     EXPLAIN_CEREMONY_DRAFT_TOOL, GET_CEREMONY_INSTANCE_TOOL, LIST_CEREMONY_INSTANCES_TOOL,
-    REQUEST_CEREMONY_INTERVENTION_TOOL, RESPOND_TO_CEREMONY_INTERVENTION_TOOL,
-    RUN_CEREMONY_STEP_TOOL, RUN_CEREMONY_TOOL, START_CEREMONY_TOOL, VALIDATE_CEREMONY_DRAFT_TOOL,
+    PUBLISH_CEREMONY_DEFINITION_TOOL, REQUEST_CEREMONY_INTERVENTION_TOOL,
+    RESPOND_TO_CEREMONY_INTERVENTION_TOOL, RUN_CEREMONY_STEP_TOOL, RUN_CEREMONY_TOOL,
+    START_CEREMONY_TOOL, START_PUBLISHED_CEREMONY_TOOL, VALIDATE_CEREMONY_DRAFT_TOOL,
 };
 
 use self::embedded_apply_ceremony_transition_request::EmbeddedApplyCeremonyTransitionRequest;
@@ -39,12 +43,15 @@ use self::embedded_close_ceremony_intervention_request::EmbeddedCloseCeremonyInt
 use self::embedded_collect_ceremony_evidence_request::EmbeddedCollectCeremonyEvidenceRequest;
 use self::embedded_defer_ceremony_guard_request::EmbeddedDeferCeremonyGuardRequest;
 use self::embedded_get_ceremony_instance_request::EmbeddedGetCeremonyInstanceRequest;
+use self::embedded_publication_presenter::EmbeddedPublicationPresenter;
+use self::embedded_publish_ceremony_definition_request::EmbeddedPublishCeremonyDefinitionRequest;
 use self::embedded_request_ceremony_intervention_request::EmbeddedRequestCeremonyInterventionRequest;
 use self::embedded_respond_to_ceremony_intervention_request::EmbeddedRespondToCeremonyInterventionRequest;
 use self::embedded_run_ceremony_presenter::EmbeddedRunCeremonyPresenter;
 use self::embedded_run_ceremony_request::EmbeddedRunCeremonyRequest;
 use self::embedded_run_ceremony_step_request::EmbeddedRunCeremonyStepRequest;
 use self::embedded_start_ceremony_request::EmbeddedStartCeremonyRequest;
+use self::embedded_start_published_ceremony_request::EmbeddedStartPublishedCeremonyRequest;
 
 /// MCP adapter that executes ceremonies inside the host process.
 #[derive(Clone, Debug, Default)]
@@ -107,6 +114,8 @@ impl ChoreoMcpToolBackend for EmbeddedChoreoMcpBackend {
                 | COLLECT_CEREMONY_EVIDENCE_TOOL
                 | VALIDATE_CEREMONY_DRAFT_TOOL
                 | EXPLAIN_CEREMONY_DRAFT_TOOL
+                | PUBLISH_CEREMONY_DEFINITION_TOOL
+                | START_PUBLISHED_CEREMONY_TOOL
         )
     }
 
@@ -128,6 +137,18 @@ impl ChoreoMcpToolBackend for EmbeddedChoreoMcpBackend {
                     Ok(tool_success_result(
                         EmbeddedCeremonyDraftPresenter::present_explanation(&draft, &report),
                     ))
+                }
+                PUBLISH_CEREMONY_DEFINITION_TOOL => {
+                    let request = EmbeddedPublishCeremonyDefinitionRequest::try_from(arguments)?;
+                    let outcome = request.execute(&self.choreographer).await?;
+                    Ok(tool_success_result(EmbeddedPublicationPresenter::present(
+                        &outcome,
+                    )))
+                }
+                START_PUBLISHED_CEREMONY_TOOL => {
+                    let request = EmbeddedStartPublishedCeremonyRequest::try_from(arguments)?;
+                    let ceremony_id = request.execute(&self.choreographer).await?;
+                    self.present_instance(&ceremony_id).await
                 }
                 RUN_CEREMONY_TOOL => {
                     let request = EmbeddedRunCeremonyRequest::try_from(arguments)?;

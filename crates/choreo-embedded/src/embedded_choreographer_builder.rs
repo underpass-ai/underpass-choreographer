@@ -4,16 +4,17 @@ use std::sync::Arc;
 
 use choreo_adapters::clock::SystemClock;
 use choreo_adapters::memory::{
-    InMemoryCeremonyDefinitionRepository, InMemoryCeremonyInstanceRepository,
-    InMemoryCeremonyTranscriptStore,
+    InMemoryCeremonyDefinitionPublications, InMemoryCeremonyDefinitionRepository,
+    InMemoryCeremonyInstanceRepository, InMemoryCeremonyTranscriptStore,
 };
 use choreo_adapters::noop::{NoopCeremonyEvidenceSource, NoopCeremonyStepHandler};
 use choreo_core::entities::CeremonyEvidencePack;
 use choreo_core::error::DomainError;
 use choreo_core::ports::{
-    CeremonyDefinitionRepositoryPort, CeremonyEvidenceRequest, CeremonyEvidenceSourcePort,
-    CeremonyInstanceRepositoryPort, CeremonyStepHandlerPort, CeremonyStepHandlerRequest,
-    CeremonyTranscriptStorePort, ClockPort, MetricsRecorderPort, NoopMetricsRecorder,
+    CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort, CeremonyEvidenceRequest,
+    CeremonyEvidenceSourcePort, CeremonyInstanceRepositoryPort, CeremonyStepHandlerPort,
+    CeremonyStepHandlerRequest, CeremonyTranscriptStorePort, ClockPort, MetricsRecorderPort,
+    NoopMetricsRecorder,
 };
 use choreo_core::value_objects::StepResult;
 
@@ -23,6 +24,7 @@ use crate::{CallbackCeremonyEvidenceSource, CallbackCeremonyStepHandler, Embedde
 #[derive(Default)]
 pub struct EmbeddedChoreographerBuilder {
     definitions: Option<Arc<dyn CeremonyDefinitionRepositoryPort>>,
+    publications: Option<Arc<dyn CeremonyDefinitionPublicationPort>>,
     instances: Option<Arc<dyn CeremonyInstanceRepositoryPort>>,
     transcript_store: Option<Arc<dyn CeremonyTranscriptStorePort>>,
     step_handler: Option<Arc<dyn CeremonyStepHandlerPort>>,
@@ -43,6 +45,20 @@ impl EmbeddedChoreographerBuilder {
         adapter: Arc<dyn CeremonyDefinitionRepositoryPort>,
     ) -> Self {
         self.definitions = Some(adapter);
+        self
+    }
+
+    /// The store published definitions live in.
+    ///
+    /// Separate from the definition repository on purpose: an instance
+    /// started from a definition supplied for the run and one bound to
+    /// a published version are not the same act.
+    #[must_use]
+    pub fn with_definition_publications(
+        mut self,
+        adapter: Arc<dyn CeremonyDefinitionPublicationPort>,
+    ) -> Self {
+        self.publications = Some(adapter);
         self
     }
 
@@ -111,6 +127,10 @@ impl EmbeddedChoreographerBuilder {
             Arc::new(InMemoryCeremonyDefinitionRepository::new())
                 as Arc<dyn CeremonyDefinitionRepositoryPort>
         });
+        let publications = self.publications.unwrap_or_else(|| {
+            Arc::new(InMemoryCeremonyDefinitionPublications::new())
+                as Arc<dyn CeremonyDefinitionPublicationPort>
+        });
         let instances = self.instances.unwrap_or_else(|| {
             Arc::new(InMemoryCeremonyInstanceRepository::new())
                 as Arc<dyn CeremonyInstanceRepositoryPort>
@@ -133,6 +153,7 @@ impl EmbeddedChoreographerBuilder {
 
         EmbeddedChoreographer::new(
             definitions,
+            publications,
             instances,
             transcript_store,
             step_handler,

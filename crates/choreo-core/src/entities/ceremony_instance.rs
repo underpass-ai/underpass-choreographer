@@ -9,15 +9,18 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-use super::{ceremony_definition::CeremonyDefinition, CeremonyIntervention};
+use super::{
+    ceremony_definition::CeremonyDefinition, CeremonyIntervention, PublishedCeremonyDefinition,
+};
 use crate::error::DomainError;
 use crate::ports::CeremonyEvidenceRequest;
 use crate::value_objects::{
-    CeremonyContext, CeremonyEvidenceSourceId, CeremonyGuardDeferral, CeremonyGuardDeferralContent,
-    CeremonyId, CeremonyInterventionContent, CeremonyInterventionId, CeremonyInterventionKind,
-    CeremonyInterventionProvenance, CeremonyInterventionTarget, CeremonyName, CeremonyVersion,
-    GuardCondition, GuardName, IdempotencyKey, RoleAction, RoleId, StateId, StepAttempt,
-    StepExecutionRecord, StepId, StepLease, StepResult, StepStatus, TransitionTrigger,
+    CeremonyContext, CeremonyDefinitionDigest, CeremonyEvidenceSourceId, CeremonyGuardDeferral,
+    CeremonyGuardDeferralContent, CeremonyId, CeremonyInterventionContent, CeremonyInterventionId,
+    CeremonyInterventionKind, CeremonyInterventionProvenance, CeremonyInterventionTarget,
+    CeremonyName, CeremonyVersion, GuardCondition, GuardName, IdempotencyKey, RoleAction, RoleId,
+    StateId, StepAttempt, StepExecutionRecord, StepId, StepLease, StepResult, StepStatus,
+    TransitionTrigger,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -39,15 +42,62 @@ pub struct CeremonyInstance {
     updated_at: OffsetDateTime,
     #[serde(with = "time::serde::rfc3339::option")]
     completed_at: Option<OffsetDateTime>,
+    /// The published definition this instance is bound to, when it was
+    /// started from one.
+    ///
+    /// Absent for an instance started from a definition handed in at
+    /// the time — which is a real and useful way to work, and not the
+    /// same thing. Recording which of the two happened is the point: a
+    /// name and a version identify a published definition only while
+    /// publication is immutable, and an instance that also carries the
+    /// digest can be checked against the definition rather than trusted
+    /// to have run it.
+    #[serde(default)]
+    bound_definition: Option<CeremonyDefinitionDigest>,
 }
 
 impl CeremonyInstance {
+    /// Start from a definition supplied for this run.
+    ///
+    /// Nothing binds the instance to a definition that can be looked up
+    /// later; that is what [`Self::start_bound`] is for.
     #[must_use]
     pub fn start(
         id: CeremonyId,
         definition: &CeremonyDefinition,
         context: CeremonyContext,
         now: OffsetDateTime,
+    ) -> Self {
+        Self::open(id, definition, context, now, None)
+    }
+
+    /// Start from a published definition, recording its digest.
+    ///
+    /// The digest travels with the instance so a later reader can
+    /// verify which definition ran instead of taking the name and
+    /// version on trust.
+    #[must_use]
+    pub fn start_bound(
+        id: CeremonyId,
+        published: &PublishedCeremonyDefinition,
+        context: CeremonyContext,
+        now: OffsetDateTime,
+    ) -> Self {
+        Self::open(
+            id,
+            published.definition(),
+            context,
+            now,
+            Some(published.digest()),
+        )
+    }
+
+    fn open(
+        id: CeremonyId,
+        definition: &CeremonyDefinition,
+        context: CeremonyContext,
+        now: OffsetDateTime,
+        bound_definition: Option<CeremonyDefinitionDigest>,
     ) -> Self {
         let step_records = definition
             .steps()
@@ -68,7 +118,22 @@ impl CeremonyInstance {
             created_at: now,
             updated_at: now,
             completed_at: None,
+            bound_definition,
         }
+    }
+
+    /// The digest of the published definition this instance runs, if it
+    /// was started from one.
+    #[must_use]
+    pub fn bound_definition(&self) -> Option<CeremonyDefinitionDigest> {
+        self.bound_definition
+    }
+
+    /// Whether this instance runs a definition that can be looked up
+    /// and checked, rather than one supplied for the run.
+    #[must_use]
+    pub fn is_bound_to_a_published_definition(&self) -> bool {
+        self.bound_definition.is_some()
     }
 
     #[must_use]

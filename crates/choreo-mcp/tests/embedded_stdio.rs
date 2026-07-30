@@ -140,6 +140,8 @@ async fn embedded_server_advertises_only_executable_tools() {
             "choreo_collect_ceremony_evidence",
             "choreo_validate_ceremony_draft",
             "choreo_explain_ceremony_draft",
+            "choreo_publish_ceremony_definition",
+            "choreo_start_published_ceremony",
         ]
     );
 
@@ -712,7 +714,7 @@ async fn embedded_binary_completes_incremental_human_authorization_over_stdio() 
     let completed = read_response(&mut lines).await;
 
     assert_eq!(initialized["result"]["metadata"]["backend"], "embedded");
-    assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 14);
+    assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 16);
     assert_eq!(structured(&started)["next_step_id"], "investigate");
     assert_eq!(
         structured(&stepped)["waiting_for_human"],
@@ -971,3 +973,145 @@ fn structured(response: &Value) -> &Value {
     assert_eq!(response["result"]["isError"], false, "{response:?}");
     &response["result"]["structuredContent"]
 }
+
+#[tokio::test]
+async fn publishing_fixes_a_definition_to_a_digest_and_refuses_to_overwrite_it() {
+    let server = ChoreoMcpServer::embedded();
+
+    let response = send(&server, publish_call(1, PUBLISHABLE_CEREMONY_YAML)).await;
+    let first = structured(&response);
+    assert_eq!(first["outcome"], "published");
+    assert_eq!(first["ceremony"], "publishable_ceremony");
+    assert_eq!(first["version"], "1.0");
+    let digest = first["digest"].as_str().unwrap().to_owned();
+    assert_eq!(digest.len(), 64, "digest is not a full sha-256: {digest}");
+
+    // A caller that lost the response must be able to retry.
+    let response = send(&server, publish_call(2, PUBLISHABLE_CEREMONY_YAML)).await;
+    let again = structured(&response);
+    assert_eq!(again["outcome"], "already_published");
+    assert_eq!(again["digest"], digest);
+
+    // Different content under the same version is refused, and both
+    // digests are reported so the caller can see it is not a transient
+    // failure worth retrying.
+    let response = send(&server, publish_call(3, ALTERED_CEREMONY_YAML)).await;
+    let occupied = structured(&response);
+    assert_eq!(occupied["outcome"], "version_occupied");
+    assert_eq!(occupied["published_digest"], digest);
+    assert_ne!(occupied["offered_digest"], digest);
+}
+
+#[tokio::test]
+async fn an_instance_started_from_a_published_version_carries_its_digest() {
+    let server = ChoreoMcpServer::embedded();
+
+    let response = send(&server, publish_call(1, PUBLISHABLE_CEREMONY_YAML)).await;
+    let digest = structured(&response)["digest"].as_str().unwrap().to_owned();
+
+    let started = send(
+        &server,
+        tool_call(
+            2,
+            "choreo_start_published_ceremony",
+            &json!({
+                "ceremony_id": "bound-instance",
+                "ceremony": "publishable_ceremony",
+                "version": "1.0"
+            }),
+        ),
+    )
+    .await;
+    let instance = structured(&started);
+
+    assert_eq!(instance["ceremony_id"], "bound-instance");
+    assert_eq!(
+        instance["bound_definition_digest"], digest,
+        "the instance does not say which published definition it runs"
+    );
+}
+
+#[tokio::test]
+async fn an_instance_started_from_a_supplied_definition_claims_no_binding() {
+    let server = ChoreoMcpServer::embedded();
+
+    let started = send(&server, start_collaborative_ceremony_call(1, "unbound")).await;
+
+    assert_eq!(
+        structured(&started)["bound_definition_digest"],
+        Value::Null,
+        "an ad-hoc definition must not look governed"
+    );
+}
+
+#[tokio::test]
+async fn starting_from_a_version_that_was_never_published_fails_rather_than_falling_back() {
+    let server = ChoreoMcpServer::embedded();
+
+    let response = send(
+        &server,
+        tool_call(
+            1,
+            "choreo_start_published_ceremony",
+            &json!({ "ceremony": "never_published", "version": "1.0" }),
+        ),
+    )
+    .await;
+
+    assert_eq!(response["result"]["isError"], true, "{response:?}");
+}
+
+fn publish_call(id: u64, definition_yaml: &str) -> Value {
+    tool_call(
+        id,
+        "choreo_publish_ceremony_definition",
+        &json!({ "definition_yaml": definition_yaml }),
+    )
+}
+
+const PUBLISHABLE_CEREMONY_YAML: &str = r#"
+version: "1.0"
+name: "publishable_ceremony"
+states:
+  - id: OPEN
+    initial: true
+  - id: DONE
+    terminal: true
+transitions:
+  - from: OPEN
+    to: DONE
+    trigger: finish
+steps:
+  - id: work
+    state: OPEN
+    handler: embedded_noop
+roles:
+  - id: FACILITATOR
+    allowed_actions:
+      - work
+      - finish
+"#;
+
+/// The same ceremony and version with a materially different graph.
+const ALTERED_CEREMONY_YAML: &str = r#"
+version: "1.0"
+name: "publishable_ceremony"
+states:
+  - id: OPEN
+    initial: true
+  - id: CANCELLED
+    terminal: true
+transitions:
+  - from: OPEN
+    to: CANCELLED
+    trigger: finish
+steps:
+  - id: work
+    state: OPEN
+    handler: embedded_noop
+roles:
+  - id: FACILITATOR
+    allowed_actions:
+      - work
+      - finish
+"#;
