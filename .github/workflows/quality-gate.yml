@@ -141,11 +141,14 @@ jobs:
         # transport and persistence module. `container-tests` stays on
         # the separate `integration` workflow (real Docker).
         #
-        # The `kmp` tests that need a real memory kernel say so and
-        # skip here, because the kernel is another repository's binary
-        # and this job does not build it. What runs is the adapter's
-        # own half of the contract; the kernel's half is checked by
-        # `kmp_live_kernel.rs` wherever that binary exists.
+        # `kmp_live_kernel.rs` is ignored by default and therefore
+        # reports `0 passed; N ignored` here, which is the honest
+        # count: the kernel is another repository's binary and this job
+        # does not build it. It used to run and skip, which reported
+        # `N passed` for tests that had started nothing. What runs here
+        # is the adapter's own half of the contract; the kernel's half
+        # is checked wherever that binary exists, and cannot report
+        # success without it.
         run: |
           cargo test --workspace --locked \
             --features choreo-adapters/agent-anthropic \
