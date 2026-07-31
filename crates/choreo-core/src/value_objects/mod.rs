@@ -15,6 +15,7 @@ mod discrimination;
 mod duration;
 mod ids;
 mod llm_error_kind;
+mod memory;
 mod num_agents;
 mod outbox;
 mod output_contract;
@@ -57,6 +58,10 @@ pub use discrimination::Discrimination;
 pub use duration::DurationMs;
 pub use ids::{AgentId, CouncilId, EventId, ProposalId, TaskId};
 pub use llm_error_kind::LlmErrorKind;
+pub use memory::{
+    MemoryCapabilities, MemoryCapability, MemoryDimension, MemoryEntry, MemoryEntryKind,
+    MemoryEvidence, MemoryMoment, MemoryProvenance, MemoryQuestion, MemoryScope,
+};
 pub use num_agents::NumAgents;
 pub use outbox::{
     ClaimedOutboxMessage, OutboxAttempt, OutboxMessage, OutboxQuarantineReason, OutboxSubject,

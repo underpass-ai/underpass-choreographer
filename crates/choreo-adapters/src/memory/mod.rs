@@ -15,6 +15,8 @@ mod ceremony_transcript_store;
 mod contract_registry;
 mod council_registry;
 mod deliberation_repository;
+mod forgetful_memory;
+mod session_memory;
 mod statistics;
 
 pub use agent_registry::InMemoryAgentRegistry;
@@ -27,4 +29,6 @@ pub use ceremony_transcript_store::InMemoryCeremonyTranscriptStore;
 pub use contract_registry::InMemoryContractRegistry;
 pub use council_registry::InMemoryCouncilRegistry;
 pub use deliberation_repository::InMemoryDeliberationRepository;
+pub use forgetful_memory::ForgetfulMemory;
+pub use session_memory::InProcessSessionMemory;
 pub use statistics::InMemoryStatistics;
