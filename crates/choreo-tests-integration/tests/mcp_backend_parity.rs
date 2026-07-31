@@ -164,6 +164,7 @@ async fn build_remote_session(fixture: &GrpcFixture) {
         .expect("ApplyCeremonyTransition should succeed");
     client
         .defer_ceremony_guard(DeferCeremonyGuardRequest {
+            role_id: "FACILITATOR".to_owned(),
             ceremony_id: CEREMONY_ID.to_owned(),
             guard_name: "human_approved".to_owned(),
             statement: "Not yet.".to_owned(),
@@ -226,7 +227,7 @@ async fn build_embedded_session(backend: &EmbeddedChoreoMcpBackend) {
         "choreo_defer_ceremony_guard",
         json!({
             "ceremony_id": CEREMONY_ID,
-            "guard_name": "human_approved",
+            "role_id": "FACILITATOR", "guard_name": "human_approved",
             "statement": "Not yet.",
             "reason": "The reviewer is out.",
             "reconsider_when": ["the reviewer is back"],

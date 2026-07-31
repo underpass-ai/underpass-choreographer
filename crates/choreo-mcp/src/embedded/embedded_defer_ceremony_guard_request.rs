@@ -1,5 +1,5 @@
 use choreo_app::usecases::DeferCeremonyGuardInput;
-use choreo_core::value_objects::{CeremonyGuardDeferralContent, CeremonyId, GuardName};
+use choreo_core::value_objects::{CeremonyGuardDeferralContent, CeremonyId, GuardName, RoleId};
 use choreo_embedded::EmbeddedChoreographer;
 use serde_json::Value;
 
@@ -11,6 +11,7 @@ pub(super) struct EmbeddedDeferCeremonyGuardRequest {
     ceremony_id: CeremonyId,
     guard_name: GuardName,
     content: CeremonyGuardDeferralContent,
+    role_id: RoleId,
 }
 
 impl EmbeddedDeferCeremonyGuardRequest {
@@ -23,6 +24,7 @@ impl EmbeddedDeferCeremonyGuardRequest {
                 self.ceremony_id.clone(),
                 self.guard_name,
                 self.content,
+                self.role_id,
             ))
             .await
             .map_err(|error| format!("failed to defer ceremony guard: {error}"))?;
@@ -48,6 +50,8 @@ impl TryFrom<&Value> for EmbeddedDeferCeremonyGuardRequest {
                 required_strings(object, "reconsider_when")?,
             )
             .map_err(|error| error.to_string())?,
+            role_id: RoleId::new(required_string(object, "role_id")?)
+                .map_err(|error| error.to_string())?,
         })
     }
 }

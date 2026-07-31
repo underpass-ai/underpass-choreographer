@@ -15,12 +15,12 @@ use super::{
 use crate::error::DomainError;
 use crate::ports::CeremonyEvidenceRequest;
 use crate::value_objects::{
-    CeremonyContext, CeremonyDefinitionDigest, CeremonyEvidenceSourceId, CeremonyGuardDeferral,
-    CeremonyGuardDeferralContent, CeremonyId, CeremonyInterventionContent, CeremonyInterventionId,
-    CeremonyInterventionKind, CeremonyInterventionProvenance, CeremonyInterventionTarget,
-    CeremonyName, CeremonyParticipantBinding, CeremonyVersion, GuardCondition, GuardName,
-    IdempotencyKey, RoleAction, RoleId, Specialty, StateId, StepAttempt, StepExecutionRecord,
-    StepId, StepLease, StepResult, StepStatus, TransitionTrigger,
+    CeremonyContext, CeremonyDefinitionDigest, CeremonyEvidenceSourceId, CeremonyGuardApproval,
+    CeremonyGuardDeferral, CeremonyGuardDeferralContent, CeremonyId, CeremonyInterventionContent,
+    CeremonyInterventionId, CeremonyInterventionKind, CeremonyInterventionProvenance,
+    CeremonyInterventionTarget, CeremonyName, CeremonyParticipantBinding, CeremonyVersion,
+    GuardCondition, GuardName, IdempotencyKey, RoleAction, RoleId, Specialty, StateId, StepAttempt,
+    StepExecutionRecord, StepId, StepLease, StepResult, StepStatus, TransitionTrigger,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -34,6 +34,17 @@ pub struct CeremonyInstance {
     interventions: Vec<CeremonyIntervention>,
     #[serde(default)]
     guard_deferrals: Vec<CeremonyGuardDeferral>,
+    /// Who let each human guard through.
+    ///
+    /// Kept beside the context rather than inside it. The context is
+    /// what a guard is evaluated against and already holds "this one
+    /// is approved"; sessions written before this existed carry that
+    /// and nothing else, and moving approval out of the context would
+    /// have made every one of them unapproved on the next read. So the
+    /// context stays the state, and this is the event that produced
+    /// it.
+    #[serde(default)]
+    guard_approvals: Vec<CeremonyGuardApproval>,
     /// Who sits in each seat for this session, where anyone was
     /// seated. A role with no binding is played the way the definition
     /// says, which is the usual case and not a lesser one.
@@ -118,6 +129,7 @@ impl CeremonyInstance {
             step_records,
             interventions: Vec::new(),
             guard_deferrals: Vec::new(),
+            guard_approvals: Vec::new(),
             participant_bindings: BTreeMap::new(),
             context,
             idempotency_keys: BTreeSet::new(),
@@ -180,6 +192,16 @@ impl CeremonyInstance {
     #[must_use]
     pub fn guard_deferrals(&self) -> &[CeremonyGuardDeferral] {
         &self.guard_deferrals
+    }
+
+    /// Who let each human guard through, in the order they did.
+    ///
+    /// Empty for a session written before approvals recorded an
+    /// approver, which is the truth about those sessions rather than a
+    /// gap to paper over.
+    #[must_use]
+    pub fn guard_approvals(&self) -> &[CeremonyGuardApproval] {
+        &self.guard_approvals
     }
 
     #[must_use]
@@ -346,6 +368,7 @@ impl CeremonyInstance {
         &mut self,
         definition: &CeremonyDefinition,
         guard_name: &GuardName,
+        approved_by: RoleId,
         now: OffsetDateTime,
     ) -> Result<(), DomainError> {
         self.require_active(
@@ -363,7 +386,13 @@ impl CeremonyInstance {
                 reason: "only human approval guards can be approved",
             });
         }
+        self.require_declared_role(definition, &approved_by)?;
         self.context = self.context.clone().with_guard_approval(guard_name)?;
+        self.guard_approvals.push(CeremonyGuardApproval::record(
+            guard_name.clone(),
+            approved_by,
+            now,
+        ));
         self.updated_at = now;
         Ok(())
     }
@@ -420,6 +449,7 @@ impl CeremonyInstance {
         definition: &CeremonyDefinition,
         guard_name: GuardName,
         content: CeremonyGuardDeferralContent,
+        deferred_by: RoleId,
         now: OffsetDateTime,
     ) -> Result<(), DomainError> {
         self.require_active(
@@ -451,8 +481,13 @@ impl CeremonyInstance {
             });
         }
 
-        self.guard_deferrals
-            .push(CeremonyGuardDeferral::record(guard_name, content, now));
+        self.require_declared_role(definition, &deferred_by)?;
+        self.guard_deferrals.push(CeremonyGuardDeferral::record(
+            guard_name,
+            deferred_by,
+            content,
+            now,
+        ));
         self.updated_at = now;
         Ok(())
     }
@@ -770,6 +805,31 @@ impl CeremonyInstance {
         Ok(())
     }
 
+    /// A seat this session's definition declares.
+    ///
+    /// Weaker on purpose than [`Self::require_role`]: a definition says
+    /// which roles may run a step or fire a transition, and says
+    /// nothing about who may approve a human guard. Demanding a
+    /// capability that no definition grants would leave every existing
+    /// ceremony with no one able to approve anything. Which seats may
+    /// decide a guard is a question for whenever guards grow an
+    /// authority model; until then, being a seat at this table is the
+    /// check, and it is enough to make the receipt name someone.
+    fn require_declared_role(
+        &self,
+        definition: &CeremonyDefinition,
+        role_id: &RoleId,
+    ) -> Result<(), DomainError> {
+        self.require_definition(definition)?;
+        if definition.role(role_id).is_some() {
+            Ok(())
+        } else {
+            Err(DomainError::NotFound {
+                what: "ceremony_role",
+            })
+        }
+    }
+
     fn require_role(
         &self,
         definition: &CeremonyDefinition,
@@ -926,6 +986,34 @@ mod tests {
             retrying_step("plan", "drafting"),
             single_attempt_step("review_step", "review"),
         ])
+    }
+
+    /// The smallest ceremony that waits on a person: one guard, one
+    /// transition it blocks, one seat allowed to fire it.
+    fn definition_with_human_guard(approval: &CeremonyGuard) -> CeremonyDefinition {
+        let finish = CeremonyTransition::new(
+            state_id("drafting"),
+            state_id("done"),
+            trigger("approve"),
+            vec![approval.name().clone()],
+        )
+        .unwrap();
+        CeremonyDefinition::new(
+            crate::value_objects::CeremonyName::new("approval_ceremony").unwrap(),
+            CeremonyVersion::v1(),
+            None,
+            Vec::new(),
+            Vec::new(),
+            vec![
+                CeremonyState::initial(state_id("drafting")),
+                CeremonyState::terminal(state_id("done")),
+            ],
+            vec![finish.clone()],
+            Vec::new(),
+            vec![approval.clone()],
+            vec![role(vec![RoleAction::transition(finish.trigger().clone())])],
+        )
+        .unwrap()
     }
 
     fn instance(definition: &CeremonyDefinition) -> CeremonyInstance {
@@ -1229,7 +1317,12 @@ mod tests {
         // and a typo answered "approved" while leaving a session that
         // would never move.
         assert!(matches!(
-            instance.approve_guard(&definition, &guard_name("not_a_guard"), now()),
+            instance.approve_guard(
+                &definition,
+                &guard_name("not_a_guard"),
+                role_id("facilitator"),
+                now()
+            ),
             Err(DomainError::NotFound {
                 what: "ceremony_guard"
             })
@@ -1276,6 +1369,7 @@ mod tests {
             .approve_guard(
                 &definition,
                 approval.name(),
+                role_id("facilitator"),
                 datetime!(2026-06-06 12:01:00 UTC),
             )
             .unwrap();
@@ -1329,6 +1423,7 @@ mod tests {
                     vec!["New evidence explains the resolution.".to_owned()],
                 )
                 .unwrap(),
+                role_id("facilitator"),
                 datetime!(2026-06-06 12:01:00 UTC),
             )
             .unwrap();
@@ -1340,5 +1435,61 @@ mod tests {
         let deferral = &instance.guard_deferrals()[0];
         assert_eq!(deferral.guard_name(), approval.name());
         assert_eq!(deferral.content().statement(), "I do not know.");
+    }
+    /// An approval that names nobody is a receipt for a human decision
+    /// nobody can be shown to have taken. This is that made checkable.
+    #[test]
+    fn approving_a_human_guard_records_the_seat_that_did_it() {
+        let approval =
+            CeremonyGuard::new(guard_name("human_approved"), GuardCondition::HumanApproval);
+        let definition = definition_with_human_guard(&approval);
+        let mut instance = instance(&definition);
+
+        instance
+            .approve_guard(
+                &definition,
+                approval.name(),
+                role_id("facilitator"),
+                datetime!(2026-06-06 12:01:00 UTC),
+            )
+            .unwrap();
+
+        let [recorded] = instance.guard_approvals() else {
+            panic!(
+                "expected one approval, got {:?}",
+                instance.guard_approvals()
+            );
+        };
+        assert_eq!(recorded.guard_name(), approval.name());
+        assert_eq!(recorded.approved_by(), &role_id("facilitator"));
+        assert_eq!(recorded.approved_at(), datetime!(2026-06-06 12:01:00 UTC));
+        assert!(instance.context().is_guard_approved(approval.name()));
+    }
+
+    /// A seat this session does not have cannot approve anything on it.
+    /// Weaker than the capability check the other verbs use, and
+    /// deliberately so — but not so weak that any string will do.
+    #[test]
+    fn a_seat_the_definition_does_not_declare_cannot_approve() {
+        let approval =
+            CeremonyGuard::new(guard_name("human_approved"), GuardCondition::HumanApproval);
+        let definition = definition_with_human_guard(&approval);
+        let mut instance = instance(&definition);
+
+        let outcome = instance.approve_guard(
+            &definition,
+            approval.name(),
+            role_id("someone-who-is-not-here"),
+            now(),
+        );
+
+        assert!(matches!(
+            outcome,
+            Err(DomainError::NotFound {
+                what: "ceremony_role"
+            })
+        ));
+        assert!(instance.guard_approvals().is_empty());
+        assert!(!instance.context().is_guard_approved(approval.name()));
     }
 }

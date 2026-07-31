@@ -1,5 +1,5 @@
 use choreo_app::usecases::ApproveCeremonyGuardInput;
-use choreo_core::value_objects::{CeremonyId, GuardCondition, GuardName};
+use choreo_core::value_objects::{CeremonyId, GuardCondition, GuardName, RoleId};
 use choreo_embedded::EmbeddedChoreographer;
 use serde_json::Value;
 
@@ -10,6 +10,7 @@ use super::embedded_request_fields::{load_instance_definition, required_string};
 pub(super) struct EmbeddedApproveCeremonyGuardRequest {
     ceremony_id: CeremonyId,
     guard_name: GuardName,
+    role_id: RoleId,
 }
 
 impl EmbeddedApproveCeremonyGuardRequest {
@@ -39,6 +40,7 @@ impl EmbeddedApproveCeremonyGuardRequest {
             .approve_guard(ApproveCeremonyGuardInput::new(
                 self.ceremony_id.clone(),
                 self.guard_name,
+                self.role_id,
             ))
             .await
             .map_err(|error| format!("failed to approve ceremony guard: {error}"))?;
@@ -57,6 +59,8 @@ impl TryFrom<&Value> for EmbeddedApproveCeremonyGuardRequest {
             ceremony_id: CeremonyId::new(required_string(object, "ceremony_id")?)
                 .map_err(|error| error.to_string())?,
             guard_name: GuardName::new(required_string(object, "guard_name")?)
+                .map_err(|error| error.to_string())?,
+            role_id: RoleId::new(required_string(object, "role_id")?)
                 .map_err(|error| error.to_string())?,
         })
     }

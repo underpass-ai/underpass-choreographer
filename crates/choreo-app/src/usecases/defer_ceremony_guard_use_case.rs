@@ -56,6 +56,7 @@ impl DeferCeremonyGuardUseCase {
             &definition,
             input.guard_name,
             input.content,
+            input.role_id,
             self.clock.now(),
         )?;
         self.instances.save(&instance).await?;
@@ -70,7 +71,7 @@ mod tests {
 
     use super::*;
     use crate::usecases::ceremony_test_support::{
-        approval_definition, ceremony_id, definition_resolver, now, started_instance,
+        approval_definition, ceremony_id, definition_resolver, now, role_id, started_instance,
         DefinitionRepositoryFake, FixedClock, InstanceRepositoryFake,
     };
 
@@ -100,6 +101,7 @@ mod tests {
                     vec!["New evidence clarifies the outcome.".to_owned()],
                 )
                 .unwrap(),
+                role_id(),
             ))
             .await
             .unwrap();

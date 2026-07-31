@@ -145,6 +145,7 @@ async fn host_can_drive_a_human_guard_incrementally() {
         .approve_guard(ApproveCeremonyGuardInput::new(
             ceremony_id.clone(),
             GuardName::new("human_approved").unwrap(),
+            RoleId::new("APPROVER").unwrap(),
         ))
         .await
         .unwrap();

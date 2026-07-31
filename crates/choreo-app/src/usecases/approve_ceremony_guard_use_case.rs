@@ -38,7 +38,11 @@ impl ApproveCeremonyGuardUseCase {
     #[tracing::instrument(
         name = "approve_ceremony_guard",
         skip_all,
-        fields(ceremony_id = %input.instance_id, guard_name = %input.guard_name)
+        fields(
+            ceremony_id = %input.instance_id,
+            guard_name = %input.guard_name,
+            role_id = %input.role_id,
+        )
     )]
     pub async fn execute(
         &self,
@@ -46,7 +50,12 @@ impl ApproveCeremonyGuardUseCase {
     ) -> Result<CeremonyInstance, DomainError> {
         let mut instance = self.instances.get(&input.instance_id).await?;
         let definition = self.definitions.execute(&instance).await?;
-        instance.approve_guard(&definition, &input.guard_name, self.clock.now())?;
+        instance.approve_guard(
+            &definition,
+            &input.guard_name,
+            input.role_id,
+            self.clock.now(),
+        )?;
         self.instances.save(&instance).await?;
         Ok(instance)
     }
@@ -61,7 +70,7 @@ mod tests {
 
     use super::*;
     use crate::usecases::ceremony_test_support::{
-        approval_definition, ceremony_id, definition_resolver, now, started_instance,
+        approval_definition, ceremony_id, definition_resolver, now, role_id, started_instance,
         DefinitionRepositoryFake, FixedClock, InstanceRepositoryFake,
     };
 
@@ -85,6 +94,7 @@ mod tests {
             .execute(ApproveCeremonyGuardInput::new(
                 ceremony_id(),
                 guard_name.clone(),
+                role_id(),
             ))
             .await
             .unwrap();

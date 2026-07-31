@@ -872,6 +872,11 @@ message ApplyCeremonyTransitionResponse {
 message ApproveCeremonyGuardRequest {
   string ceremony_id = 1;
   string guard_name = 2;
+  // Who is letting it through. An approval that cannot name a seat is
+  // a receipt asserting a human decision nobody can be shown to have
+  // taken — the same objection the deferral below already answers for
+  // what and why.
+  string role_id = 3;
 }
 
 message ApproveCeremonyGuardResponse {
@@ -888,6 +893,9 @@ message DeferCeremonyGuardRequest {
   string statement = 3;
   string reason = 4;
   repeated string reconsider_when = 5;
+  // And who decided it. The fourth of the four, and the only one
+  // nobody can reconstruct afterwards.
+  string role_id = 6;
 }
 
 message DeferCeremonyGuardResponse {

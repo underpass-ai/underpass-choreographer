@@ -27,6 +27,7 @@ pub fn approve_ceremony_guard_input_from_proto(
     Ok(ApproveCeremonyGuardInput::new(
         CeremonyId::new(request.ceremony_id)?,
         GuardName::new(request.guard_name)?,
+        RoleId::new(request.role_id)?,
     ))
 }
 
@@ -41,6 +42,7 @@ pub fn defer_ceremony_guard_input_from_proto(
             request.reason,
             request.reconsider_when,
         )?,
+        RoleId::new(request.role_id)?,
     ))
 }
 
@@ -221,6 +223,7 @@ mod tests {
     #[test]
     fn a_deferral_carries_what_was_decided_and_what_would_reopen_it() {
         let input = defer_ceremony_guard_input_from_proto(pb::DeferCeremonyGuardRequest {
+            role_id: "facilitator".to_owned(),
             ceremony_id: "session-1".to_owned(),
             guard_name: "budget_approved".to_owned(),
             statement: "Not approving today.".to_owned(),

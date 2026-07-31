@@ -897,7 +897,11 @@ fn approval_call(id: u64, ceremony_id: &str, guard_name: &str) -> Value {
     tool_call(
         id,
         "choreo_approve_ceremony_guard",
-        &json!({ "ceremony_id": ceremony_id, "guard_name": guard_name }),
+        &json!({
+            "ceremony_id": ceremony_id,
+            "guard_name": guard_name,
+            "role_id": "ENGINEER",
+        }),
     )
 }
 
@@ -911,6 +915,7 @@ fn deferral_call(id: u64, ceremony_id: &str, guard_name: &str) -> Value {
             "statement": "I do not know.",
             "reason": "The resolution is not clear.",
             "reconsider_when": ["New evidence explains the resolution."],
+            "role_id": "ENGINEER",
         }),
     )
 }

@@ -89,6 +89,7 @@ async fn a_session_waiting_on_a_person_says_so_and_moves_once_they_approve() {
 
     let approved = client
         .approve_ceremony_guard(ApproveCeremonyGuardRequest {
+            role_id: "APPROVER".to_owned(),
             ceremony_id: ceremony_id.to_owned(),
             guard_name: "human_approved".to_owned(),
         })
@@ -135,6 +136,7 @@ async fn deferring_records_the_decision_instead_of_leaving_silence() {
 
     let deferred = client
         .defer_ceremony_guard(DeferCeremonyGuardRequest {
+            role_id: "APPROVER".to_owned(),
             ceremony_id: ceremony_id.to_owned(),
             guard_name: "human_approved".to_owned(),
             statement: "Not approving today.".to_owned(),
@@ -312,6 +314,7 @@ async fn a_guard_that_does_not_exist_is_refused() {
 
     let status = client
         .approve_ceremony_guard(ApproveCeremonyGuardRequest {
+            role_id: "APPROVER".to_owned(),
             ceremony_id: ceremony_id.to_owned(),
             guard_name: "not_a_guard".to_owned(),
         })

@@ -569,10 +569,11 @@ fn ceremony_guard_approval_schema() -> Value {
     json!({
         "type": "object",
         "additionalProperties": false,
-        "required": ["ceremony_id", "guard_name"],
+        "required": ["ceremony_id", "guard_name", "role_id"],
         "properties": {
             "ceremony_id": string_schema("Started ceremony instance id."),
-            "guard_name": string_schema("Currently-blocking human guard explicitly approved by the human participant.")
+            "guard_name": string_schema("Currently-blocking human guard explicitly approved by the human participant."),
+            "role_id": string_schema("Seat approving it, declared by this ceremony's definition. Required: an approval that names no one is a receipt for a human decision nobody can be shown to have taken.")
         }
     })
 }
@@ -581,10 +582,11 @@ fn ceremony_guard_deferral_schema() -> Value {
     json!({
         "type": "object",
         "additionalProperties": false,
-        "required": ["ceremony_id", "guard_name", "statement", "reason", "reconsider_when"],
+        "required": ["ceremony_id", "guard_name", "role_id", "statement", "reason", "reconsider_when"],
         "properties": {
             "ceremony_id": string_schema("Started ceremony instance id."),
             "guard_name": string_schema("Currently-blocking human guard whose decision is deferred."),
+            "role_id": string_schema("Seat deferring it, declared by this ceremony's definition. The fourth of what, why, when and who — and the only one nobody can reconstruct afterwards."),
             "statement": string_schema("Human participant's own statement, preserved verbatim."),
             "reason": string_schema("Why the participant cannot decide yet."),
             "reconsider_when": {
