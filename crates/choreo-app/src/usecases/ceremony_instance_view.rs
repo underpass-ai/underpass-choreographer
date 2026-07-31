@@ -223,6 +223,18 @@ impl<'a> CeremonyInstanceView<'a> {
         &self.waiting_for_human
     }
 
+    /// Who sits in each seat for this session. Read straight off the
+    /// instance: seating is state, not something derived.
+    #[must_use]
+    pub fn participant_bindings(
+        &self,
+    ) -> &std::collections::BTreeMap<
+        choreo_core::value_objects::RoleId,
+        choreo_core::value_objects::CeremonyParticipantBinding,
+    > {
+        self.instance.participant_bindings()
+    }
+
     #[must_use]
     pub fn next_step_id(&self) -> Option<&'a StepId> {
         self.next_step_id

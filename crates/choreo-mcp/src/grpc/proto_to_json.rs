@@ -384,6 +384,15 @@ pub(crate) fn ceremony_instance_state_to_json(state: pb::CeremonyInstanceState) 
             .collect::<Vec<_>>(),
         "open_intervention_ids": state.open_intervention_ids,
         "context": optional_pb_struct_to_json(state.context),
+        "participant_bindings": state
+            .participant_bindings
+            .into_iter()
+            .map(|binding| json!({
+                "role_id": binding.role_id,
+                "specialty": binding.specialty,
+                "bound_at": binding.bound_at,
+            }))
+            .collect::<Vec<_>>(),
     })
 }
 

@@ -11,6 +11,7 @@ mod apply_ceremony_transition_input;
 mod apply_ceremony_transition_use_case;
 mod approve_ceremony_guard_input;
 mod approve_ceremony_guard_use_case;
+mod bind_ceremony_participants_use_case;
 mod ceremony_draft_view;
 mod ceremony_instance_view;
 mod ceremony_participant_descriptor;
@@ -68,6 +69,9 @@ pub use apply_ceremony_transition_input::ApplyCeremonyTransitionInput;
 pub use apply_ceremony_transition_use_case::ApplyCeremonyTransitionUseCase;
 pub use approve_ceremony_guard_input::ApproveCeremonyGuardInput;
 pub use approve_ceremony_guard_use_case::ApproveCeremonyGuardUseCase;
+pub use bind_ceremony_participants_use_case::{
+    BindCeremonyParticipantsInput, BindCeremonyParticipantsUseCase,
+};
 pub use ceremony_draft_view::{CeremonyDraftSummary, CeremonyDraftView};
 pub use ceremony_instance_view::{
     CeremonyGuardView, CeremonyInstanceView, CeremonyStepView, CeremonyTransitionView,

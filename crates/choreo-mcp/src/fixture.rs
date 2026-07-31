@@ -70,6 +70,7 @@ impl ChoreoMcpToolBackend for FixtureChoreoMcpBackend {
                 "choreo_explain_ceremony_draft" => explain_draft_fixture(),
                 "choreo_publish_ceremony_definition" => publish_definition_fixture(),
                 "choreo_diff_ceremony_definitions" => diff_definitions_fixture(),
+                "choreo_bind_ceremony_participants" => ceremony_instance_fixture(),
                 "choreo_get_status" => get_status_fixture(),
                 "choreo_get_metrics" => get_metrics_fixture(),
                 other => {
@@ -354,6 +355,13 @@ fn ceremony_instance_fixture() -> Value {
             }
         ],
         "open_intervention_ids": ["item-1"],
+        "participant_bindings": [
+            {
+                "role_id": "RISK_REVIEWER",
+                "specialty": "senior_sre_panel",
+                "bound_at": "2026-01-01T00:00:00Z"
+            }
+        ],
         "context": { "brief": "ship the editorial calendar" }
     })
 }

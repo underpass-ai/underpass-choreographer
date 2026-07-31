@@ -3,12 +3,13 @@ use std::sync::Arc;
 
 use choreo_app::usecases::{
     ApplyCeremonyTransitionInput, ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardInput,
-    ApproveCeremonyGuardUseCase, CeremonyDefinitionSource, CloseCeremonyInterventionInput,
-    CloseCeremonyInterventionUseCase, CollectCeremonyEvidenceInput, CollectCeremonyEvidenceUseCase,
-    CompleteCeremonyStepInput, CompleteCeremonyStepUseCase, DeferCeremonyGuardInput,
-    DeferCeremonyGuardUseCase, DiffCeremonyDefinitionsUseCase, GetCeremonyDefinitionUseCase,
-    GetCeremonyInstanceUseCase, GetCeremonyTranscriptUseCase, ListCeremonyDefinitionsUseCase,
-    ListCeremonyInstancesUseCase, MountCeremonyDefinitionsOutput, MountCeremonyDefinitionsUseCase,
+    ApproveCeremonyGuardUseCase, BindCeremonyParticipantsInput, BindCeremonyParticipantsUseCase,
+    CeremonyDefinitionSource, CloseCeremonyInterventionInput, CloseCeremonyInterventionUseCase,
+    CollectCeremonyEvidenceInput, CollectCeremonyEvidenceUseCase, CompleteCeremonyStepInput,
+    CompleteCeremonyStepUseCase, DeferCeremonyGuardInput, DeferCeremonyGuardUseCase,
+    DiffCeremonyDefinitionsUseCase, GetCeremonyDefinitionUseCase, GetCeremonyInstanceUseCase,
+    GetCeremonyTranscriptUseCase, ListCeremonyDefinitionsUseCase, ListCeremonyInstancesUseCase,
+    MountCeremonyDefinitionsOutput, MountCeremonyDefinitionsUseCase,
     PublishCeremonyDefinitionUseCase, RequestCeremonyInterventionInput,
     RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
     RespondToCeremonyInterventionInput, RespondToCeremonyInterventionUseCase, RunCeremonyInput,
@@ -200,6 +201,20 @@ impl EmbeddedChoreographer {
             self.definitions.clone(),
             self.publications.clone(),
         ))
+    }
+
+    /// Seat this session's roles.
+    pub async fn bind_participants(
+        &self,
+        input: BindCeremonyParticipantsInput,
+    ) -> Result<CeremonyInstance, DomainError> {
+        BindCeremonyParticipantsUseCase::new(
+            self.resolve_definition(),
+            self.instances.clone(),
+            self.clock.clone(),
+        )
+        .execute(input)
+        .await
     }
 
     /// Compare two definitions, either side published or supplied.

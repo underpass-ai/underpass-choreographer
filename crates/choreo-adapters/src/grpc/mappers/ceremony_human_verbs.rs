@@ -6,14 +6,15 @@
 //! deciding anything: what a role may do is the engine's business.
 
 use choreo_app::usecases::{
-    ApproveCeremonyGuardInput, CloseCeremonyInterventionInput, CollectCeremonyEvidenceInput,
-    DeferCeremonyGuardInput, RequestCeremonyInterventionInput, RespondToCeremonyInterventionInput,
+    ApproveCeremonyGuardInput, BindCeremonyParticipantsInput, CloseCeremonyInterventionInput,
+    CollectCeremonyEvidenceInput, DeferCeremonyGuardInput, RequestCeremonyInterventionInput,
+    RespondToCeremonyInterventionInput,
 };
 use choreo_core::error::DomainError;
 use choreo_core::value_objects::{
     CeremonyEvidenceSourceId, CeremonyGuardDeferralContent, CeremonyId,
     CeremonyInterventionContent, CeremonyInterventionId, CeremonyInterventionKind,
-    CeremonyInterventionProvenance, CeremonyInterventionTarget, GuardName, RoleId,
+    CeremonyInterventionProvenance, CeremonyInterventionTarget, GuardName, RoleId, Specialty,
 };
 use choreo_proto::v1 as pb;
 use uuid::Uuid;
@@ -143,6 +144,20 @@ fn provenance_from_proto(
         RoleId::new(provenance.source_response_role_id)?,
         RoleId::new(provenance.selected_role_id)?,
     ))
+}
+
+/// Seating for one session: role id to the specialty its work is put
+/// to. Empty is refused by the input itself, so a caller who sent
+/// nothing hears that rather than "done".
+pub fn bind_ceremony_participants_input_from_proto(
+    request: pb::BindCeremonyParticipantsRequest,
+) -> Result<BindCeremonyParticipantsInput, DomainError> {
+    let seating = request
+        .seating
+        .into_iter()
+        .map(|(role_id, specialty)| Ok((RoleId::new(role_id)?, Specialty::new(specialty)?)))
+        .collect::<Result<Vec<_>, DomainError>>()?;
+    BindCeremonyParticipantsInput::new(CeremonyId::new(request.ceremony_id)?, seating)
 }
 
 #[cfg(test)]

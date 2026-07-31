@@ -258,7 +258,8 @@ impl RunCeremonyUseCase {
             attempt,
         )
         .with_transcript(transcript)
-        .with_role(role_id.clone());
+        .with_role(role_id.clone())
+        .with_bound_specialty(instance.bound_specialty(role_id).cloned());
         let step_result = self.execute_handler(request).await?;
 
         let mut refreshed = self.instances.get(instance.id()).await?;

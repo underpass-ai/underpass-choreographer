@@ -41,13 +41,14 @@ pub use ceremony::{
     CeremonyId, CeremonyInputDefinition, CeremonyInterventionContent, CeremonyInterventionId,
     CeremonyInterventionKind, CeremonyInterventionProvenance, CeremonyInterventionResponse,
     CeremonyInterventionStatus, CeremonyInterventionTarget, CeremonyName, CeremonyOutputDefinition,
-    CeremonyRevision, CeremonyRole, CeremonyState, CeremonyStateKind, CeremonyStep,
-    CeremonyStepContribution, CeremonyTranscript, CeremonyTransition, CeremonyValidationFinding,
-    CeremonyValidationLocus, CeremonyValidationReport, CeremonyValidationSeverity, CeremonyVersion,
-    ExpectedRevision, GuardCondition, GuardName, IdempotencyKey, InputName, InputRequirement,
-    LeaseOwnerId, OutputName, RetryPolicy, RoleAction, RoleId, StateId, StepAttempt,
-    StepErrorMessage, StepExecutionRecord, StepHandlerConfig, StepHandlerKind, StepId, StepLease,
-    StepOutput, StepResult, StepStatus, StepTimeout, TransitionTrigger,
+    CeremonyParticipantBinding, CeremonyRevision, CeremonyRole, CeremonyState, CeremonyStateKind,
+    CeremonyStep, CeremonyStepContribution, CeremonyTranscript, CeremonyTransition,
+    CeremonyValidationFinding, CeremonyValidationLocus, CeremonyValidationReport,
+    CeremonyValidationSeverity, CeremonyVersion, ExpectedRevision, GuardCondition, GuardName,
+    IdempotencyKey, InputName, InputRequirement, LeaseOwnerId, OutputName, RetryPolicy, RoleAction,
+    RoleId, StateId, StepAttempt, StepErrorMessage, StepExecutionRecord, StepHandlerConfig,
+    StepHandlerKind, StepId, StepLease, StepOutput, StepResult, StepStatus, StepTimeout,
+    TransitionTrigger,
 };
 pub use ceremony_outcome::CeremonyOutcome;
 pub use council_selector::CouncilSelector;

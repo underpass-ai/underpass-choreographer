@@ -8,7 +8,8 @@
 use choreo_app::usecases::{CeremonyInstanceView, CeremonyStepView, CeremonyTransitionView};
 use choreo_core::entities::{CeremonyInstance, CeremonyIntervention};
 use choreo_core::value_objects::{
-    CeremonyDefinitionDigest, CeremonyGuardDeferral, CeremonyInterventionResponse, RoleId, StepId,
+    CeremonyDefinitionDigest, CeremonyGuardDeferral, CeremonyInterventionResponse,
+    CeremonyParticipantBinding, RoleId, StepId,
 };
 use choreo_proto::v1 as pb;
 
@@ -58,6 +59,24 @@ pub fn ceremony_instance_state_from(view: &CeremonyInstanceView<'_>) -> pb::Cere
             .collect(),
         open_intervention_ids: open_intervention_ids(instance),
         context: Some(attributes_to_struct(instance.context().attributes())),
+        participant_bindings: view
+            .participant_bindings()
+            .values()
+            .map(participant_binding_state_from)
+            .collect(),
+    }
+}
+
+fn participant_binding_state_from(
+    binding: &CeremonyParticipantBinding,
+) -> pb::CeremonyParticipantBindingState {
+    pb::CeremonyParticipantBindingState {
+        role_id: binding.role_id().as_str().to_owned(),
+        specialty: binding.specialty().as_str().to_owned(),
+        bound_at: binding
+            .bound_at()
+            .format(&time::format_description::well_known::Rfc3339)
+            .unwrap_or_default(),
     }
 }
 

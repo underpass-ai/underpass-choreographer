@@ -396,6 +396,34 @@ pub(crate) async fn dispatch(
             ))
         }
 
+        "choreo_bind_ceremony_participants" => {
+            let obj = j2p::require_object(arguments, "tools/call.arguments")?;
+            let seating = obj
+                .get("seating")
+                .and_then(Value::as_object)
+                .ok_or_else(|| "missing required object `seating`".to_owned())?;
+            let request = pb::BindCeremonyParticipantsRequest {
+                ceremony_id: j2p::require_str(obj, "ceremony_id")?.to_owned(),
+                seating: seating
+                    .iter()
+                    .map(|(role, specialty)| {
+                        specialty
+                            .as_str()
+                            .map(|specialty| (role.clone(), specialty.to_owned()))
+                            .ok_or_else(|| format!("`seating.{role}` must be a string"))
+                    })
+                    .collect::<Result<_, _>>()?,
+            };
+            let response = client
+                .bind_ceremony_participants(request)
+                .await
+                .map_err(|s| status_error(&s))?;
+            let pb::BindCeremonyParticipantsResponse { instance } = response.into_inner();
+            instance
+                .map(p2j::ceremony_instance_state_to_json)
+                .ok_or_else(|| "choreographer returned no ceremony instance".to_owned())
+        }
+
         "choreo_get_status" => {
             let request = build_get_status_request(arguments);
             let response = client

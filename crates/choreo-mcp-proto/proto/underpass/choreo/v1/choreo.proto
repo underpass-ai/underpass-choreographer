@@ -159,6 +159,12 @@ service ChoreographerService {
   // "can the meeting happening right now still finish" is not.
   rpc DiffCeremonyDefinitions(DiffCeremonyDefinitionsRequest) returns (DiffCeremonyDefinitionsResponse);
 
+  // Seat this session's roles. A definition says what a role does; it
+  // does not say who plays it, and the same ceremony run twice can
+  // seat different people. Answers with the session, like every other
+  // move.
+  rpc BindCeremonyParticipants(BindCeremonyParticipantsRequest) returns (BindCeremonyParticipantsResponse);
+
   // ---- Observability --------------------------------------------------
 
   rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
@@ -777,6 +783,18 @@ message CeremonyInstanceState {
   repeated CeremonyInterventionState interventions = 12;
   repeated string open_intervention_ids = 13;
   google.protobuf.Struct context = 14;
+  // Who sits in each seat for this session, where anyone was seated.
+  // A role absent here is played the way the definition says, which is
+  // the usual case and not a lesser one.
+  repeated CeremonyParticipantBindingState participant_bindings = 15;
+}
+
+message CeremonyParticipantBindingState {
+  string role_id = 1;
+  // The specialty the role's work is put to. A specialty is what the
+  // engine resolves a council from, so this names the panel.
+  string specialty = 2;
+  string bound_at = 3;
 }
 
 message GetCeremonyInstanceRequest {
@@ -1011,6 +1029,17 @@ message CeremonyDefinitionChange {
   string impact = 3;
   // What changed about the element. The locus says which one.
   string detail = 4;
+}
+
+message BindCeremonyParticipantsRequest {
+  string ceremony_id = 1;
+  // Role id to specialty. Empty seating is refused: it would change
+  // nothing and answering "done" to it would be a small lie.
+  map<string, string> seating = 2;
+}
+
+message BindCeremonyParticipantsResponse {
+  CeremonyInstanceState instance = 1;
 }
 
 message DiffCeremonyDefinitionsRequest {

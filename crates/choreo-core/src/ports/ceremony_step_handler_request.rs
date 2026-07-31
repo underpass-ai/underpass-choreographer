@@ -3,7 +3,7 @@
 use crate::entities::CeremonyIntervention;
 use crate::value_objects::{
     CeremonyContext, CeremonyId, CeremonyName, CeremonyTranscript, CeremonyVersion, RoleId,
-    StateId, StepAttempt, StepHandlerConfig, StepHandlerKind, StepId,
+    Specialty, StateId, StepAttempt, StepHandlerConfig, StepHandlerKind, StepId,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -20,6 +20,10 @@ pub struct CeremonyStepHandlerRequest {
     transcript: CeremonyTranscript,
     interventions: Vec<CeremonyIntervention>,
     role_id: Option<RoleId>,
+    /// The specialty this session seated for the role, when it seated
+    /// one. Absent means the step's own configuration decides, which
+    /// is how every session behaved before seating existed.
+    bound_specialty: Option<Specialty>,
 }
 
 impl CeremonyStepHandlerRequest {
@@ -48,6 +52,7 @@ impl CeremonyStepHandlerRequest {
             transcript: CeremonyTranscript::empty(),
             interventions: Vec::new(),
             role_id: None,
+            bound_specialty: None,
         }
     }
 
@@ -66,6 +71,15 @@ impl CeremonyStepHandlerRequest {
     #[must_use]
     pub fn with_interventions(mut self, interventions: Vec<CeremonyIntervention>) -> Self {
         self.interventions = interventions;
+        self
+    }
+
+    /// Attach the specialty this session seated for the role, so the
+    /// handler puts the work to that panel instead of the one the step
+    /// declares. `None` leaves the step's own configuration deciding.
+    #[must_use]
+    pub fn with_bound_specialty(mut self, specialty: Option<Specialty>) -> Self {
+        self.bound_specialty = specialty;
         self
     }
 
@@ -133,6 +147,12 @@ impl CeremonyStepHandlerRequest {
     #[must_use]
     pub fn interventions(&self) -> &[CeremonyIntervention] {
         &self.interventions
+    }
+
+    /// The panel this session seated for the role, if it seated one.
+    #[must_use]
+    pub fn bound_specialty(&self) -> Option<&Specialty> {
+        self.bound_specialty.as_ref()
     }
 
     /// The ceremony role this step is executed as, if set.

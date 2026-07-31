@@ -86,7 +86,13 @@ fn task_from(
     }
     Ok(Task::new(
         task_id_from(request)?,
-        config.specialty().clone(),
+        // Whom the work is put to. The session's seating wins over the
+        // step's configuration when there is any: a definition says
+        // what a role does, and a binding says who is doing it here.
+        request
+            .bound_specialty()
+            .unwrap_or_else(|| config.specialty())
+            .clone(),
         build_description(request, config)?,
         constraints,
         Attributes::new(task_attributes(request, config))?,
@@ -362,6 +368,69 @@ mod tests {
     };
 
     use super::*;
+
+    /// The point of seating: the work goes to whoever this session
+    /// seated, not to whoever the document names in general. Only the
+    /// bound council exists here, so the step can succeed only by
+    /// asking it.
+    #[tokio::test]
+    async fn a_seated_role_sends_its_work_to_the_council_the_session_bound() {
+        let seated = Specialty::new("senior_sre_panel").unwrap();
+        let agent_id = AgentId::new("agent-senior_sre_panel-0").unwrap();
+        let agent_registry = Arc::new(InMemoryAgentRegistry::new());
+        agent_registry
+            .insert(Arc::new(NoopAgent::new(agent_id.clone(), seated.clone())))
+            .await
+            .unwrap();
+
+        let council_registry = Arc::new(InMemoryCouncilRegistry::new());
+        council_registry
+            .register(
+                Council::new(
+                    CouncilId::new("council-senior_sre_panel").unwrap(),
+                    seated.clone(),
+                    vec![agent_id],
+                    SystemClock::new().now(),
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let deliberate = Arc::new(DeliberateUseCase::new(
+            Arc::new(SystemClock::new()),
+            council_registry,
+            agent_registry,
+            vec![Arc::new(ContentNonEmptyValidator::new())],
+            Arc::new(UniformScoring::new()),
+            Arc::new(InMemoryDeliberationRepository::new()),
+            Arc::new(NoopMessaging::new()),
+            Arc::new(InMemoryStatistics::new()),
+            Arc::new(choreo_core::ports::NoopMetricsRecorder),
+            "ceremony-step-handler-test",
+        ));
+        let handler = DeliberatingCeremonyStepHandler::new(deliberate);
+
+        // The step still declares `facilitation_prompt`; no council
+        // for it is registered.
+        let request = request_with_prompt().with_bound_specialty(Some(seated.clone()));
+        let result = handler.execute(request).await.unwrap();
+
+        assert_eq!(result.status(), StepStatus::Completed);
+        // Completing at all already proves the redirect — the step's
+        // own specialty has no council. The answer naming the seated
+        // agent proves who actually gave it.
+        let winner = result
+            .output()
+            .attributes()
+            .get("winner_content")
+            .and_then(|value| value.as_str())
+            .expect("a completed step should carry the winning content");
+        assert!(
+            winner.contains("agent-senior_sre_panel-0"),
+            "the answer came from somewhere other than the seated panel: {winner}"
+        );
+    }
 
     #[tokio::test]
     async fn executes_step_by_running_deliberation_for_configured_specialty() {

@@ -30,9 +30,10 @@ pub(crate) const VALIDATE_CEREMONY_DRAFT_TOOL: &str = "choreo_validate_ceremony_
 pub(crate) const EXPLAIN_CEREMONY_DRAFT_TOOL: &str = "choreo_explain_ceremony_draft";
 pub(crate) const PUBLISH_CEREMONY_DEFINITION_TOOL: &str = "choreo_publish_ceremony_definition";
 pub(crate) const DIFF_CEREMONY_DEFINITIONS_TOOL: &str = "choreo_diff_ceremony_definitions";
+pub(crate) const BIND_CEREMONY_PARTICIPANTS_TOOL: &str = "choreo_bind_ceremony_participants";
 pub(crate) const START_PUBLISHED_CEREMONY_TOOL: &str = "choreo_start_published_ceremony";
 
-const GRPC_TOOL_NAMES: [&str; 33] = [
+const GRPC_TOOL_NAMES: [&str; 34] = [
     "choreo_deliberate",
     "choreo_stream_deliberation",
     "choreo_get_deliberation_result",
@@ -64,6 +65,7 @@ const GRPC_TOOL_NAMES: [&str; 33] = [
     EXPLAIN_CEREMONY_DRAFT_TOOL,
     PUBLISH_CEREMONY_DEFINITION_TOOL,
     DIFF_CEREMONY_DEFINITIONS_TOOL,
+    BIND_CEREMONY_PARTICIPANTS_TOOL,
     "choreo_get_status",
     "choreo_get_metrics",
 ];
@@ -425,6 +427,23 @@ fn grpc_tool_catalog() -> Vec<Value> {
                 "properties": {
                     "before": ceremony_definition_ref_schema("The earlier definition."),
                     "after": ceremony_definition_ref_schema("The later definition.")
+                }
+            }),
+        ),
+        tool_def(
+            BIND_CEREMONY_PARTICIPANTS_TOOL,
+            "Seat this session's roles: which specialty — and so which council — does each role's work here. A role left unseated is played the way the definition says.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["ceremony_id", "seating"],
+                "properties": {
+                    "ceremony_id": string_schema("Session being seated."),
+                    "seating": {
+                        "type": "object",
+                        "description": "Role id to specialty. At least one seat; an empty object would change nothing.",
+                        "additionalProperties": { "type": "string" }
+                    }
                 }
             }),
         ),
@@ -1036,7 +1055,7 @@ mod tests {
         let all_names = catalog_tool_names();
         let unique_names = all_names.iter().collect::<std::collections::BTreeSet<_>>();
 
-        assert_eq!(all_names.len(), 33);
+        assert_eq!(all_names.len(), 34);
         assert_eq!(unique_names.len(), all_names.len());
         assert!(all_names.contains(&VALIDATE_CEREMONY_DRAFT_TOOL.to_owned()));
         assert!(all_names.contains(&PUBLISH_CEREMONY_DEFINITION_TOOL.to_owned()));

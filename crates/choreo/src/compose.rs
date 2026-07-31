@@ -31,15 +31,16 @@ use choreo_adapters::validators::{
 };
 use choreo_app::services::AutoDispatchService;
 use choreo_app::usecases::{
-    ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase, CloseCeremonyInterventionUseCase,
-    CollectCeremonyEvidenceUseCase, CreateCouncilUseCase, DeferCeremonyGuardUseCase,
-    DeleteCouncilUseCase, DeliberateUseCase, DiffCeremonyDefinitionsUseCase,
-    GetCeremonyInstanceUseCase, GetDeliberationUseCase, ListCeremonyInstancesUseCase,
-    ListCouncilsUseCase, OrchestrateUseCase, PrepareCeremonyParticipantsUseCase,
-    PublishCeremonyDefinitionUseCase, RegisterAgentUseCase, RequestCeremonyInterventionUseCase,
-    ResolveCeremonyDefinitionUseCase, RespondToCeremonyInterventionUseCase, RunCeremonyStepUseCase,
-    RunCeremonyUseCase, RunCouncilDecisionUseCase, StartCeremonyUseCase,
-    StartPublishedCeremonyUseCase, UnregisterAgentUseCase,
+    ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase, BindCeremonyParticipantsUseCase,
+    CloseCeremonyInterventionUseCase, CollectCeremonyEvidenceUseCase, CreateCouncilUseCase,
+    DeferCeremonyGuardUseCase, DeleteCouncilUseCase, DeliberateUseCase,
+    DiffCeremonyDefinitionsUseCase, GetCeremonyInstanceUseCase, GetDeliberationUseCase,
+    ListCeremonyInstancesUseCase, ListCouncilsUseCase, OrchestrateUseCase,
+    PrepareCeremonyParticipantsUseCase, PublishCeremonyDefinitionUseCase, RegisterAgentUseCase,
+    RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
+    RespondToCeremonyInterventionUseCase, RunCeremonyStepUseCase, RunCeremonyUseCase,
+    RunCouncilDecisionUseCase, StartCeremonyUseCase, StartPublishedCeremonyUseCase,
+    UnregisterAgentUseCase,
 };
 use choreo_core::error::DomainError;
 use choreo_core::ports::{
@@ -355,6 +356,11 @@ pub async fn compose() -> Result<Application, ComposeError> {
     let diff_ceremony_definitions = Arc::new(DiffCeremonyDefinitionsUseCase::new(
         ceremony_publications.clone(),
     ));
+    let bind_ceremony_participants = Arc::new(BindCeremonyParticipantsUseCase::new(
+        resolve_ceremony_definition.clone(),
+        ceremony_instances.clone(),
+        clock.clone(),
+    ));
 
     let create_council = Arc::new(CreateCouncilUseCase::new(
         clock.clone(),
@@ -424,6 +430,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         .collect_ceremony_evidence(collect_ceremony_evidence)
         .publish_ceremony_definition(publish_ceremony_definition)
         .diff_ceremony_definitions(diff_ceremony_definitions)
+        .bind_ceremony_participants(bind_ceremony_participants)
         .ceremony_definitions(ceremony_definitions.clone())
         .get_ceremony_instance(get_ceremony_instance)
         .list_ceremony_instances(list_ceremony_instances)

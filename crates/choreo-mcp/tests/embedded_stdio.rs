@@ -145,6 +145,7 @@ async fn embedded_server_advertises_only_executable_tools() {
             "choreo_explain_ceremony_draft",
             "choreo_publish_ceremony_definition",
             "choreo_diff_ceremony_definitions",
+            "choreo_bind_ceremony_participants",
         ]
     );
 
@@ -717,7 +718,7 @@ async fn embedded_binary_completes_incremental_human_authorization_over_stdio() 
     let completed = read_response(&mut lines).await;
 
     assert_eq!(initialized["result"]["metadata"]["backend"], "embedded");
-    assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 17);
+    assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 18);
     assert_eq!(structured(&started)["next_step_id"], "investigate");
     assert_eq!(
         structured(&stepped)["waiting_for_human"],

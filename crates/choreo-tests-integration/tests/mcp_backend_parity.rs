@@ -348,6 +348,7 @@ async fn both_backends_advertise_every_ceremony_tool() {
         "choreo_explain_ceremony_draft",
         "choreo_publish_ceremony_definition",
         "choreo_diff_ceremony_definitions",
+        "choreo_bind_ceremony_participants",
     ] {
         assert!(
             embedded.supports_tool(tool),

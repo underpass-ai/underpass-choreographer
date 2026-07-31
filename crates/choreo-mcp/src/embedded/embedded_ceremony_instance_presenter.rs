@@ -88,6 +88,15 @@ impl EmbeddedCeremonyInstancePresenter {
             "interventions": interventions,
             "open_intervention_ids": open_intervention_ids,
             "context": instance.context(),
+            "participant_bindings": view
+                .participant_bindings()
+                .values()
+                .map(|binding| json!({
+                    "role_id": binding.role_id().as_str(),
+                    "specialty": binding.specialty().as_str(),
+                    "bound_at": binding.bound_at(),
+                }))
+                .collect::<Vec<_>>(),
         }))
     }
 }
