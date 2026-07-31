@@ -105,7 +105,7 @@ jobs:
       - name: Run clippy
         # Enable every provider / transport / persistence feature
         # explicitly so feature-gated adapters (agent-anthropic,
-        # agent-openai, agent-vllm, grpc, nats, redb) are linted. A
+        # agent-openai, agent-vllm, grpc, nats, redb, kmp) are linted. A
         # feature CI never turns on is code CI never checks.
         # `container-tests` is deliberately excluded because the
         # separate `integration` workflow covers it with a real Docker
@@ -116,6 +116,7 @@ jobs:
             --features choreo-adapters/agent-openai \
             --features choreo-adapters/agent-vllm \
             --features choreo-adapters/redb \
+            --features choreo-adapters/kmp \
             -- -D warnings
 
   test:
@@ -139,12 +140,19 @@ jobs:
         # Same feature set as clippy — exercise every provider,
         # transport and persistence module. `container-tests` stays on
         # the separate `integration` workflow (real Docker).
+        #
+        # The `kmp` tests that need a real memory kernel say so and
+        # skip here, because the kernel is another repository's binary
+        # and this job does not build it. What runs is the adapter's
+        # own half of the contract; the kernel's half is checked by
+        # `kmp_live_kernel.rs` wherever that binary exists.
         run: |
           cargo test --workspace --locked \
             --features choreo-adapters/agent-anthropic \
             --features choreo-adapters/agent-openai \
             --features choreo-adapters/agent-vllm \
-            --features choreo-adapters/redb
+            --features choreo-adapters/redb \
+            --features choreo-adapters/kmp
 
   container-image:
     runs-on: ubuntu-24.04

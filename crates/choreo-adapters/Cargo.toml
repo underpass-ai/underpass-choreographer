@@ -34,6 +34,12 @@ postgres = ["dep:sqlx"]
 # an embedded host stays free of system dependencies.
 redb = ["dep:redb"]
 
+# Memory that outlives a session, kept by an external memory kernel
+# spoken to over its tool protocol. Deliberately dependency-free: a
+# child process and JSON, so this crate stays publishable without
+# taking on another workspace's release cadence.
+kmp = []
+
 # OpenTelemetry integration. Pulls in the bridge crates the gRPC
 # interceptor needs to extract W3C tracecontext from request
 # metadata and set it as the OTel parent context. The exporter
