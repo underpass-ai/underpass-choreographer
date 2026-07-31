@@ -322,7 +322,7 @@ mod tests {
         let parsed: Value = serde_json::from_str(&response).unwrap();
         let tools = parsed["result"]["tools"].as_array().unwrap();
         // One per RPC on the choreographer service.
-        assert_eq!(tools.len(), 32);
+        assert_eq!(tools.len(), 33);
     }
 
     #[tokio::test]

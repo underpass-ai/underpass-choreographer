@@ -7,10 +7,15 @@
 //! carries the same shape the in-process JSON does, not a rendering
 //! of it that a client would have to parse a second time.
 
-use choreo_app::usecases::CeremonyDraftView;
+use choreo_app::usecases::{CeremonyDefinitionSource, CeremonyDraftView};
 use choreo_core::entities::PublicationOutcome;
-use choreo_core::value_objects::CeremonyValidationFinding;
+use choreo_core::error::DomainError;
+use choreo_core::value_objects::{
+    CeremonyDefinitionDiff, CeremonyName, CeremonyValidationFinding, CeremonyVersion,
+};
 use choreo_proto::v1 as pb;
+
+use crate::yaml::CeremonyDefinitionYaml;
 
 use super::attributes::struct_from_json;
 
@@ -98,4 +103,53 @@ fn finding_from(finding: &CeremonyValidationFinding) -> pb::CeremonyDraftFinding
 
 fn count(value: usize) -> u32 {
     u32::try_from(value).unwrap_or(u32::MAX)
+}
+
+/// One side of a comparison. Naming a published version and supplying
+/// a document are the two things a caller can mean; asking for both,
+/// or neither, is not a third thing with a sensible reading.
+pub fn ceremony_definition_source_from_proto(
+    reference: Option<pb::CeremonyDefinitionRef>,
+    side: &'static str,
+) -> Result<CeremonyDefinitionSource, DomainError> {
+    let reference = reference.ok_or(DomainError::EmptyField { field: side })?;
+    let named = !reference.ceremony.trim().is_empty() || !reference.version.trim().is_empty();
+    let supplied = !reference.definition_yaml.trim().is_empty();
+
+    match (named, supplied) {
+        (true, false) => Ok(CeremonyDefinitionSource::published(
+            CeremonyName::new(reference.ceremony)?,
+            CeremonyVersion::new(reference.version)?,
+        )),
+        (false, true) => Ok(CeremonyDefinitionSource::supplied(
+            CeremonyDefinitionYaml::parse_str(&reference.definition_yaml)?,
+        )),
+        (true, true) => Err(DomainError::InvariantViolated {
+            reason: "a definition is either published or supplied, not both",
+        }),
+        (false, false) => Err(DomainError::EmptyField { field: side }),
+    }
+}
+
+pub fn diff_ceremony_definitions_response_from(
+    diff: &CeremonyDefinitionDiff,
+) -> pb::DiffCeremonyDefinitionsResponse {
+    pb::DiffCeremonyDefinitionsResponse {
+        identical: diff.is_identical(),
+        strands_running_sessions: diff.strands_running_sessions(),
+        strand_count: u32::try_from(diff.strand_count()).unwrap_or(u32::MAX),
+        changes: diff
+            .changes()
+            .iter()
+            .map(|change| pb::CeremonyDefinitionChange {
+                kind: change.kind().as_label().to_owned(),
+                locus: serde_json::to_value(change.locus())
+                    .ok()
+                    .as_ref()
+                    .and_then(struct_from_json),
+                impact: change.impact().as_label().to_owned(),
+                detail: change.detail().to_owned(),
+            })
+            .collect(),
+    }
 }

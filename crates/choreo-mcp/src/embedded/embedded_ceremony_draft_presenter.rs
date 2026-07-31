@@ -1,5 +1,5 @@
 use choreo_app::usecases::CeremonyDraftView;
-use choreo_core::value_objects::CeremonyValidationFinding;
+use choreo_core::value_objects::{CeremonyDefinitionDiff, CeremonyValidationFinding};
 use serde_json::{json, Value};
 
 /// Render a draft analysis for machine and human consumers.
@@ -48,5 +48,26 @@ fn present_finding(finding: &CeremonyValidationFinding) -> Value {
         "severity": if finding.is_blocking() { "error" } else { "warning" },
         "locus": serde_json::to_value(finding.locus()).unwrap_or(Value::Null),
         "message": finding.defect().to_string(),
+    })
+}
+
+/// What changed between two definitions, and for each change whether a
+/// running session could go on. Rendered here and by the gRPC adapter
+/// from the same domain diff, so an author gets one answer.
+pub(crate) fn present_definition_diff(diff: &CeremonyDefinitionDiff) -> Value {
+    json!({
+        "identical": diff.is_identical(),
+        "strands_running_sessions": diff.strands_running_sessions(),
+        "strand_count": diff.strand_count(),
+        "changes": diff
+            .changes()
+            .iter()
+            .map(|change| json!({
+                "kind": change.kind().as_label(),
+                "locus": serde_json::to_value(change.locus()).unwrap_or(Value::Null),
+                "impact": change.impact().as_label(),
+                "detail": change.detail(),
+            }))
+            .collect::<Vec<_>>(),
     })
 }

@@ -33,13 +33,13 @@ use choreo_app::services::AutoDispatchService;
 use choreo_app::usecases::{
     ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase, CloseCeremonyInterventionUseCase,
     CollectCeremonyEvidenceUseCase, CreateCouncilUseCase, DeferCeremonyGuardUseCase,
-    DeleteCouncilUseCase, DeliberateUseCase, GetCeremonyInstanceUseCase, GetDeliberationUseCase,
-    ListCeremonyInstancesUseCase, ListCouncilsUseCase, OrchestrateUseCase,
-    PrepareCeremonyParticipantsUseCase, PublishCeremonyDefinitionUseCase, RegisterAgentUseCase,
-    RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
-    RespondToCeremonyInterventionUseCase, RunCeremonyStepUseCase, RunCeremonyUseCase,
-    RunCouncilDecisionUseCase, StartCeremonyUseCase, StartPublishedCeremonyUseCase,
-    UnregisterAgentUseCase,
+    DeleteCouncilUseCase, DeliberateUseCase, DiffCeremonyDefinitionsUseCase,
+    GetCeremonyInstanceUseCase, GetDeliberationUseCase, ListCeremonyInstancesUseCase,
+    ListCouncilsUseCase, OrchestrateUseCase, PrepareCeremonyParticipantsUseCase,
+    PublishCeremonyDefinitionUseCase, RegisterAgentUseCase, RequestCeremonyInterventionUseCase,
+    ResolveCeremonyDefinitionUseCase, RespondToCeremonyInterventionUseCase, RunCeremonyStepUseCase,
+    RunCeremonyUseCase, RunCouncilDecisionUseCase, StartCeremonyUseCase,
+    StartPublishedCeremonyUseCase, UnregisterAgentUseCase,
 };
 use choreo_core::error::DomainError;
 use choreo_core::ports::{
@@ -352,6 +352,9 @@ pub async fn compose() -> Result<Application, ComposeError> {
     let publish_ceremony_definition = Arc::new(PublishCeremonyDefinitionUseCase::new(
         ceremony_publications.clone(),
     ));
+    let diff_ceremony_definitions = Arc::new(DiffCeremonyDefinitionsUseCase::new(
+        ceremony_publications.clone(),
+    ));
 
     let create_council = Arc::new(CreateCouncilUseCase::new(
         clock.clone(),
@@ -420,6 +423,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         .close_ceremony_intervention(close_ceremony_intervention)
         .collect_ceremony_evidence(collect_ceremony_evidence)
         .publish_ceremony_definition(publish_ceremony_definition)
+        .diff_ceremony_definitions(diff_ceremony_definitions)
         .ceremony_definitions(ceremony_definitions.clone())
         .get_ceremony_instance(get_ceremony_instance)
         .list_ceremony_instances(list_ceremony_instances)

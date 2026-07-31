@@ -3,18 +3,18 @@ use std::sync::Arc;
 
 use choreo_app::usecases::{
     ApplyCeremonyTransitionInput, ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardInput,
-    ApproveCeremonyGuardUseCase, CloseCeremonyInterventionInput, CloseCeremonyInterventionUseCase,
-    CollectCeremonyEvidenceInput, CollectCeremonyEvidenceUseCase, CompleteCeremonyStepInput,
-    CompleteCeremonyStepUseCase, DeferCeremonyGuardInput, DeferCeremonyGuardUseCase,
-    GetCeremonyDefinitionUseCase, GetCeremonyInstanceUseCase, GetCeremonyTranscriptUseCase,
-    ListCeremonyDefinitionsUseCase, ListCeremonyInstancesUseCase, MountCeremonyDefinitionsOutput,
-    MountCeremonyDefinitionsUseCase, PublishCeremonyDefinitionUseCase,
-    RequestCeremonyInterventionInput, RequestCeremonyInterventionUseCase,
-    ResolveCeremonyDefinitionUseCase, RespondToCeremonyInterventionInput,
-    RespondToCeremonyInterventionUseCase, RunCeremonyInput, RunCeremonyOutput,
-    RunCeremonyStepInput, RunCeremonyStepOutput, RunCeremonyStepUseCase, RunCeremonyUseCase,
-    StartCeremonyInput, StartCeremonyStepInput, StartCeremonyStepUseCase, StartCeremonyUseCase,
-    StartPublishedCeremonyUseCase,
+    ApproveCeremonyGuardUseCase, CeremonyDefinitionSource, CloseCeremonyInterventionInput,
+    CloseCeremonyInterventionUseCase, CollectCeremonyEvidenceInput, CollectCeremonyEvidenceUseCase,
+    CompleteCeremonyStepInput, CompleteCeremonyStepUseCase, DeferCeremonyGuardInput,
+    DeferCeremonyGuardUseCase, DiffCeremonyDefinitionsUseCase, GetCeremonyDefinitionUseCase,
+    GetCeremonyInstanceUseCase, GetCeremonyTranscriptUseCase, ListCeremonyDefinitionsUseCase,
+    ListCeremonyInstancesUseCase, MountCeremonyDefinitionsOutput, MountCeremonyDefinitionsUseCase,
+    PublishCeremonyDefinitionUseCase, RequestCeremonyInterventionInput,
+    RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
+    RespondToCeremonyInterventionInput, RespondToCeremonyInterventionUseCase, RunCeremonyInput,
+    RunCeremonyOutput, RunCeremonyStepInput, RunCeremonyStepOutput, RunCeremonyStepUseCase,
+    RunCeremonyUseCase, StartCeremonyInput, StartCeremonyStepInput, StartCeremonyStepUseCase,
+    StartCeremonyUseCase, StartPublishedCeremonyUseCase,
 };
 use choreo_core::entities::{
     CeremonyDefinition, CeremonyInstance, PublicationOutcome, PublishedCeremonyDefinition,
@@ -26,7 +26,8 @@ use choreo_core::ports::{
     CeremonyTranscriptStorePort, ClockPort, MetricsRecorderPort,
 };
 use choreo_core::value_objects::{
-    CeremonyId, CeremonyName, CeremonyTranscript, CeremonyVersion, StepAttempt,
+    CeremonyDefinitionDiff, CeremonyId, CeremonyName, CeremonyTranscript, CeremonyVersion,
+    StepAttempt,
 };
 
 use crate::{EmbeddedChoreographerBuilder, InProcessCeremonyDefinitionSource, VERSION};
@@ -199,6 +200,17 @@ impl EmbeddedChoreographer {
             self.definitions.clone(),
             self.publications.clone(),
         ))
+    }
+
+    /// Compare two definitions, either side published or supplied.
+    pub async fn diff_definitions(
+        &self,
+        before: CeremonyDefinitionSource,
+        after: CeremonyDefinitionSource,
+    ) -> Result<CeremonyDefinitionDiff, DomainError> {
+        DiffCeremonyDefinitionsUseCase::new(self.publications.clone())
+            .execute(before, after)
+            .await
     }
 
     /// Start an instance bound to a published definition's digest.

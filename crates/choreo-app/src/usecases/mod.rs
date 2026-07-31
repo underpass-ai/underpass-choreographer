@@ -26,6 +26,7 @@ mod defer_ceremony_guard_input;
 mod defer_ceremony_guard_use_case;
 mod delete_council;
 mod deliberate;
+mod diff_ceremony_definitions_use_case;
 mod get_ceremony_definition;
 mod get_ceremony_instance;
 mod get_ceremony_transcript;
@@ -84,6 +85,9 @@ pub use defer_ceremony_guard_input::DeferCeremonyGuardInput;
 pub use defer_ceremony_guard_use_case::DeferCeremonyGuardUseCase;
 pub use delete_council::DeleteCouncilUseCase;
 pub use deliberate::{DeliberateOutput, DeliberateUseCase};
+pub use diff_ceremony_definitions_use_case::{
+    CeremonyDefinitionSource, DiffCeremonyDefinitionsUseCase,
+};
 pub use get_ceremony_definition::GetCeremonyDefinitionUseCase;
 pub use get_ceremony_instance::GetCeremonyInstanceUseCase;
 pub use get_ceremony_transcript::GetCeremonyTranscriptUseCase;

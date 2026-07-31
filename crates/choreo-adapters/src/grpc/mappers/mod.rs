@@ -30,6 +30,7 @@ mod validation;
 // Helpers wired by the service module.
 pub(super) use attributes::attributes_from_struct;
 pub use ceremony_authoring::{
+    ceremony_definition_source_from_proto, diff_ceremony_definitions_response_from,
     explain_ceremony_draft_response_from, publish_ceremony_definition_response_from,
     validate_ceremony_draft_response_from,
 };

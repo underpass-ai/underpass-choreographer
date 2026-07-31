@@ -29,9 +29,10 @@ pub(crate) const COLLECT_CEREMONY_EVIDENCE_TOOL: &str = "choreo_collect_ceremony
 pub(crate) const VALIDATE_CEREMONY_DRAFT_TOOL: &str = "choreo_validate_ceremony_draft";
 pub(crate) const EXPLAIN_CEREMONY_DRAFT_TOOL: &str = "choreo_explain_ceremony_draft";
 pub(crate) const PUBLISH_CEREMONY_DEFINITION_TOOL: &str = "choreo_publish_ceremony_definition";
+pub(crate) const DIFF_CEREMONY_DEFINITIONS_TOOL: &str = "choreo_diff_ceremony_definitions";
 pub(crate) const START_PUBLISHED_CEREMONY_TOOL: &str = "choreo_start_published_ceremony";
 
-const GRPC_TOOL_NAMES: [&str; 32] = [
+const GRPC_TOOL_NAMES: [&str; 33] = [
     "choreo_deliberate",
     "choreo_stream_deliberation",
     "choreo_get_deliberation_result",
@@ -62,6 +63,7 @@ const GRPC_TOOL_NAMES: [&str; 32] = [
     VALIDATE_CEREMONY_DRAFT_TOOL,
     EXPLAIN_CEREMONY_DRAFT_TOOL,
     PUBLISH_CEREMONY_DEFINITION_TOOL,
+    DIFF_CEREMONY_DEFINITIONS_TOOL,
     "choreo_get_status",
     "choreo_get_metrics",
 ];
@@ -127,6 +129,22 @@ fn start_published_ceremony_schema() -> Value {
                 "description": "Opening context for the working session.",
                 "additionalProperties": true
             }
+        }
+    })
+}
+
+/// Either a published version, named, or a document supplied for the
+/// occasion. Both at once has no sensible reading, and the schema says
+/// so rather than leaving the server to discover it.
+fn ceremony_definition_ref_schema(description: &str) -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "description": description,
+        "properties": {
+            "ceremony": string_schema("Name of a published definition. Give this with `version`."),
+            "version": string_schema("Version of a published definition. Give this with `ceremony`."),
+            "definition_yaml": string_schema("A definition supplied for the comparison, instead of naming a published one.")
         }
     })
 }
@@ -396,6 +414,19 @@ fn grpc_tool_catalog() -> Vec<Value> {
             PUBLISH_CEREMONY_DEFINITION_TOOL,
             "Fix a validated draft to an immutable version identified by a content digest. Republishing identical content is a no-op; different content under a taken version is refused, never overwritten.",
             ceremony_draft_schema(),
+        ),
+        tool_def(
+            DIFF_CEREMONY_DEFINITIONS_TOOL,
+            "Compare two ceremony definitions and say what changed — and, for each change, whether a session already running the earlier one could go on.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["before", "after"],
+                "properties": {
+                    "before": ceremony_definition_ref_schema("The earlier definition."),
+                    "after": ceremony_definition_ref_schema("The later definition.")
+                }
+            }),
         ),
         tool_def(
             "choreo_get_status",
@@ -1005,7 +1036,7 @@ mod tests {
         let all_names = catalog_tool_names();
         let unique_names = all_names.iter().collect::<std::collections::BTreeSet<_>>();
 
-        assert_eq!(all_names.len(), 32);
+        assert_eq!(all_names.len(), 33);
         assert_eq!(unique_names.len(), all_names.len());
         assert!(all_names.contains(&VALIDATE_CEREMONY_DRAFT_TOOL.to_owned()));
         assert!(all_names.contains(&PUBLISH_CEREMONY_DEFINITION_TOOL.to_owned()));

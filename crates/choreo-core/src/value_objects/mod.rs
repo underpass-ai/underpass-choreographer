@@ -35,9 +35,10 @@ pub use audit::{
     AuditRecordHash, AuditSequence,
 };
 pub use ceremony::{
-    CeremonyContext, CeremonyDefinitionDigest, CeremonyDescription, CeremonyEvidenceSourceId,
-    CeremonyGuard, CeremonyGuardDeferral, CeremonyGuardDeferralContent, CeremonyId,
-    CeremonyInputDefinition, CeremonyInterventionContent, CeremonyInterventionId,
+    CeremonyChangeImpact, CeremonyChangeKind, CeremonyContext, CeremonyDefinitionChange,
+    CeremonyDefinitionDiff, CeremonyDefinitionDigest, CeremonyDescription,
+    CeremonyEvidenceSourceId, CeremonyGuard, CeremonyGuardDeferral, CeremonyGuardDeferralContent,
+    CeremonyId, CeremonyInputDefinition, CeremonyInterventionContent, CeremonyInterventionId,
     CeremonyInterventionKind, CeremonyInterventionProvenance, CeremonyInterventionResponse,
     CeremonyInterventionStatus, CeremonyInterventionTarget, CeremonyName, CeremonyOutputDefinition,
     CeremonyRevision, CeremonyRole, CeremonyState, CeremonyStateKind, CeremonyStep,

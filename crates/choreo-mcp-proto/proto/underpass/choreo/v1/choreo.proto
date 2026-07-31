@@ -153,6 +153,11 @@ service ChoreographerService {
   rpc ValidateCeremonyDraft(ValidateCeremonyDraftRequest) returns (ValidateCeremonyDraftResponse);
   rpc ExplainCeremonyDraft(ExplainCeremonyDraftRequest) returns (ExplainCeremonyDraftResponse);
   rpc PublishCeremonyDefinition(PublishCeremonyDefinitionRequest) returns (PublishCeremonyDefinitionResponse);
+  // Compare two definitions and say what changed — and, for each
+  // change, whether a session already running the earlier one could
+  // go on. "What changed" is answerable by reading both documents;
+  // "can the meeting happening right now still finish" is not.
+  rpc DiffCeremonyDefinitions(DiffCeremonyDefinitionsRequest) returns (DiffCeremonyDefinitionsResponse);
 
   // ---- Observability --------------------------------------------------
 
@@ -983,6 +988,44 @@ message ExplainCeremonyDraftResponse {
 
 message PublishCeremonyDefinitionRequest {
   string definition_yaml = 1;
+}
+
+// One side of a comparison: either a published version, named, or a
+// document supplied for the occasion. A caller comparing what they
+// are about to publish against what is published needs both.
+message CeremonyDefinitionRef {
+  // Set both to name a published version.
+  string ceremony = 1;
+  string version = 2;
+  // Or set this instead to compare a document that is not published.
+  string definition_yaml = 3;
+}
+
+message CeremonyDefinitionChange {
+  // "added", "removed" or "altered".
+  string kind = 1;
+  // The element at issue: kind plus the identifiers naming it.
+  google.protobuf.Struct locus = 2;
+  // "carries" when a running session is unaffected, "strands" when it
+  // could be left with nowhere to go.
+  string impact = 3;
+  // What changed about the element. The locus says which one.
+  string detail = 4;
+}
+
+message DiffCeremonyDefinitionsRequest {
+  CeremonyDefinitionRef before = 1;
+  CeremonyDefinitionRef after = 2;
+}
+
+message DiffCeremonyDefinitionsResponse {
+  bool identical = 1;
+  // True when at least one change could strand a running session. One
+  // is enough: such a version is not one to adopt mid-flight, however
+  // harmless everything else about it is.
+  bool strands_running_sessions = 2;
+  uint32 strand_count = 3;
+  repeated CeremonyDefinitionChange changes = 4;
 }
 
 message PublishCeremonyDefinitionResponse {

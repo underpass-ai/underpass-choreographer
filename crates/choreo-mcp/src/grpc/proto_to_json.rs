@@ -565,3 +565,23 @@ pub(crate) fn publish_ceremony_definition_to_json(
         })
     }
 }
+
+pub(crate) fn diff_ceremony_definitions_to_json(
+    response: pb::DiffCeremonyDefinitionsResponse,
+) -> Value {
+    json!({
+        "identical": response.identical,
+        "strands_running_sessions": response.strands_running_sessions,
+        "strand_count": response.strand_count,
+        "changes": response
+            .changes
+            .into_iter()
+            .map(|change| json!({
+                "kind": change.kind,
+                "locus": change.locus.map_or(Value::Null, |locus| Value::Object(pb_struct_to_json(locus))),
+                "impact": change.impact,
+                "detail": change.detail,
+            }))
+            .collect::<Vec<_>>(),
+    })
+}

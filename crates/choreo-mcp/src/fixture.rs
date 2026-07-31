@@ -69,6 +69,7 @@ impl ChoreoMcpToolBackend for FixtureChoreoMcpBackend {
                 "choreo_validate_ceremony_draft" => validate_draft_fixture(),
                 "choreo_explain_ceremony_draft" => explain_draft_fixture(),
                 "choreo_publish_ceremony_definition" => publish_definition_fixture(),
+                "choreo_diff_ceremony_definitions" => diff_definitions_fixture(),
                 "choreo_get_status" => get_status_fixture(),
                 "choreo_get_metrics" => get_metrics_fixture(),
                 other => {
@@ -392,6 +393,28 @@ fn explain_draft_fixture() -> Value {
             "`fixture_ceremony` declares 2 states, 1 transitions, 1 steps, 1 guards and 1 roles.",
             "1 defect(s) block publication; the draft cannot be published or executed until every one is fixed.",
             "not found: ceremony_transition.to_state — at transition `finish` out of state `OPEN`"
+        ]
+    })
+}
+
+fn diff_definitions_fixture() -> Value {
+    json!({
+        "identical": false,
+        "strands_running_sessions": true,
+        "strand_count": 1,
+        "changes": [
+            {
+                "kind": "removed",
+                "locus": { "kind": "state", "state": "REVIEW" },
+                "impact": "strands",
+                "detail": "a session in this state would have nowhere to be"
+            },
+            {
+                "kind": "added",
+                "locus": { "kind": "role", "role": "OBSERVER" },
+                "impact": "carries",
+                "detail": "another role at the table"
+            }
         ]
     })
 }

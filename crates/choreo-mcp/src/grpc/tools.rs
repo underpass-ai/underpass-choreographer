@@ -381,6 +381,21 @@ pub(crate) async fn dispatch(
             ))
         }
 
+        "choreo_diff_ceremony_definitions" => {
+            let obj = j2p::require_object(arguments, "tools/call.arguments")?;
+            let request = pb::DiffCeremonyDefinitionsRequest {
+                before: definition_ref(obj, "before")?,
+                after: definition_ref(obj, "after")?,
+            };
+            let response = client
+                .diff_ceremony_definitions(request)
+                .await
+                .map_err(|s| status_error(&s))?;
+            Ok(p2j::diff_ceremony_definitions_to_json(
+                response.into_inner(),
+            ))
+        }
+
         "choreo_get_status" => {
             let request = build_get_status_request(arguments);
             let response = client
@@ -707,4 +722,28 @@ fn build_collect_ceremony_evidence_request(
         query: j2p::require_str(obj, "query")?.to_owned(),
         details: j2p::optional_pb_struct(obj, "details")?,
     })
+}
+
+/// One side of a comparison. Absent is an error here rather than a
+/// default: there is no sensible definition to compare against when
+/// the caller named none.
+fn definition_ref(
+    obj: &serde_json::Map<String, Value>,
+    key: &str,
+) -> Result<Option<pb::CeremonyDefinitionRef>, String> {
+    let value = obj
+        .get(key)
+        .ok_or_else(|| format!("missing required object `{key}`"))?;
+    let reference = j2p::require_object(value, key)?;
+    Ok(Some(pb::CeremonyDefinitionRef {
+        ceremony: j2p::optional_str(reference, "ceremony")
+            .unwrap_or_default()
+            .to_owned(),
+        version: j2p::optional_str(reference, "version")
+            .unwrap_or_default()
+            .to_owned(),
+        definition_yaml: j2p::optional_str(reference, "definition_yaml")
+            .unwrap_or_default()
+            .to_owned(),
+    }))
 }
