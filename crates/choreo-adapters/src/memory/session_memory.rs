@@ -13,13 +13,15 @@ use choreo_core::ports::{
     MemoryReaderPort, MemoryRecollection, MemoryWriteOutcome, MemoryWriterPort,
 };
 use choreo_core::value_objects::{
-    MemoryCapabilities, MemoryCapability, MemoryEntry, MemoryMoment, MemoryQuestion, MemoryScope,
+    MemoryCapabilities, MemoryCapability, MemoryEntry, MemoryEntryId, MemoryMoment, MemoryQuestion,
+    MemoryRelation, MemoryScope, MemoryWrite,
 };
 use tokio::sync::RwLock;
 
 #[derive(Debug, Default)]
 struct Remembered {
     entries: Vec<MemoryEntry>,
+    relations: Vec<MemoryRelation>,
     keys: BTreeSet<String>,
 }
 
@@ -46,6 +48,60 @@ impl InProcessSessionMemory {
             .with(MemoryCapability::Recalling)
             .with(MemoryCapability::TravellingInTime)
             .with(MemoryCapability::KeepingEvidence)
+            .with(MemoryCapability::KeepingReasons)
+            .with(MemoryCapability::FollowingReasons)
+    }
+
+    /// The shortest chain of reasons from `from` back to `to`.
+    ///
+    /// Breadth-first, so what comes back is the most direct
+    /// explanation rather than the first one stumbled upon. Direction
+    /// is followed as written: an edge says this came from that, and
+    /// walking it backwards would turn a consequence into a cause.
+    fn chain(
+        relations: &[MemoryRelation],
+        from: &MemoryEntryId,
+        to: &MemoryEntryId,
+    ) -> Vec<MemoryRelation> {
+        let mut frontier = std::collections::VecDeque::from([from.clone()]);
+        let mut arrived_by: BTreeMap<MemoryEntryId, MemoryRelation> = BTreeMap::new();
+        let mut seen: BTreeSet<MemoryEntryId> = BTreeSet::from([from.clone()]);
+
+        while let Some(here) = frontier.pop_front() {
+            if &here == to {
+                break;
+            }
+            for relation in relations.iter().filter(|relation| relation.from() == &here) {
+                if seen.insert(relation.to().clone()) {
+                    arrived_by.insert(relation.to().clone(), relation.clone());
+                    frontier.push_back(relation.to().clone());
+                }
+            }
+        }
+
+        let mut chain = Vec::new();
+        let mut here = to.clone();
+        while let Some(relation) = arrived_by.get(&here) {
+            chain.push(relation.clone());
+            here = relation.from().clone();
+        }
+        chain.reverse();
+        chain
+    }
+
+    /// A reason whose ends are not both visible is not returned.
+    ///
+    /// An edge pointing at an entry the caller cannot see is worse than
+    /// no edge: it says an explanation exists and gives no way to reach
+    /// it. This is what reading memory as of a moment needs, where the
+    /// far end may not have been written yet.
+    fn between(relations: &[MemoryRelation], visible: &[MemoryEntry]) -> Vec<MemoryRelation> {
+        let ids: BTreeSet<&MemoryEntryId> = visible.iter().map(MemoryEntry::id).collect();
+        relations
+            .iter()
+            .filter(|relation| ids.contains(relation.from()) && ids.contains(relation.to()))
+            .cloned()
+            .collect()
     }
 }
 
@@ -54,21 +110,18 @@ impl MemoryWriterPort for InProcessSessionMemory {
     async fn remember(
         &self,
         scope: &MemoryScope,
-        entries: Vec<MemoryEntry>,
+        write: MemoryWrite,
         idempotency_key: &str,
     ) -> Result<MemoryWriteOutcome, DomainError> {
-        if entries.is_empty() {
-            return Err(DomainError::EmptyCollection {
-                field: "memory.entries",
-            });
-        }
         let mut scopes = self.scopes.write().await;
         let remembered = scopes.entry(scope.as_str().to_owned()).or_default();
         if remembered.keys.contains(idempotency_key) {
             return Ok(MemoryWriteOutcome::AlreadyRemembered);
         }
         remembered.keys.insert(idempotency_key.to_owned());
+        let (entries, relations) = write.into_parts();
         remembered.entries.extend(entries);
+        remembered.relations.extend(relations);
         Ok(MemoryWriteOutcome::Remembered)
     }
 
@@ -81,12 +134,13 @@ impl MemoryWriterPort for InProcessSessionMemory {
 impl MemoryReaderPort for InProcessSessionMemory {
     async fn recall(&self, scope: &MemoryScope) -> Result<MemoryRecollection, DomainError> {
         let scopes = self.scopes.read().await;
-        Ok(MemoryRecollection::Recalled(
-            scopes
-                .get(scope.as_str())
-                .map(|remembered| remembered.entries.clone())
-                .unwrap_or_default(),
-        ))
+        let Some(remembered) = scopes.get(scope.as_str()) else {
+            return Ok(MemoryRecollection::nothing());
+        };
+        Ok(MemoryRecollection::Recalled {
+            entries: remembered.entries.clone(),
+            relations: remembered.relations.clone(),
+        })
     }
 
     async fn ask(
@@ -103,19 +157,33 @@ impl MemoryReaderPort for InProcessSessionMemory {
         moment: MemoryMoment,
     ) -> Result<MemoryRecollection, DomainError> {
         let scopes = self.scopes.read().await;
-        Ok(MemoryRecollection::Recalled(
-            scopes
-                .get(scope.as_str())
-                .map(|remembered| {
-                    remembered
-                        .entries
-                        .iter()
-                        .filter(|entry| entry.provenance().observed_at() <= moment.instant())
-                        .cloned()
-                        .collect()
-                })
-                .unwrap_or_default(),
-        ))
+        let Some(remembered) = scopes.get(scope.as_str()) else {
+            return Ok(MemoryRecollection::nothing());
+        };
+        let entries: Vec<MemoryEntry> = remembered
+            .entries
+            .iter()
+            .filter(|entry| entry.provenance().observed_at() <= moment.instant())
+            .cloned()
+            .collect();
+        let relations = Self::between(&remembered.relations, &entries);
+        Ok(MemoryRecollection::Recalled { entries, relations })
+    }
+
+    async fn follow(
+        &self,
+        scope: &MemoryScope,
+        from: &MemoryEntryId,
+        to: &MemoryEntryId,
+    ) -> Result<MemoryRecollection, DomainError> {
+        let scopes = self.scopes.read().await;
+        let Some(remembered) = scopes.get(scope.as_str()) else {
+            return Ok(MemoryRecollection::nothing());
+        };
+        Ok(MemoryRecollection::Recalled {
+            entries: Vec::new(),
+            relations: Self::chain(&remembered.relations, from, to),
+        })
     }
 
     fn capabilities(&self) -> MemoryCapabilities {

@@ -16,8 +16,9 @@ use std::collections::BTreeMap;
 
 use choreo_core::error::DomainError;
 use choreo_core::value_objects::{
-    Attributes, CeremonyId, MemoryDimension, MemoryEntry, MemoryEntryKind, MemoryEvidence,
-    MemoryMoment, MemoryProvenance, MemoryScope, RoleId,
+    Attributes, CeremonyId, MemoryConfidence, MemoryDimension, MemoryEntry, MemoryEntryId,
+    MemoryEntryKind, MemoryEvidence, MemoryMoment, MemoryProvenance, MemoryRelation,
+    MemoryRelationKind, MemoryScope, MemoryWrite, RoleId,
 };
 use serde_json::{json, Map, Value};
 use time::format_description::well_known::Rfc3339;
@@ -56,6 +57,7 @@ pub(super) fn end_of_time() -> MemoryMoment {
 #[derive(Debug, Default)]
 pub(super) struct RecalledPage {
     pub(super) entries: Vec<(String, MemoryEntry)>,
+    pub(super) relations: Vec<MemoryRelation>,
     pub(super) next_cursor: Option<String>,
     /// Entries the kernel returned that this engine cannot represent.
     pub(super) unreadable: usize,
@@ -64,9 +66,10 @@ pub(super) struct RecalledPage {
 /// The arguments for writing `entries` about `scope`.
 pub(super) fn ingest_arguments(
     scope: &MemoryScope,
-    entries: &[MemoryEntry],
+    write: &MemoryWrite,
     idempotency_key: &str,
 ) -> Result<Value, DomainError> {
+    let entries = write.entries();
     let session = qualify(DIMENSION_SESSION, scope.as_str());
     let mut dimensions: BTreeMap<String, Value> = BTreeMap::new();
     declare(&mut dimensions, &session, DIMENSION_SESSION);
@@ -112,7 +115,7 @@ pub(super) fn ingest_arguments(
             ));
         }
 
-        let entry_ref = entry_ref(scope, idempotency_key, index);
+        let entry_ref = entry_ref(scope, entry.id());
         kernel_entries.push(json!({
             "id": entry_ref,
             "kind": entry.kind().as_label(),
@@ -125,7 +128,7 @@ pub(super) fn ingest_arguments(
             let mut item = Map::new();
             item.insert(
                 "id".to_owned(),
-                json!(evidence_ref(scope, idempotency_key, index, ordinal)),
+                json!(evidence_ref(scope, entry.id(), ordinal)),
             );
             item.insert("text".to_owned(), json!(evidence.label()));
             item.insert("supports".to_owned(), json!([entry_ref]));
@@ -143,6 +146,12 @@ pub(super) fn ingest_arguments(
         .transpose()?
         .unwrap_or_default();
 
+    let kernel_relations: Vec<Value> = write
+        .relations()
+        .iter()
+        .map(|relation| reason(scope, relation))
+        .collect();
+
     Ok(json!({
         "about": scope.as_str(),
         "idempotency_key": idempotency_key,
@@ -150,6 +159,7 @@ pub(super) fn ingest_arguments(
             "dimensions": dimensions.into_values().collect::<Vec<_>>(),
             "entries": kernel_entries,
             "evidence": kernel_evidence,
+            "relations": kernel_relations,
         },
         "provenance": {
             "source_kind": "agent",
@@ -177,6 +187,32 @@ pub(super) fn goto_arguments(
     }))
 }
 
+/// The arguments for asking how one entry came from another.
+pub(super) fn trace_arguments(
+    scope: &MemoryScope,
+    from: &MemoryEntryId,
+    to: &MemoryEntryId,
+) -> Value {
+    json!({
+        "from": entry_ref(scope, from),
+        "to": entry_ref(scope, to),
+    })
+}
+
+/// The chain a trace came back with, in the order it connects.
+///
+/// The kernel answers this one with edges and no prose, which is what
+/// the port asks for, so nothing is dropped on the way through.
+pub(super) fn read_chain(scope: &MemoryScope, document: &Value) -> Vec<MemoryRelation> {
+    document
+        .get("trace")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|edge| relation_from(scope, edge))
+        .collect()
+}
+
 /// Read one page of a temporal answer back into session memory.
 ///
 /// Entries this engine cannot represent — a kind it does not model, a
@@ -200,6 +236,8 @@ pub(super) fn read_page(scope: &MemoryScope, document: &Value) -> RecalledPage {
         }
     }
 
+    page.relations = reasons(scope, document);
+
     if document
         .get("page")
         .and_then(|page| page.get("has_more"))
@@ -222,6 +260,9 @@ fn read_entry(
     attached: &BTreeMap<String, Vec<MemoryEvidence>>,
 ) -> Option<(String, MemoryEntry)> {
     let reference = value.get("ref").and_then(Value::as_str)?;
+    // The name the caller gave it, recovered from the reference the
+    // kernel stores it under, so a relation written later lines up.
+    let id = entry_id_from(scope, reference)?;
     let kind = kind_of(value.get("kind").and_then(Value::as_str)?)?;
     let summary = value.get("text").and_then(Value::as_str)?;
 
@@ -263,7 +304,15 @@ fn read_entry(
     );
     let dimension = strand.and_then(|strand| MemoryDimension::new(strand).ok());
 
-    let entry = MemoryEntry::new(kind, summary, dimension, provenance, Attributes::empty()).ok()?;
+    let entry = MemoryEntry::new(
+        id,
+        kind,
+        summary,
+        dimension,
+        provenance,
+        Attributes::empty(),
+    )
+    .ok()?;
     let entry = match attached.get(reference) {
         Some(evidence) => entry.with_evidence(evidence.iter().cloned()),
         None => entry,
@@ -430,20 +479,115 @@ fn timestamp(instant: OffsetDateTime) -> Result<String, DomainError> {
         })
 }
 
-fn entry_ref(scope: &MemoryScope, idempotency_key: &str, index: usize) -> String {
-    format!("entry:{}:{idempotency_key}:{index}", scope.as_str())
+/// A kernel reference for an entry this session named.
+///
+/// The name is the caller's and is only unique within its session; a
+/// kernel reference is global. Qualifying by scope is what lets two
+/// sessions both call something `outcome` without one overwriting the
+/// other, and it is reversible, so a relation written later can still
+/// point at it by the name the caller knows.
+fn entry_ref(scope: &MemoryScope, id: &MemoryEntryId) -> String {
+    format!("entry:{}:{}", scope.as_str(), id.as_str())
 }
 
-fn evidence_ref(
-    scope: &MemoryScope,
-    idempotency_key: &str,
-    index: usize,
-    ordinal: usize,
-) -> String {
-    format!(
-        "evidence:{}:{idempotency_key}:{index}:{ordinal}",
-        scope.as_str()
+fn entry_id_from(scope: &MemoryScope, reference: &str) -> Option<MemoryEntryId> {
+    let prefix = format!("entry:{}:", scope.as_str());
+    MemoryEntryId::new(reference.strip_prefix(&prefix)?).ok()
+}
+
+fn evidence_ref(scope: &MemoryScope, id: &MemoryEntryId, ordinal: usize) -> String {
+    format!("evidence:{}:{}:{ordinal}", scope.as_str(), id.as_str())
+}
+
+/// One reason, in the kernel's terms.
+///
+/// The mapping lives here and not in the domain: how a kernel classes
+/// an explanation is that kernel's taxonomy, and an engine that named
+/// its reasons in one backend's classes would have to be rewritten for
+/// the next.
+fn reason(scope: &MemoryScope, relation: &MemoryRelation) -> Value {
+    let (rel, class) = kernel_relation(relation.kind());
+    json!({
+        "from": entry_ref(scope, relation.from()),
+        "to": entry_ref(scope, relation.to()),
+        "rel": rel,
+        "class": class,
+        "why": relation.why(),
+        "confidence": confidence_label(relation.confidence()),
+    })
+}
+
+const fn kernel_relation(kind: MemoryRelationKind) -> (&'static str, &'static str) {
+    match kind {
+        MemoryRelationKind::Answers => ("answers", "procedural"),
+        MemoryRelationKind::ChosenBecause => ("chosen_because", "motivational"),
+        MemoryRelationKind::FollowsFrom => ("derived_from", "causal"),
+        MemoryRelationKind::SatisfiesConstraint => ("satisfies_constraint", "constraint"),
+        MemoryRelationKind::ViolatesConstraint => ("violates_constraint", "constraint"),
+        MemoryRelationKind::Supersedes => ("supersedes", "evidential"),
+        MemoryRelationKind::Contradicts => ("contradicts", "evidential"),
+    }
+}
+
+fn relation_kind_of(rel: &str) -> Option<MemoryRelationKind> {
+    match rel {
+        "answers" => Some(MemoryRelationKind::Answers),
+        "chosen_because" => Some(MemoryRelationKind::ChosenBecause),
+        "derived_from" => Some(MemoryRelationKind::FollowsFrom),
+        "satisfies_constraint" => Some(MemoryRelationKind::SatisfiesConstraint),
+        "violates_constraint" => Some(MemoryRelationKind::ViolatesConstraint),
+        "supersedes" => Some(MemoryRelationKind::Supersedes),
+        "contradicts" => Some(MemoryRelationKind::Contradicts),
+        _ => None,
+    }
+}
+
+const fn confidence_label(confidence: MemoryConfidence) -> &'static str {
+    confidence.as_label()
+}
+
+fn confidence_of(label: Option<&str>) -> MemoryConfidence {
+    match label {
+        Some("high") => MemoryConfidence::High,
+        Some("low") => MemoryConfidence::Low,
+        // A reason the kernel returns without a degree is read as the
+        // middle one rather than dropped: losing the explanation because
+        // its confidence went missing would be the larger loss.
+        _ => MemoryConfidence::Medium,
+    }
+}
+
+/// The reasons in a temporal answer.
+///
+/// Read from the proof path, where the kernel puts every relation it
+/// walked. Structural edges — a scope containing an entry, an anchor
+/// recording one — are skipped: they are how the kernel keeps its own
+/// house and say nothing about how one thing led to another.
+fn reasons(scope: &MemoryScope, document: &Value) -> Vec<MemoryRelation> {
+    document
+        .get("proof")
+        .and_then(|proof| proof.get("path"))
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|edge| relation_from(scope, edge))
+        .collect()
+}
+
+/// One edge, if this engine can represent it.
+fn relation_from(scope: &MemoryScope, edge: &Value) -> Option<MemoryRelation> {
+    let kind = relation_kind_of(edge.get("rel").and_then(Value::as_str)?)?;
+    let from = entry_id_from(scope, edge.get("from").and_then(Value::as_str)?)?;
+    let to = entry_id_from(scope, edge.get("to").and_then(Value::as_str)?)?;
+    let why = edge.get("why").and_then(Value::as_str)?;
+    MemoryRelation::new(
+        from,
+        to,
+        kind,
+        why,
+        confidence_of(edge.get("confidence").and_then(Value::as_str)),
     )
+    .ok()
 }
 
 #[cfg(test)]

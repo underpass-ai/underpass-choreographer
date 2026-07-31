@@ -10,7 +10,7 @@ use choreo_core::ports::{
     MemoryReaderPort, MemoryRecollection, MemoryWriteOutcome, MemoryWriterPort,
 };
 use choreo_core::value_objects::{
-    MemoryCapabilities, MemoryEntry, MemoryMoment, MemoryQuestion, MemoryScope,
+    MemoryCapabilities, MemoryEntryId, MemoryMoment, MemoryQuestion, MemoryScope, MemoryWrite,
 };
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -28,16 +28,9 @@ impl MemoryWriterPort for ForgetfulMemory {
     async fn remember(
         &self,
         _scope: &MemoryScope,
-        entries: Vec<MemoryEntry>,
+        _write: MemoryWrite,
         _idempotency_key: &str,
     ) -> Result<MemoryWriteOutcome, DomainError> {
-        // Refused before it is dropped: a caller who sent nothing is
-        // told so whether or not anyone was going to keep it.
-        if entries.is_empty() {
-            return Err(DomainError::EmptyCollection {
-                field: "memory.entries",
-            });
-        }
         Ok(MemoryWriteOutcome::NotRemembered)
     }
 
@@ -64,6 +57,15 @@ impl MemoryReaderPort for ForgetfulMemory {
         &self,
         _scope: &MemoryScope,
         _moment: MemoryMoment,
+    ) -> Result<MemoryRecollection, DomainError> {
+        Ok(MemoryRecollection::Unsupported)
+    }
+
+    async fn follow(
+        &self,
+        _scope: &MemoryScope,
+        _from: &MemoryEntryId,
+        _to: &MemoryEntryId,
     ) -> Result<MemoryRecollection, DomainError> {
         Ok(MemoryRecollection::Unsupported)
     }

@@ -59,8 +59,9 @@ pub use duration::DurationMs;
 pub use ids::{AgentId, CouncilId, EventId, ProposalId, TaskId};
 pub use llm_error_kind::LlmErrorKind;
 pub use memory::{
-    MemoryCapabilities, MemoryCapability, MemoryDimension, MemoryEntry, MemoryEntryKind,
-    MemoryEvidence, MemoryMoment, MemoryProvenance, MemoryQuestion, MemoryScope,
+    MemoryCapabilities, MemoryCapability, MemoryConfidence, MemoryDimension, MemoryEntry,
+    MemoryEntryId, MemoryEntryKind, MemoryEvidence, MemoryMoment, MemoryProvenance, MemoryQuestion,
+    MemoryRelation, MemoryRelationKind, MemoryScope, MemoryWrite,
 };
 pub use num_agents::NumAgents;
 pub use outbox::{

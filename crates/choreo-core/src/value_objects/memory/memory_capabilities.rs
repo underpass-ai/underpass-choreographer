@@ -18,6 +18,20 @@ pub enum MemoryCapability {
     TravellingInTime,
     /// Keeps the evidence attached to an entry, not only the claim.
     KeepingEvidence,
+    /// Keeps the reasons between entries, and gives them back.
+    ///
+    /// The one capability a caller should look for before deciding
+    /// this memory is worth writing to: entries without their edges
+    /// can be read and not followed, and following is how a later
+    /// session works out why something was done.
+    KeepingReasons,
+    /// Finds the chain of reasons between two entries.
+    ///
+    /// Keeping reasons and being able to follow them are not the same
+    /// capability: one is storage, the other is search. A backend may
+    /// hold every edge and still be unable to answer "how did this come
+    /// from that", which is the question the memory exists for.
+    FollowingReasons,
 }
 
 impl MemoryCapability {
@@ -29,6 +43,8 @@ impl MemoryCapability {
             Self::AnsweringQuestions => "answering_questions",
             Self::TravellingInTime => "travelling_in_time",
             Self::KeepingEvidence => "keeping_evidence",
+            Self::KeepingReasons => "keeping_reasons",
+            Self::FollowingReasons => "following_reasons",
         }
     }
 }
@@ -61,6 +77,8 @@ impl MemoryCapabilities {
             .with(MemoryCapability::AnsweringQuestions)
             .with(MemoryCapability::TravellingInTime)
             .with(MemoryCapability::KeepingEvidence)
+            .with(MemoryCapability::KeepingReasons)
+            .with(MemoryCapability::FollowingReasons)
     }
 
     #[must_use]
@@ -97,6 +115,16 @@ impl MemoryCapabilities {
     #[must_use]
     pub fn keeps_evidence(&self) -> bool {
         self.has(MemoryCapability::KeepingEvidence)
+    }
+
+    #[must_use]
+    pub fn keeps_reasons(&self) -> bool {
+        self.has(MemoryCapability::KeepingReasons)
+    }
+
+    #[must_use]
+    pub fn follows_reasons(&self) -> bool {
+        self.has(MemoryCapability::FollowingReasons)
     }
 
     pub fn iter(&self) -> impl Iterator<Item = MemoryCapability> + '_ {

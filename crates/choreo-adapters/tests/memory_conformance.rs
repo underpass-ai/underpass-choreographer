@@ -12,7 +12,8 @@ use choreo_core::ports::{
     MemoryReaderPort, MemoryRecollection, MemoryWriteOutcome, MemoryWriterPort,
 };
 use choreo_core::value_objects::{
-    MemoryCapabilities, MemoryCapability, MemoryEntry, MemoryMoment, MemoryQuestion, MemoryScope,
+    MemoryCapabilities, MemoryCapability, MemoryEntryId, MemoryMoment, MemoryQuestion, MemoryScope,
+    MemoryWrite,
 };
 
 #[tokio::test]
@@ -23,7 +24,7 @@ async fn in_process_memory_satisfies_the_contract() {
         .await
         .unwrap_or_else(|failure| panic!("{failure}"));
 
-    assert_eq!(passed.len(), 9, "{passed:?}");
+    assert_eq!(passed.len(), 10, "{passed:?}");
 }
 
 /// A backend that keeps nothing is not a broken backend. It declares
@@ -38,7 +39,7 @@ async fn a_backend_that_declares_nothing_still_satisfies_the_contract() {
         .await
         .unwrap_or_else(|failure| panic!("{failure}"));
 
-    assert_eq!(passed.len(), 9, "{passed:?}");
+    assert_eq!(passed.len(), 10, "{passed:?}");
 }
 
 /// The failure mode the suite exists for: a backend that claims to
@@ -52,14 +53,9 @@ impl MemoryWriterPort for MemoryThatForgetsQuietly {
     async fn remember(
         &self,
         _scope: &MemoryScope,
-        entries: Vec<MemoryEntry>,
+        _write: MemoryWrite,
         _idempotency_key: &str,
     ) -> Result<MemoryWriteOutcome, DomainError> {
-        if entries.is_empty() {
-            return Err(DomainError::EmptyCollection {
-                field: "memory.entries",
-            });
-        }
         Ok(MemoryWriteOutcome::Remembered)
     }
 
@@ -73,13 +69,22 @@ impl MemoryWriterPort for MemoryThatForgetsQuietly {
 #[async_trait]
 impl MemoryReaderPort for MemoryThatForgetsQuietly {
     async fn recall(&self, _scope: &MemoryScope) -> Result<MemoryRecollection, DomainError> {
-        Ok(MemoryRecollection::Recalled(Vec::new()))
+        Ok(MemoryRecollection::nothing())
     }
 
     async fn ask(
         &self,
         _scope: &MemoryScope,
         _question: &MemoryQuestion,
+    ) -> Result<MemoryRecollection, DomainError> {
+        Ok(MemoryRecollection::Unsupported)
+    }
+
+    async fn follow(
+        &self,
+        _scope: &MemoryScope,
+        _from: &MemoryEntryId,
+        _to: &MemoryEntryId,
     ) -> Result<MemoryRecollection, DomainError> {
         Ok(MemoryRecollection::Unsupported)
     }
@@ -125,13 +130,13 @@ impl MemoryWriterPort for MemoryThatDoublesOnRetry {
     async fn remember(
         &self,
         scope: &MemoryScope,
-        entries: Vec<MemoryEntry>,
+        write: MemoryWrite,
         _idempotency_key: &str,
     ) -> Result<MemoryWriteOutcome, DomainError> {
         // A fresh key every time: the write is never recognised as one
         // already made.
         self.inner
-            .remember(scope, entries, &uuid::Uuid::new_v4().to_string())
+            .remember(scope, write, &uuid::Uuid::new_v4().to_string())
             .await
     }
 
@@ -160,6 +165,15 @@ impl MemoryReaderPort for MemoryThatDoublesOnRetry {
         moment: MemoryMoment,
     ) -> Result<MemoryRecollection, DomainError> {
         self.inner.as_known_at(scope, moment).await
+    }
+
+    async fn follow(
+        &self,
+        scope: &MemoryScope,
+        from: &MemoryEntryId,
+        to: &MemoryEntryId,
+    ) -> Result<MemoryRecollection, DomainError> {
+        self.inner.follow(scope, from, to).await
     }
 
     fn capabilities(&self) -> MemoryCapabilities {
@@ -191,10 +205,10 @@ impl MemoryWriterPort for MemoryThatCannotKeepTime {
     async fn remember(
         &self,
         scope: &MemoryScope,
-        entries: Vec<MemoryEntry>,
+        _write: MemoryWrite,
         idempotency_key: &str,
     ) -> Result<MemoryWriteOutcome, DomainError> {
-        self.inner.remember(scope, entries, idempotency_key).await
+        self.inner.remember(scope, _write, idempotency_key).await
     }
 
     fn capabilities(&self) -> MemoryCapabilities {
@@ -225,6 +239,15 @@ impl MemoryReaderPort for MemoryThatCannotKeepTime {
         self.inner.recall(scope).await
     }
 
+    async fn follow(
+        &self,
+        scope: &MemoryScope,
+        from: &MemoryEntryId,
+        to: &MemoryEntryId,
+    ) -> Result<MemoryRecollection, DomainError> {
+        self.inner.follow(scope, from, to).await
+    }
+
     fn capabilities(&self) -> MemoryCapabilities {
         MemoryReaderPort::capabilities(&self.inner)
     }
@@ -240,4 +263,83 @@ async fn the_suite_catches_a_backend_that_ignores_the_moment_asked_for() {
 
     assert_eq!(failure.property(), "time_travel_is_honoured_or_declined");
     assert!(failure.detail().contains("learned after it"), "{failure}");
+}
+
+/// The failure this contract grew a property for: a backend that keeps
+/// every entry, answers every read correctly, and quietly drops the
+/// edges between them.
+///
+/// It is the hardest one to notice by hand. Nothing is missing, every
+/// summary is right, and the only thing gone is the ability to ask how
+/// one thing led to another — which nobody checks until the session
+/// that needed it.
+#[derive(Debug, Default)]
+struct MemoryThatKeepsEntriesAndDropsReasons {
+    inner: InProcessSessionMemory,
+}
+
+#[async_trait]
+impl MemoryWriterPort for MemoryThatKeepsEntriesAndDropsReasons {
+    async fn remember(
+        &self,
+        scope: &MemoryScope,
+        write: MemoryWrite,
+        idempotency_key: &str,
+    ) -> Result<MemoryWriteOutcome, DomainError> {
+        let (entries, _reasons) = write.into_parts();
+        self.inner
+            .remember(scope, MemoryWrite::unexplained(entries)?, idempotency_key)
+            .await
+    }
+
+    fn capabilities(&self) -> MemoryCapabilities {
+        MemoryWriterPort::capabilities(&self.inner)
+    }
+}
+
+#[async_trait]
+impl MemoryReaderPort for MemoryThatKeepsEntriesAndDropsReasons {
+    async fn recall(&self, scope: &MemoryScope) -> Result<MemoryRecollection, DomainError> {
+        self.inner.recall(scope).await
+    }
+
+    async fn ask(
+        &self,
+        scope: &MemoryScope,
+        question: &MemoryQuestion,
+    ) -> Result<MemoryRecollection, DomainError> {
+        self.inner.ask(scope, question).await
+    }
+
+    async fn as_known_at(
+        &self,
+        scope: &MemoryScope,
+        moment: MemoryMoment,
+    ) -> Result<MemoryRecollection, DomainError> {
+        self.inner.as_known_at(scope, moment).await
+    }
+
+    async fn follow(
+        &self,
+        scope: &MemoryScope,
+        from: &MemoryEntryId,
+        to: &MemoryEntryId,
+    ) -> Result<MemoryRecollection, DomainError> {
+        self.inner.follow(scope, from, to).await
+    }
+
+    fn capabilities(&self) -> MemoryCapabilities {
+        MemoryReaderPort::capabilities(&self.inner)
+    }
+}
+
+#[tokio::test]
+async fn the_suite_catches_a_backend_that_drops_the_reasons() {
+    let memory = MemoryThatKeepsEntriesAndDropsReasons::default();
+
+    let failure = MemoryConformance::run(&memory, &memory)
+        .await
+        .expect_err("a backend claiming to keep reasons and keeping none must fail");
+
+    assert_eq!(failure.property(), "reasons_survive_the_round_trip");
 }

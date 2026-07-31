@@ -26,8 +26,9 @@ use choreo_adapters::kmp::{
 use choreo_core::conformance::MemoryConformance;
 use choreo_core::ports::{MemoryReaderPort, MemoryRecollection, MemoryWriterPort};
 use choreo_core::value_objects::{
-    Attributes, CeremonyId, MemoryDimension, MemoryEntry, MemoryEntryKind, MemoryEvidence,
-    MemoryMoment, MemoryProvenance, MemoryScope, RoleId,
+    Attributes, CeremonyId, MemoryConfidence, MemoryDimension, MemoryEntry, MemoryEntryId,
+    MemoryEntryKind, MemoryEvidence, MemoryMoment, MemoryProvenance, MemoryRelation,
+    MemoryRelationKind, MemoryScope, MemoryWrite, RoleId,
 };
 use serde_json::{json, Value};
 use time::format_description::well_known::Rfc3339;
@@ -41,8 +42,17 @@ fn scope(name: &str) -> MemoryScope {
     MemoryScope::new(format!("ceremony:{name}")).expect("a valid scope")
 }
 
+fn id(raw: &str) -> MemoryEntryId {
+    MemoryEntryId::new(raw).expect("a valid entry id")
+}
+
+fn write(entries: Vec<MemoryEntry>) -> MemoryWrite {
+    MemoryWrite::unexplained(entries).expect("a write with entries is valid")
+}
+
 fn entry(summary: &str, kind: MemoryEntryKind, at: i64) -> MemoryEntry {
     MemoryEntry::new(
+        id(summary),
         kind,
         summary,
         None,
@@ -79,6 +89,7 @@ struct KernelStandIn {
     written: Mutex<BTreeMap<String, Vec<StoredEntry>>>,
     keys: Mutex<BTreeMap<String, String>>,
     supports: Mutex<Vec<(String, String)>>,
+    reasons: Mutex<Vec<Value>>,
     page_size: usize,
     /// Requests seen, so a test can say what the adapter asked for.
     calls: Mutex<Vec<(String, Value)>>,
@@ -145,6 +156,14 @@ impl KernelStandIn {
             });
         }
 
+        for relation in arguments["memory"]["relations"]
+            .as_array()
+            .into_iter()
+            .flatten()
+        {
+            self.reasons.lock().unwrap().push(relation.clone());
+        }
+
         let mut supports = self.supports.lock().unwrap();
         for item in arguments["memory"]["evidence"]
             .as_array()
@@ -185,6 +204,46 @@ impl KernelStandIn {
         self.page(visible)
     }
 
+    /// The shortest chain of reasons between two refs, breadth-first.
+    ///
+    /// The stand-in has to do real path-finding here: a trace that
+    /// returned the edges it happened to hold would let an adapter that
+    /// never walks anything look like one that does.
+    fn trace(&self, arguments: &Value) -> KernelAnswer {
+        let from = arguments["from"].as_str().unwrap_or_default().to_owned();
+        let to = arguments["to"].as_str().unwrap_or_default();
+        let reasons = self.reasons.lock().unwrap().clone();
+
+        let mut frontier = std::collections::VecDeque::from([from.clone()]);
+        let mut arrived_by: BTreeMap<String, Value> = BTreeMap::new();
+        let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::from([from]);
+        while let Some(here) = frontier.pop_front() {
+            if here == to {
+                break;
+            }
+            for reason in reasons
+                .iter()
+                .filter(|reason| reason["from"].as_str() == Some(here.as_str()))
+            {
+                let next = reason["to"].as_str().unwrap_or_default().to_owned();
+                if seen.insert(next.clone()) {
+                    arrived_by.insert(next.clone(), reason.clone());
+                    frontier.push_back(next);
+                }
+            }
+        }
+
+        let mut chain = Vec::new();
+        let mut here = to.to_owned();
+        while let Some(reason) = arrived_by.get(&here) {
+            chain.push(reason.clone());
+            here = reason["from"].as_str().unwrap_or_default().to_owned();
+        }
+        chain.reverse();
+
+        KernelAnswer::Returned(json!({ "trace": chain, "warnings": [] }))
+    }
+
     fn page(&self, visible: Vec<&StoredEntry>) -> KernelAnswer {
         let total = visible.len();
         let returned: Vec<&StoredEntry> = visible.into_iter().take(self.page_size.max(1)).collect();
@@ -193,8 +252,25 @@ impl KernelStandIn {
             .then(|| returned.last().map(|entry| entry.reference.clone()))
             .flatten();
 
+        let visible: std::collections::BTreeSet<&str> =
+            returned.iter().map(|e| e.reference.as_str()).collect();
+        // The reasons whose two ends are both on this page. A stand-in
+        // that returned dangling edges would let the adapter look
+        // better than it is.
+        let mut path: Vec<Value> = self
+            .reasons
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|reason| {
+                visible.contains(reason["from"].as_str().unwrap_or_default())
+                    && visible.contains(reason["to"].as_str().unwrap_or_default())
+            })
+            .cloned()
+            .collect();
+
         let supports = self.supports.lock().unwrap();
-        let path: Vec<Value> = returned
+        let evidence_path: Vec<Value> = returned
             .iter()
             .flat_map(|entry| {
                 supports
@@ -213,6 +289,7 @@ impl KernelStandIn {
                     .collect::<Vec<_>>()
             })
             .collect();
+        path.extend(evidence_path);
 
         KernelAnswer::Returned(json!({
             "entries": returned.iter().map(|entry| json!({
@@ -247,6 +324,7 @@ impl KernelTransport for KernelStandIn {
         match tool {
             "kernel_ingest" => Ok(self.ingest(&arguments)),
             "kernel_goto" => Ok(self.goto(&arguments)),
+            "kernel_trace" => Ok(self.trace(&arguments)),
             other => panic!("the adapter called a tool this stand-in does not know: {other}"),
         }
     }
@@ -297,7 +375,7 @@ async fn the_adapter_satisfies_the_contract_against_a_stand_in() {
         .await
         .unwrap_or_else(|failure| panic!("{failure}"));
 
-    assert_eq!(passed.len(), 9, "{passed:?}");
+    assert_eq!(passed.len(), 10, "{passed:?}");
 }
 
 /// Provenance rides on dimensions, and this is the test that says so
@@ -309,6 +387,7 @@ async fn a_write_carries_provenance_as_dimensions() {
     let kernel = std::sync::Arc::new(KernelStandIn::new(50));
     let memory = KernelSessionMemory::new(Shared(kernel.clone()));
     let written = MemoryEntry::new(
+        id("roll-back"),
         MemoryEntryKind::Decision,
         "roll back to the previous revision",
         Some(MemoryDimension::new("timeline").expect("a valid dimension")),
@@ -322,7 +401,11 @@ async fn a_write_carries_provenance_as_dimensions() {
     .expect("a valid entry");
 
     memory
-        .remember(&scope("dimensions"), vec![written], "write:dimensions")
+        .remember(
+            &scope("dimensions"),
+            write(vec![written]),
+            "write:dimensions",
+        )
         .await
         .expect("the write should be accepted");
 
@@ -372,7 +455,7 @@ async fn reading_walks_every_page_and_repeats_nothing() {
         .collect();
 
     memory
-        .remember(&scope, entries, "write:paged")
+        .remember(&scope, write(entries), "write:paged")
         .await
         .expect("the write should be accepted");
 
@@ -414,11 +497,11 @@ async fn paging_cannot_smuggle_in_what_was_learned_later() {
     memory
         .remember(
             &scope,
-            vec![
+            write(vec![
                 entry("known at the time", MemoryEntryKind::Observation, 100),
                 entry("also known by then", MemoryEntryKind::Observation, 200),
                 entry("known only later", MemoryEntryKind::Outcome, 900),
-            ],
+            ]),
             "write:careless",
         )
         .await
@@ -498,7 +581,7 @@ async fn a_kernel_that_is_gone_is_not_an_empty_session() {
     assert!(memory
         .remember(
             &scope("gone"),
-            vec![entry("x", MemoryEntryKind::Decision, 1)],
+            write(vec![entry("x", MemoryEntryKind::Decision, 1)]),
             "k"
         )
         .await
@@ -524,7 +607,7 @@ impl KernelTransport for HoldsForeignMemory {
         Ok(KernelAnswer::Returned(json!({
             "entries": [
                 {
-                    "ref": "claim:from-elsewhere",
+                    "ref": "entry:ceremony:shared:from-elsewhere",
                     "kind": "claim",
                     "text": "written by something that is not this engine",
                     "coordinates": [{
@@ -534,7 +617,7 @@ impl KernelTransport for HoldsForeignMemory {
                     }],
                 },
                 {
-                    "ref": "entry:ours",
+                    "ref": "entry:ceremony:shared:ours",
                     "kind": "decision",
                     "text": "written by this engine",
                     "coordinates": [{
@@ -559,7 +642,7 @@ async fn memory_this_engine_cannot_represent_is_left_out_not_invented() {
         .await
         .expect("the read should work");
 
-    let MemoryRecollection::Recalled(entries) = recalled else {
+    let MemoryRecollection::Recalled { entries, .. } = recalled else {
         panic!("a backend that declares recalling answered unsupported");
     };
     let summaries: Vec<&str> = entries.iter().map(MemoryEntry::summary).collect();
@@ -585,7 +668,10 @@ async fn evidence_comes_back_attached_to_its_own_entry() {
     memory
         .remember(
             &scope,
-            vec![backed, entry("unbacked", MemoryEntryKind::Decision, 30)],
+            write(vec![
+                backed,
+                entry("unbacked", MemoryEntryKind::Decision, 30),
+            ]),
             "write:evidenced",
         )
         .await
@@ -600,4 +686,51 @@ async fn evidence_comes_back_attached_to_its_own_entry() {
         "dead-letter count was zero"
     );
     assert!(entries[1].evidence().is_empty());
+}
+
+/// A reason leaves in the kernel's terms, not in ours.
+///
+/// How a kernel classes an explanation is its taxonomy, and the mapping
+/// belongs in the adapter. This is the test that says which words go
+/// out, so a change to them is a decision somebody made rather than a
+/// rename that slipped through.
+#[tokio::test]
+async fn a_reason_is_written_in_the_kernels_terms() {
+    let kernel = std::sync::Arc::new(KernelStandIn::new(50));
+    let memory = KernelSessionMemory::new(Shared(kernel.clone()));
+    let observation = entry("the queue was backing up", MemoryEntryKind::Observation, 10);
+    let decision = entry("roll back", MemoryEntryKind::Decision, 20);
+    let because = MemoryRelation::new(
+        decision.id().clone(),
+        observation.id().clone(),
+        MemoryRelationKind::ChosenBecause,
+        "the queue growth is what made a rollback necessary",
+        MemoryConfidence::High,
+    )
+    .expect("a valid reason");
+
+    memory
+        .remember(
+            &scope("terms"),
+            MemoryWrite::new(vec![observation, decision], vec![because]).expect("a valid write"),
+            "write:terms",
+        )
+        .await
+        .expect("the write should be accepted");
+
+    let calls = kernel.calls.lock().unwrap().clone();
+    let (_, arguments) = calls.first().expect("one call");
+    let relation = &arguments["memory"]["relations"][0];
+
+    assert_eq!(relation["rel"], "chosen_because");
+    assert_eq!(
+        relation["class"], "motivational",
+        "an explanation's class is what decides whether it survives a budget"
+    );
+    assert_eq!(
+        relation["why"], "the queue growth is what made a rollback necessary",
+        "the reason travels on the edge, which is the only place it means anything"
+    );
+    assert_eq!(relation["confidence"], "high");
+    assert_eq!(relation["from"], "entry:ceremony:terms:roll back");
 }

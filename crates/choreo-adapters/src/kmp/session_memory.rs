@@ -1,4 +1,18 @@
 //! A working session's memory, kept by a memory kernel.
+//!
+//! # What is measured, and why it is the reasons
+//!
+//! Every call records how many **reasons** it carried, not only how
+//! many entries. Entries alone always look healthy — a session that
+//! writes ten observations and connects none of them writes ten
+//! entries, same as a session that explains itself. The count of edges
+//! is the number that falls when memory stops being worth keeping, and
+//! it falls silently.
+//!
+//! Following is the one read the kernel itself measures the quality
+//! of, so it is deliberately a real call to the kernel rather than a
+//! walk over what a previous read returned. A memory nobody ever
+//! traces is a memory nobody is measuring, on either side.
 
 use std::collections::BTreeSet;
 
@@ -8,7 +22,8 @@ use choreo_core::ports::{
     MemoryReaderPort, MemoryRecollection, MemoryWriteOutcome, MemoryWriterPort,
 };
 use choreo_core::value_objects::{
-    MemoryCapabilities, MemoryCapability, MemoryEntry, MemoryMoment, MemoryQuestion, MemoryScope,
+    MemoryCapabilities, MemoryCapability, MemoryEntry, MemoryEntryId, MemoryMoment, MemoryQuestion,
+    MemoryRelation, MemoryScope, MemoryWrite,
 };
 
 use super::error::{refused, unreachable_kernel};
@@ -51,6 +66,8 @@ impl<T: KernelTransport> KernelSessionMemory<T> {
             .with(MemoryCapability::Recalling)
             .with(MemoryCapability::TravellingInTime)
             .with(MemoryCapability::KeepingEvidence)
+            .with(MemoryCapability::KeepingReasons)
+            .with(MemoryCapability::FollowingReasons)
     }
 
     /// Everything the kernel holds about `scope` as of `moment`.
@@ -60,12 +77,22 @@ impl<T: KernelTransport> KernelSessionMemory<T> {
     /// that only the first page enforced would let a later page
     /// deliver what was learned after the moment asked about — the
     /// one thing reading memory as of a moment must never do.
+    #[tracing::instrument(
+        name = "kmp_read",
+        skip_all,
+        fields(
+            scope = %scope,
+            entries = tracing::field::Empty,
+            reasons = tracing::field::Empty,
+        )
+    )]
     async fn read_as_of(
         &self,
         scope: &MemoryScope,
         moment: MemoryMoment,
-    ) -> Result<Vec<MemoryEntry>, DomainError> {
+    ) -> Result<(Vec<MemoryEntry>, Vec<MemoryRelation>), DomainError> {
         let mut collected = Vec::new();
+        let mut reasons: Vec<MemoryRelation> = Vec::new();
         let mut seen = BTreeSet::new();
         let mut unreadable = 0;
         let mut cursor: Option<String> = None;
@@ -81,13 +108,18 @@ impl<T: KernelTransport> KernelSessionMemory<T> {
             let document = match answer {
                 KernelAnswer::Returned(document) => document,
                 KernelAnswer::Refused(words) if mapping::means_nothing_is_written(&words) => {
-                    return Ok(collected);
+                    return Ok((collected, reasons));
                 }
                 KernelAnswer::Refused(words) => return Err(refused(&words, "kernel_goto")),
             };
 
             let page = mapping::read_page(scope, &document);
             unreadable += page.unreadable;
+            for reason in page.relations {
+                if !reasons.contains(&reason) {
+                    reasons.push(reason);
+                }
+            }
             for (reference, entry) in page.entries {
                 if entry.provenance().observed_at() > moment.instant() {
                     continue;
@@ -117,43 +149,65 @@ impl<T: KernelTransport> KernelSessionMemory<T> {
                 "memory this engine cannot represent was left out of a recollection"
             );
         }
-        Ok(collected)
+        // A reason whose ends are not both here would say an
+        // explanation exists and give no way to reach it, which is
+        // worse than saying nothing.
+        let visible: BTreeSet<&MemoryEntryId> = collected.iter().map(MemoryEntry::id).collect();
+        let reasons = reasons
+            .iter()
+            .filter(|reason| visible.contains(reason.from()) && visible.contains(reason.to()))
+            .cloned()
+            .collect::<Vec<_>>();
+        // The pair that says whether this memory is worth having: a
+        // read that is all nodes and no edges can be read and not
+        // followed, and nothing else in the answer shows it.
+        let span = tracing::Span::current();
+        span.record("entries", collected.len());
+        span.record("reasons", reasons.len());
+        Ok((collected, reasons))
     }
 }
 
 #[async_trait]
 impl<T: KernelTransport> MemoryWriterPort for KernelSessionMemory<T> {
+    #[tracing::instrument(
+        name = "kmp_remember",
+        skip_all,
+        fields(
+            scope = %scope,
+            entries = write.entries().len(),
+            reasons = write.relations().len(),
+            outcome = tracing::field::Empty,
+        )
+    )]
     async fn remember(
         &self,
         scope: &MemoryScope,
-        entries: Vec<MemoryEntry>,
+        write: MemoryWrite,
         idempotency_key: &str,
     ) -> Result<MemoryWriteOutcome, DomainError> {
-        if entries.is_empty() {
-            return Err(DomainError::EmptyCollection {
-                field: "memory.entries",
-            });
-        }
         if idempotency_key.trim().is_empty() {
             return Err(DomainError::EmptyField {
                 field: "memory.idempotency_key",
             });
         }
 
-        let arguments = mapping::ingest_arguments(scope, &entries, idempotency_key)?;
+        let arguments = mapping::ingest_arguments(scope, &write, idempotency_key)?;
         let answer = self
             .kernel
             .call("kernel_ingest", arguments)
             .await
             .map_err(|error| unreachable_kernel(&error, "kernel_ingest"))?;
 
-        match answer {
-            KernelAnswer::Returned(_) => Ok(MemoryWriteOutcome::Remembered),
+        let outcome = match answer {
+            KernelAnswer::Returned(_) => MemoryWriteOutcome::Remembered,
             KernelAnswer::Refused(words) if mapping::means_already_remembered(&words) => {
-                Ok(MemoryWriteOutcome::AlreadyRemembered)
+                MemoryWriteOutcome::AlreadyRemembered
             }
-            KernelAnswer::Refused(words) => Err(refused(&words, "kernel_ingest")),
-        }
+            KernelAnswer::Refused(words) => return Err(refused(&words, "kernel_ingest")),
+        };
+        tracing::Span::current().record("outcome", tracing::field::debug(outcome));
+        Ok(outcome)
     }
 
     fn capabilities(&self) -> MemoryCapabilities {
@@ -166,7 +220,7 @@ impl<T: KernelTransport> MemoryReaderPort for KernelSessionMemory<T> {
     async fn recall(&self, scope: &MemoryScope) -> Result<MemoryRecollection, DomainError> {
         self.read_as_of(scope, mapping::end_of_time())
             .await
-            .map(MemoryRecollection::Recalled)
+            .map(|(entries, relations)| MemoryRecollection::Recalled { entries, relations })
     }
 
     async fn ask(
@@ -184,7 +238,50 @@ impl<T: KernelTransport> MemoryReaderPort for KernelSessionMemory<T> {
     ) -> Result<MemoryRecollection, DomainError> {
         self.read_as_of(scope, moment)
             .await
-            .map(MemoryRecollection::Recalled)
+            .map(|(entries, relations)| MemoryRecollection::Recalled { entries, relations })
+    }
+
+    /// Ask the kernel how one entry came from another.
+    ///
+    /// Its own path-finding rather than a walk over what `recall`
+    /// returned, for two reasons: it reaches past whatever a single
+    /// read happened to bring back, and it is one of the three calls
+    /// the kernel measures the quality of. A memory nobody ever traces
+    /// is a memory nobody is measuring.
+    #[tracing::instrument(
+        name = "kmp_follow",
+        skip_all,
+        fields(scope = %scope, from = %from, to = %to, steps = tracing::field::Empty)
+    )]
+    async fn follow(
+        &self,
+        scope: &MemoryScope,
+        from: &MemoryEntryId,
+        to: &MemoryEntryId,
+    ) -> Result<MemoryRecollection, DomainError> {
+        let answer = self
+            .kernel
+            .call("kernel_trace", mapping::trace_arguments(scope, from, to))
+            .await
+            .map_err(|error| unreachable_kernel(&error, "kernel_trace"))?;
+
+        let document = match answer {
+            KernelAnswer::Returned(document) => document,
+            KernelAnswer::Refused(words) if mapping::means_nothing_is_written(&words) => {
+                return Ok(MemoryRecollection::nothing());
+            }
+            KernelAnswer::Refused(words) => return Err(refused(&words, "kernel_trace")),
+        };
+
+        let chain = mapping::read_chain(scope, &document);
+        // Zero steps between two entries that ought to be connected is
+        // the shape of memory that has quietly stopped explaining
+        // itself, so it is recorded rather than returned in silence.
+        tracing::Span::current().record("steps", chain.len());
+        Ok(MemoryRecollection::Recalled {
+            entries: Vec::new(),
+            relations: chain,
+        })
     }
 
     fn capabilities(&self) -> MemoryCapabilities {

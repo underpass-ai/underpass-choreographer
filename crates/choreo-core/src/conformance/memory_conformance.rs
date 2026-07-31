@@ -25,11 +25,11 @@ use std::fmt;
 
 use time::OffsetDateTime;
 
-use crate::error::DomainError;
 use crate::ports::{MemoryReaderPort, MemoryWriteOutcome, MemoryWriterPort};
 use crate::value_objects::{
-    Attributes, CeremonyId, MemoryEntry, MemoryEntryKind, MemoryEvidence, MemoryMoment,
-    MemoryProvenance, MemoryQuestion, MemoryScope,
+    Attributes, CeremonyId, MemoryConfidence, MemoryEntry, MemoryEntryId, MemoryEntryKind,
+    MemoryEvidence, MemoryMoment, MemoryProvenance, MemoryQuestion, MemoryRelation,
+    MemoryRelationKind, MemoryScope, MemoryWrite,
 };
 
 /// A property the adapter under test failed.
@@ -77,7 +77,17 @@ fn scope(name: &str) -> MemoryScope {
 }
 
 fn entry(summary: &str, kind: MemoryEntryKind, observed_at: OffsetDateTime) -> MemoryEntry {
+    named(summary, summary, kind, observed_at)
+}
+
+fn named(
+    id: &str,
+    summary: &str,
+    kind: MemoryEntryKind,
+    observed_at: OffsetDateTime,
+) -> MemoryEntry {
     MemoryEntry::new(
+        MemoryEntryId::new(id).expect("entry id should be valid"),
         kind,
         summary,
         None,
@@ -89,6 +99,12 @@ fn entry(summary: &str, kind: MemoryEntryKind, observed_at: OffsetDateTime) -> M
         Attributes::empty(),
     )
     .expect("entry should be valid")
+}
+
+/// Entries with nothing connecting them, for the properties that are
+/// not about reasons.
+fn write(entries: Vec<MemoryEntry>) -> MemoryWrite {
+    MemoryWrite::unexplained(entries).expect("a write with entries should be valid")
 }
 
 fn moment(seconds: i64) -> OffsetDateTime {
@@ -126,8 +142,11 @@ impl MemoryConformance {
         Self::the_same_write_twice_is_one_memory(writer, reader).await?;
         passed.push("the_same_write_twice_is_one_memory");
 
-        Self::an_empty_write_is_refused(writer).await?;
-        passed.push("an_empty_write_is_refused");
+        Self::reasons_survive_the_round_trip(writer, reader).await?;
+        passed.push("reasons_survive_the_round_trip");
+
+        Self::a_chain_of_reasons_can_be_followed(writer, reader).await?;
+        passed.push("a_chain_of_reasons_can_be_followed");
 
         Self::evidence_survives_the_round_trip(writer, reader).await?;
         passed.push("evidence_survives_the_round_trip");
@@ -198,11 +217,11 @@ impl MemoryConformance {
         let outcome = writer
             .remember(
                 &scope,
-                vec![entry(
+                write(vec![entry(
                     "the rollback was rehearsed in March",
                     MemoryEntryKind::Observation,
                     moment(10),
-                )],
+                )]),
                 "conformance:round-trip",
             )
             .await
@@ -258,7 +277,7 @@ impl MemoryConformance {
         writer
             .remember(
                 &mine,
-                vec![entry("mine", MemoryEntryKind::Decision, moment(1))],
+                write(vec![entry("mine", MemoryEntryKind::Decision, moment(1))]),
                 "conformance:mine",
             )
             .await
@@ -266,7 +285,7 @@ impl MemoryConformance {
         writer
             .remember(
                 &yours,
-                vec![entry("yours", MemoryEntryKind::Decision, moment(2))],
+                write(vec![entry("yours", MemoryEntryKind::Decision, moment(2))]),
                 "conformance:yours",
             )
             .await
@@ -297,7 +316,13 @@ impl MemoryConformance {
             return Ok(());
         }
         let scope = scope("retried");
-        let entries = || vec![entry("decided once", MemoryEntryKind::Decision, moment(5))];
+        let entries = || {
+            write(vec![entry(
+                "decided once",
+                MemoryEntryKind::Decision,
+                moment(5),
+            )])
+        };
 
         let first = writer
             .remember(&scope, entries(), "conformance:retried")
@@ -340,23 +365,187 @@ impl MemoryConformance {
         }
     }
 
-    /// Writing nothing is a call that would change nothing, and a
-    /// backend that answers "remembered" to it is lying quietly.
-    async fn an_empty_write_is_refused(writer: &dyn MemoryWriterPort) -> Checked {
-        const PROPERTY: &str = "an_empty_write_is_refused";
-        match writer
-            .remember(&scope("empty"), Vec::new(), "conformance:empty")
+    /// The reasons are the part a later session follows, and a backend
+    /// that keeps the entries while dropping the edges leaves memory
+    /// that reads correctly and cannot be walked.
+    ///
+    /// That is the failure this property exists for, and it is the one
+    /// that looks most like success: every entry is there, every
+    /// summary is right, and the question "how did this come about"
+    /// has quietly stopped having an answer.
+    async fn reasons_survive_the_round_trip(
+        writer: &dyn MemoryWriterPort,
+        reader: &dyn MemoryReaderPort,
+    ) -> Checked {
+        const PROPERTY: &str = "reasons_survive_the_round_trip";
+        const WHY: &str = "the queue growth is what made a rollback necessary";
+        let scope = scope("reasons");
+        let observation = named(
+            "conformance:observation",
+            "the queue was backing up",
+            MemoryEntryKind::Observation,
+            moment(40),
+        );
+        let decision = named(
+            "conformance:decision",
+            "roll back rather than restart",
+            MemoryEntryKind::Decision,
+            moment(50),
+        );
+        let because = MemoryRelation::new(
+            decision.id().clone(),
+            observation.id().clone(),
+            MemoryRelationKind::ChosenBecause,
+            WHY,
+            MemoryConfidence::High,
+        )
+        .map_err(|error| MemoryConformanceFailure::new(PROPERTY, error.to_string()))?;
+        let explained = MemoryWrite::new(vec![observation, decision], vec![because])
+            .map_err(|error| MemoryConformanceFailure::new(PROPERTY, error.to_string()))?;
+
+        // Accepting a reason is not the same as keeping one: a backend
+        // that keeps none must still take the write, or a caller would
+        // have to choose between explaining itself and being stored.
+        let outcome = writer
+            .remember(&scope, explained, "conformance:reasons")
             .await
-        {
-            Err(DomainError::EmptyCollection { .. }) => Ok(()),
-            Err(other) => Err(MemoryConformanceFailure::new(
+            .map_err(|error| MemoryConformanceFailure::new(PROPERTY, error.to_string()))?;
+
+        if !writer.capabilities().remembers() {
+            return if outcome == MemoryWriteOutcome::NotRemembered {
+                Ok(())
+            } else {
+                Err(MemoryConformanceFailure::new(
+                    PROPERTY,
+                    format!("a backend that does not remember answered {outcome:?}"),
+                ))
+            };
+        }
+        if !writer.capabilities().keeps_reasons() || !reader.capabilities().recalls() {
+            return Ok(());
+        }
+
+        let recalled = reader
+            .recall(&scope)
+            .await
+            .map_err(|error| MemoryConformanceFailure::new(PROPERTY, error.to_string()))?;
+        match recalled.relations() {
+            [only] if only.why() == WHY && only.kind() == MemoryRelationKind::ChosenBecause => {
+                if only.from().as_str() == "conformance:decision"
+                    && only.to().as_str() == "conformance:observation"
+                {
+                    Ok(())
+                } else {
+                    Err(MemoryConformanceFailure::new(
+                        PROPERTY,
+                        format!(
+                            "a reason came back pointing {} -> {}",
+                            only.from(),
+                            only.to()
+                        ),
+                    ))
+                }
+            }
+            [] => Err(MemoryConformanceFailure::new(
                 PROPERTY,
-                format!("an empty write failed with {other}, not EmptyCollection"),
+                "the entries came back and the reason between them did not — \
+                 memory that can be read and not followed",
             )),
-            Ok(outcome) => Err(MemoryConformanceFailure::new(
+            others => Err(MemoryConformanceFailure::new(
                 PROPERTY,
-                format!("an empty write was accepted as {outcome:?}"),
+                format!("expected exactly the reason written, got {}", others.len()),
             )),
+        }
+    }
+
+    /// Two hops, because one proves nothing.
+    ///
+    /// A backend that returned the single edge it was handed would pass
+    /// a one-hop check while being unable to follow anything. The
+    /// question a later session actually asks — how did this outcome
+    /// come from that observation — is never one hop.
+    async fn a_chain_of_reasons_can_be_followed(
+        writer: &dyn MemoryWriterPort,
+        reader: &dyn MemoryReaderPort,
+    ) -> Checked {
+        const PROPERTY: &str = "a_chain_of_reasons_can_be_followed";
+        let scope = scope("chain");
+        let observation = named(
+            "chain:observation",
+            "the queue was backing up",
+            MemoryEntryKind::Observation,
+            moment(60),
+        );
+        let decision = named(
+            "chain:decision",
+            "roll back rather than restart",
+            MemoryEntryKind::Decision,
+            moment(70),
+        );
+        let outcome = named(
+            "chain:outcome",
+            "the queue drained",
+            MemoryEntryKind::Outcome,
+            moment(80),
+        );
+        let chain = vec![
+            MemoryRelation::new(
+                decision.id().clone(),
+                observation.id().clone(),
+                MemoryRelationKind::ChosenBecause,
+                "the queue growth is what made a rollback necessary",
+                MemoryConfidence::High,
+            )
+            .map_err(|error| MemoryConformanceFailure::new(PROPERTY, error.to_string()))?,
+            MemoryRelation::new(
+                outcome.id().clone(),
+                decision.id().clone(),
+                MemoryRelationKind::FollowsFrom,
+                "the queue drained because the rollback removed the bad revision",
+                MemoryConfidence::Medium,
+            )
+            .map_err(|error| MemoryConformanceFailure::new(PROPERTY, error.to_string()))?,
+        ];
+        let from = outcome.id().clone();
+        let to = observation.id().clone();
+
+        if writer.capabilities().remembers() {
+            let explained = MemoryWrite::new(vec![observation, decision, outcome], chain)
+                .map_err(|error| MemoryConformanceFailure::new(PROPERTY, error.to_string()))?;
+            writer
+                .remember(&scope, explained, "conformance:chain")
+                .await
+                .map_err(|error| MemoryConformanceFailure::new(PROPERTY, error.to_string()))?;
+        }
+
+        let followed = reader
+            .follow(&scope, &from, &to)
+            .await
+            .map_err(|error| MemoryConformanceFailure::new(PROPERTY, error.to_string()))?;
+
+        if !reader.capabilities().follows_reasons() {
+            return expect_unsupported(PROPERTY, &followed, "follow");
+        }
+        if !writer.capabilities().remembers() || !writer.capabilities().keeps_reasons() {
+            return Ok(());
+        }
+
+        let reached = followed
+            .relations()
+            .iter()
+            .any(|relation| relation.to() == &to);
+        if followed.relations().len() >= 2 && reached {
+            Ok(())
+        } else {
+            Err(MemoryConformanceFailure::new(
+                PROPERTY,
+                format!(
+                    "following an outcome back to what it came from returned {} step(s) \
+                     and {} the far end — a memory that cannot be walked",
+                    followed.relations().len(),
+                    if reached { "reached" } else { "never reached" }
+                ),
+            ))
         }
     }
 
@@ -382,7 +571,7 @@ impl MemoryConformance {
         .expect("evidence should be valid")]);
 
         writer
-            .remember(&scope, vec![evidenced], "conformance:evidence")
+            .remember(&scope, write(vec![evidenced]), "conformance:evidence")
             .await
             .map_err(|error| MemoryConformanceFailure::new(PROPERTY, error.to_string()))?;
 
@@ -419,11 +608,11 @@ impl MemoryConformance {
             writer
                 .remember(
                     &scope,
-                    vec![entry(
+                    write(vec![entry(
                         "we restarted the ingester",
                         MemoryEntryKind::Outcome,
                         moment(30),
-                    )],
+                    )]),
                     "conformance:asked",
                 )
                 .await
@@ -454,10 +643,10 @@ impl MemoryConformance {
             writer
                 .remember(
                     &scope,
-                    vec![
+                    write(vec![
                         entry("known early", MemoryEntryKind::Observation, moment(100)),
                         entry("known later", MemoryEntryKind::Observation, moment(900)),
-                    ],
+                    ]),
                     "conformance:as-known-at",
                 )
                 .await

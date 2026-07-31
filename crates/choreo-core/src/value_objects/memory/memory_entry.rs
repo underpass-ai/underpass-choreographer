@@ -3,11 +3,16 @@ use serde::{Deserialize, Serialize};
 use crate::error::DomainError;
 use crate::value_objects::Attributes;
 
-use super::{MemoryDimension, MemoryEntryKind, MemoryEvidence, MemoryProvenance};
+use super::{MemoryDimension, MemoryEntryId, MemoryEntryKind, MemoryEvidence, MemoryProvenance};
 
 const MAX_SUMMARY: usize = 2_048;
 
 /// One thing worth remembering.
+///
+/// It carries a name, because an entry nothing can point at is a fact
+/// with no place in an argument. What the name is belongs to whoever
+/// writes it, and keeping it stable is what lets a later session
+/// explain today's entry in terms of one written months ago.
 ///
 /// The summary is capped, and deliberately short of anything that
 /// could hold a conversation. What is remembered is what was decided
@@ -16,6 +21,7 @@ const MAX_SUMMARY: usize = 2_048;
 /// them rather than a way to navigate what they meant.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MemoryEntry {
+    id: MemoryEntryId,
     kind: MemoryEntryKind,
     summary: String,
     dimension: Option<MemoryDimension>,
@@ -26,6 +32,7 @@ pub struct MemoryEntry {
 
 impl MemoryEntry {
     pub fn new(
+        id: MemoryEntryId,
         kind: MemoryEntryKind,
         summary: impl Into<String>,
         dimension: Option<MemoryDimension>,
@@ -47,6 +54,7 @@ impl MemoryEntry {
             });
         }
         Ok(Self {
+            id,
             kind,
             summary: trimmed.to_owned(),
             dimension,
@@ -60,6 +68,12 @@ impl MemoryEntry {
     pub fn with_evidence(mut self, evidence: impl IntoIterator<Item = MemoryEvidence>) -> Self {
         self.evidence.extend(evidence);
         self
+    }
+
+    /// What this entry is called, so a relation can point at it.
+    #[must_use]
+    pub fn id(&self) -> &MemoryEntryId {
+        &self.id
     }
 
     #[must_use]
