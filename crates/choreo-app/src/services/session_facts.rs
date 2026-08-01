@@ -238,3 +238,29 @@ pub(crate) fn evidence_collected(
         )?,
     ])
 }
+
+/// The fact that a seat said why one thing here led to another.
+///
+/// A judgement is the kind of entry a later reader weighs hardest, and
+/// weighing it starts with who made it.
+pub(crate) fn reason_asserted(
+    instance: &CeremonyInstance,
+    asserted_by: &RoleId,
+    asserted_by_kind: AuditActorKind,
+    occurred_at: OffsetDateTime,
+) -> Result<AuditFact, DomainError> {
+    // Numbered by how many reasons the session holds, not keyed on the
+    // edge itself. The session accepts the same edge asserted twice —
+    // two seats can reach the same conclusion, and one seat can say it
+    // again with a different why — so an id derived from the edge would
+    // fold two claims into one entry. A retry reloads the same session
+    // and lands at the same position, which is what keeps it idempotent.
+    let ordinal = instance.reasons().len();
+    fact(
+        instance,
+        AuditEventType::ReasonAsserted,
+        &format!("reason:{ordinal}"),
+        actor(asserted_by, asserted_by_kind)?,
+        occurred_at,
+    )
+}

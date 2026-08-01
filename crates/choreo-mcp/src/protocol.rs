@@ -646,10 +646,15 @@ fn ceremony_reason_schema() -> Value {
     json!({
         "type": "object",
         "additionalProperties": false,
-        "required": ["ceremony_id", "role_id", "from", "to", "kind", "why", "confidence"],
+        "required": ["ceremony_id", "role_id", "role_kind", "from", "to", "kind", "why", "confidence"],
         "properties": {
             "ceremony_id": string_schema("Started ceremony instance id."),
             "role_id": string_schema("Seat saying so, declared by this ceremony's definition."),
+            "role_kind": {
+                "type": "string",
+                "enum": ["human", "agent", "service", "engine"],
+                "description": "What kind of party fills that seat. Declared by you, because only you know: a reason is a judgement, and whether a person or an agent made it is the first thing anyone weighing it wants to know."
+            },
             "from": ceremony_record_ref_schema("What is being explained."),
             "to": ceremony_record_ref_schema("What explains it."),
             "kind": {

@@ -924,6 +924,7 @@ fn reason_call(id: u64, ceremony_id: &str, role_id: &str, kind: &str, why: &str)
         &json!({
             "ceremony_id": ceremony_id,
             "role_id": role_id,
+            "role_kind": "agent",
             "from": {"kind": "contribution", "agenda_item": "what-now", "ordinal": 0},
             "to": {"kind": "contribution", "agenda_item": "what-happened", "ordinal": 0},
             "kind": kind,

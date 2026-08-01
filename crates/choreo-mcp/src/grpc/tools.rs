@@ -725,6 +725,7 @@ fn build_assert_ceremony_reason_request(
     let obj = j2p::require_object(args, "tools/call.arguments")?;
     Ok(pb::AssertCeremonyReasonRequest {
         ceremony_id: j2p::require_str(obj, "ceremony_id")?.to_owned(),
+        role_kind: j2p::require_str(obj, "role_kind")?.to_owned(),
         role_id: j2p::require_str(obj, "role_id")?.to_owned(),
         from: Some(build_ceremony_record_ref(
             obj.get("from").ok_or("`from` is required")?,

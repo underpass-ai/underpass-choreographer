@@ -1,5 +1,5 @@
 use choreo_core::value_objects::{
-    CeremonyId, CeremonyReasonKind, CeremonyRecordRef, MemoryConfidence, RoleId,
+    AuditActorKind, CeremonyId, CeremonyReasonKind, CeremonyRecordRef, MemoryConfidence, RoleId,
 };
 
 /// Saying why one thing a session produced led to another.
@@ -7,6 +7,11 @@ use choreo_core::value_objects::{
 pub struct AssertCeremonyReasonInput {
     pub(crate) instance_id: CeremonyId,
     pub(crate) role_id: RoleId,
+    /// What kind of party fills that seat.
+    ///
+    /// Carried, never worked out. The engine sees a seat and cannot
+    /// see what fills it.
+    pub(crate) role_kind: AuditActorKind,
     pub(crate) from: CeremonyRecordRef,
     pub(crate) to: CeremonyRecordRef,
     pub(crate) kind: CeremonyReasonKind,
@@ -19,6 +24,7 @@ impl AssertCeremonyReasonInput {
     pub fn new(
         instance_id: CeremonyId,
         role_id: RoleId,
+        role_kind: AuditActorKind,
         from: CeremonyRecordRef,
         to: CeremonyRecordRef,
         kind: CeremonyReasonKind,
@@ -28,6 +34,7 @@ impl AssertCeremonyReasonInput {
         Self {
             instance_id,
             role_id,
+            role_kind,
             from,
             to,
             kind,

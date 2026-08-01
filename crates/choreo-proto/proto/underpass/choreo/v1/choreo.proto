@@ -949,6 +949,16 @@ message AssertCeremonyReasonRequest {
   // is about: only whoever decided something may say what decided
   // them, and only whoever did it may say how.
   string role_id = 2;
+  // What kind of party fills that seat: "human", "agent", "service" or
+  // "engine".
+  //
+  // Declared by you, because only you know. A reason is a judgement,
+  // and whether a person or an agent made it is the first thing anyone
+  // weighing that judgement wants to know.
+  //
+  // Refused when missing or unrecognised. A default would put a kind
+  // in the journal that nobody chose.
+  string role_kind = 8;
   CeremonyRecordRefState from = 3;
   CeremonyRecordRefState to = 4;
   // "chosen_because", "achieved_by", "follows_from",

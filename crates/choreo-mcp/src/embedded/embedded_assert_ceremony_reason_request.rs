@@ -8,7 +8,7 @@ use choreo_core::value_objects::{
 use choreo_embedded::EmbeddedChoreographer;
 use serde_json::Value;
 
-use super::embedded_request_fields::required_string;
+use super::embedded_request_fields::{required_actor_kind, required_string};
 
 pub(super) struct EmbeddedAssertCeremonyReasonRequest {
     input: AssertCeremonyReasonInput,
@@ -122,6 +122,7 @@ impl TryFrom<&Value> for EmbeddedAssertCeremonyReasonRequest {
                 ceremony_id.clone(),
                 RoleId::new(required_string(object, "role_id")?)
                     .map_err(|error| stringify(&error))?,
+                required_actor_kind(object, "role_kind")?,
                 record_ref(object.get("from"), "from")?,
                 record_ref(object.get("to"), "to")?,
                 reason_kind(&required_string(object, "kind")?)?,

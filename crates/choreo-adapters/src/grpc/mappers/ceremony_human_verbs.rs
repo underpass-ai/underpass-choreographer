@@ -107,6 +107,7 @@ pub fn assert_ceremony_reason_input_from_proto(
     Ok(AssertCeremonyReasonInput::new(
         CeremonyId::new(request.ceremony_id)?,
         RoleId::new(request.role_id)?,
+        actor_kind_from_proto(&request.role_kind, "role_kind")?,
         ceremony_record_ref_from_proto(request.from, "ceremony_reason.from")?,
         ceremony_record_ref_from_proto(request.to, "ceremony_reason.to")?,
         reason_kind_from_proto(&request.kind)?,

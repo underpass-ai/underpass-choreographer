@@ -332,7 +332,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
     ));
     let assert_ceremony_reason = Arc::new(AssertCeremonyReasonUseCase::new(
         resolve_ceremony_definition.clone(),
-        ceremony_instances.clone(),
+        ceremony_journal.clone(),
         clock.clone(),
         session_memory.clone(),
     ));

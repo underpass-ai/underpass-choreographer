@@ -205,7 +205,7 @@ impl GrpcFixture {
         ));
         let assert_ceremony_reason = Arc::new(AssertCeremonyReasonUseCase::new(
             resolve_ceremony_definition.clone(),
-            ceremony_instances.clone(),
+            ceremony_journal.clone(),
             clock.clone(),
             session_memory.clone(),
         ));
@@ -481,7 +481,7 @@ impl GrpcFixture {
         ));
         let assert_ceremony_reason = Arc::new(AssertCeremonyReasonUseCase::new(
             resolve_ceremony_definition.clone(),
-            ceremony_instances.clone(),
+            ceremony_journal.clone(),
             clock.clone(),
             session_memory.clone(),
         ));
