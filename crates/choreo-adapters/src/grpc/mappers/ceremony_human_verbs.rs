@@ -12,7 +12,7 @@ use choreo_app::usecases::{
 };
 use choreo_core::error::DomainError;
 use choreo_core::value_objects::{
-    CeremonyEvidenceSourceId, CeremonyGuardDeferralContent, CeremonyId,
+    AuditActorKind, CeremonyEvidenceSourceId, CeremonyGuardDeferralContent, CeremonyId,
     CeremonyInterventionContent, CeremonyInterventionId, CeremonyInterventionKind,
     CeremonyInterventionProvenance, CeremonyInterventionTarget, CeremonyReasonKind,
     CeremonyRecordRef, GuardName, MemoryConfidence, RoleId, Specialty, StepId,
@@ -29,6 +29,7 @@ pub fn approve_ceremony_guard_input_from_proto(
         CeremonyId::new(request.ceremony_id)?,
         GuardName::new(request.guard_name)?,
         RoleId::new(request.role_id)?,
+        actor_kind_from_proto(&request.role_kind)?,
     ))
 }
 
@@ -59,6 +60,22 @@ pub fn ceremony_record_ref_from_proto(
                 field: "ceremony_record_ref.kind",
             })
         }
+    })
+}
+
+/// What kind of party the caller says filled the seat.
+///
+/// Refused rather than defaulted when it is missing or unknown. A
+/// default would put a kind in the record that nobody chose, and the
+/// whole reason this field exists is that the engine must not choose
+/// one.
+fn actor_kind_from_proto(raw: &str) -> Result<AuditActorKind, DomainError> {
+    Ok(match raw {
+        "human" => AuditActorKind::Human,
+        "agent" => AuditActorKind::Agent,
+        "service" => AuditActorKind::Service,
+        "engine" => AuditActorKind::Engine,
+        _ => return Err(DomainError::InvalidCharacters { field: "role_kind" }),
     })
 }
 
@@ -125,6 +142,7 @@ pub fn defer_ceremony_guard_input_from_proto(
             request.reconsider_when,
         )?,
         RoleId::new(request.role_id)?,
+        actor_kind_from_proto(&request.role_kind)?,
     ))
 }
 
@@ -305,6 +323,7 @@ mod tests {
     #[test]
     fn a_deferral_carries_what_was_decided_and_what_would_reopen_it() {
         let input = defer_ceremony_guard_input_from_proto(pb::DeferCeremonyGuardRequest {
+            role_kind: "human".to_owned(),
             role_id: "facilitator".to_owned(),
             ceremony_id: "session-1".to_owned(),
             guard_name: "budget_approved".to_owned(),

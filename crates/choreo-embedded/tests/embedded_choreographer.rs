@@ -7,8 +7,8 @@ use choreo_app::usecases::{
 };
 use choreo_core::entities::CeremonyDefinition;
 use choreo_core::value_objects::{
-    CeremonyContext, CeremonyId, DurationMs, GuardName, LeaseOwnerId, RoleId, StepOutput,
-    StepResult, TransitionTrigger,
+    AuditActorKind, CeremonyContext, CeremonyId, DurationMs, GuardName, LeaseOwnerId, RoleId,
+    StepOutput, StepResult, TransitionTrigger,
 };
 use choreo_embedded::{EmbeddedChoreographer, VERSION};
 
@@ -146,6 +146,7 @@ async fn host_can_drive_a_human_guard_incrementally() {
             ceremony_id.clone(),
             GuardName::new("human_approved").unwrap(),
             RoleId::new("APPROVER").unwrap(),
+            AuditActorKind::Human,
         ))
         .await
         .unwrap();

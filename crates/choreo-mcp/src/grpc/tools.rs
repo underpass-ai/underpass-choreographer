@@ -680,6 +680,7 @@ fn build_approve_ceremony_guard_request(
         ceremony_id: j2p::require_str(obj, "ceremony_id")?.to_owned(),
         guard_name: j2p::require_str(obj, "guard_name")?.to_owned(),
         role_id: j2p::require_str(obj, "role_id")?.to_owned(),
+        role_kind: j2p::require_str(obj, "role_kind")?.to_owned(),
     })
 }
 
@@ -746,6 +747,7 @@ fn build_defer_ceremony_guard_request(
         ceremony_id: j2p::require_str(obj, "ceremony_id")?.to_owned(),
         guard_name: j2p::require_str(obj, "guard_name")?.to_owned(),
         role_id: j2p::require_str(obj, "role_id")?.to_owned(),
+        role_kind: j2p::require_str(obj, "role_kind")?.to_owned(),
         statement: j2p::require_str(obj, "statement")?.to_owned(),
         reason: j2p::require_str(obj, "reason")?.to_owned(),
         reconsider_when: j2p::string_array(obj, "reconsider_when"),

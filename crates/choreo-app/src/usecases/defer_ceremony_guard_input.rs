@@ -1,4 +1,6 @@
-use choreo_core::value_objects::{CeremonyGuardDeferralContent, CeremonyId, GuardName, RoleId};
+use choreo_core::value_objects::{
+    AuditActorKind, CeremonyGuardDeferralContent, CeremonyId, GuardName, RoleId,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeferCeremonyGuardInput {
@@ -9,6 +11,9 @@ pub struct DeferCeremonyGuardInput {
     /// decided, why, and what would revisit it; who is the fourth, and
     /// the only one nobody can reconstruct afterwards.
     pub(crate) role_id: RoleId,
+    /// What kind of party the caller says filled that seat.
+    /// Declared, not deduced.
+    pub(crate) role_kind: AuditActorKind,
 }
 
 impl DeferCeremonyGuardInput {
@@ -18,12 +23,14 @@ impl DeferCeremonyGuardInput {
         guard_name: GuardName,
         content: CeremonyGuardDeferralContent,
         role_id: RoleId,
+        role_kind: AuditActorKind,
     ) -> Self {
         Self {
             instance_id,
             guard_name,
             content,
             role_id,
+            role_kind,
         }
     }
     #[must_use]

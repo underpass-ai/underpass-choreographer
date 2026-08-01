@@ -63,6 +63,7 @@ impl DeferCeremonyGuardUseCase {
             input.guard_name,
             input.content,
             input.role_id,
+            input.role_kind,
             self.clock.now(),
         )?;
         self.instances.save(&instance).await?;
@@ -79,6 +80,8 @@ impl DeferCeremonyGuardUseCase {
 mod tests {
     use choreo_core::ports::CeremonyInstanceRepositoryPort;
     use choreo_core::value_objects::{CeremonyGuardDeferralContent, GuardName};
+
+    use choreo_core::value_objects::AuditActorKind;
 
     use super::*;
     use crate::usecases::ceremony_test_support::{
@@ -114,6 +117,7 @@ mod tests {
                 )
                 .unwrap(),
                 role_id(),
+                AuditActorKind::Human,
             ))
             .await
             .unwrap();

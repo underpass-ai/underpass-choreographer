@@ -15,14 +15,14 @@ use super::{
 use crate::error::DomainError;
 use crate::ports::CeremonyEvidenceRequest;
 use crate::value_objects::{
-    CeremonyContext, CeremonyDefinitionDigest, CeremonyEvidenceSourceId, CeremonyGuardApproval,
-    CeremonyGuardDeferral, CeremonyGuardDeferralContent, CeremonyId, CeremonyInterventionContent,
-    CeremonyInterventionId, CeremonyInterventionKind, CeremonyInterventionProvenance,
-    CeremonyInterventionResponse, CeremonyInterventionTarget, CeremonyName,
-    CeremonyParticipantBinding, CeremonyReason, CeremonyReasonKind, CeremonyRecordRef,
-    CeremonyTransitionRecord, CeremonyVersion, GuardCondition, GuardName, IdempotencyKey,
-    MemoryConfidence, ReasonAsserter, RoleAction, RoleId, Specialty, StateId, StepAttempt,
-    StepExecutionRecord, StepId, StepLease, StepResult, StepStatus, TransitionTrigger,
+    AuditActorKind, CeremonyContext, CeremonyDefinitionDigest, CeremonyEvidenceSourceId,
+    CeremonyGuardApproval, CeremonyGuardDeferral, CeremonyGuardDeferralContent, CeremonyId,
+    CeremonyInterventionContent, CeremonyInterventionId, CeremonyInterventionKind,
+    CeremonyInterventionProvenance, CeremonyInterventionResponse, CeremonyInterventionTarget,
+    CeremonyName, CeremonyParticipantBinding, CeremonyReason, CeremonyReasonKind,
+    CeremonyRecordRef, CeremonyTransitionRecord, CeremonyVersion, GuardCondition, GuardName,
+    IdempotencyKey, MemoryConfidence, ReasonAsserter, RoleAction, RoleId, Specialty, StateId,
+    StepAttempt, StepExecutionRecord, StepId, StepLease, StepResult, StepStatus, TransitionTrigger,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -401,6 +401,7 @@ impl CeremonyInstance {
         definition: &CeremonyDefinition,
         guard_name: &GuardName,
         approved_by: RoleId,
+        approved_by_kind: AuditActorKind,
         now: OffsetDateTime,
     ) -> Result<(), DomainError> {
         self.require_active(
@@ -423,6 +424,7 @@ impl CeremonyInstance {
         self.guard_approvals.push(CeremonyGuardApproval::record(
             guard_name.clone(),
             approved_by,
+            approved_by_kind,
             now,
         ));
         self.updated_at = now;
@@ -482,6 +484,7 @@ impl CeremonyInstance {
         guard_name: GuardName,
         content: CeremonyGuardDeferralContent,
         deferred_by: RoleId,
+        deferred_by_kind: AuditActorKind,
         now: OffsetDateTime,
     ) -> Result<(), DomainError> {
         self.require_active(
@@ -517,6 +520,7 @@ impl CeremonyInstance {
         self.guard_deferrals.push(CeremonyGuardDeferral::record(
             guard_name,
             deferred_by,
+            deferred_by_kind,
             content,
             now,
         ));
@@ -1547,6 +1551,7 @@ mod tests {
                 &definition,
                 &guard_name("not_a_guard"),
                 role_id("facilitator"),
+                AuditActorKind::Human,
                 now()
             ),
             Err(DomainError::NotFound {
@@ -1596,6 +1601,7 @@ mod tests {
                 &definition,
                 approval.name(),
                 role_id("facilitator"),
+                AuditActorKind::Human,
                 datetime!(2026-06-06 12:01:00 UTC),
             )
             .unwrap();
@@ -1650,6 +1656,7 @@ mod tests {
                 )
                 .unwrap(),
                 role_id("facilitator"),
+                AuditActorKind::Human,
                 datetime!(2026-06-06 12:01:00 UTC),
             )
             .unwrap();
@@ -1676,6 +1683,7 @@ mod tests {
                 &definition,
                 approval.name(),
                 role_id("facilitator"),
+                AuditActorKind::Human,
                 datetime!(2026-06-06 12:01:00 UTC),
             )
             .unwrap();
@@ -1706,6 +1714,7 @@ mod tests {
             &definition,
             approval.name(),
             role_id("someone-who-is-not-here"),
+            AuditActorKind::Human,
             now(),
         );
 
@@ -1896,7 +1905,13 @@ mod tests {
         let definition = definition_with_human_guard(&approval);
         let mut instance = instance(&definition);
         instance
-            .approve_guard(&definition, approval.name(), role_id("facilitator"), now())
+            .approve_guard(
+                &definition,
+                approval.name(),
+                role_id("facilitator"),
+                AuditActorKind::Human,
+                now(),
+            )
             .unwrap();
 
         instance
@@ -1927,7 +1942,13 @@ mod tests {
         let definition = definition_with_human_guard(&approval);
         let mut instance = instance(&definition);
         instance
-            .approve_guard(&definition, approval.name(), role_id("facilitator"), now())
+            .approve_guard(
+                &definition,
+                approval.name(),
+                role_id("facilitator"),
+                AuditActorKind::Human,
+                now(),
+            )
             .unwrap();
 
         instance
@@ -1935,5 +1956,42 @@ mod tests {
             .unwrap();
 
         assert_eq!(instance.transitions()[0].applied_by(), None);
+    }
+    /// What kind of party filled the seat is recorded as declared and
+    /// never inferred.
+    ///
+    /// The engine knows this guard demands a human. That says one was
+    /// required, not that one turned up — and a receipt that read
+    /// compliance off its own requirement would assert exactly what
+    /// nobody can demonstrate. So an agent approving a human-approval
+    /// guard is recorded as an agent, and whether that is acceptable
+    /// is a question for whoever reads it.
+    #[test]
+    fn an_approval_records_the_kind_it_was_told_not_the_one_the_guard_wanted() {
+        let approval =
+            CeremonyGuard::new(guard_name("human_approved"), GuardCondition::HumanApproval);
+        let definition = definition_with_human_guard(&approval);
+        let mut instance = instance(&definition);
+
+        instance
+            .approve_guard(
+                &definition,
+                approval.name(),
+                role_id("facilitator"),
+                AuditActorKind::Agent,
+                now(),
+            )
+            .unwrap();
+
+        let [recorded] = instance.guard_approvals() else {
+            panic!("expected one approval");
+        };
+        assert_eq!(
+            recorded.approved_by_kind(),
+            AuditActorKind::Agent,
+            "the guard asked for a human and an agent answered; saying otherwise \
+             would be the engine vouching for something it cannot see"
+        );
+        assert!(instance.context().is_guard_approved(approval.name()));
     }
 }

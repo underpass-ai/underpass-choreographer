@@ -59,6 +59,7 @@ impl ApproveCeremonyGuardUseCase {
             &definition,
             &input.guard_name,
             input.role_id,
+            input.role_kind,
             self.clock.now(),
         )?;
         self.instances.save(&instance).await?;
@@ -80,6 +81,8 @@ mod tests {
 
     use choreo_core::ports::CeremonyInstanceRepositoryPort;
     use choreo_core::value_objects::GuardName;
+
+    use choreo_core::value_objects::AuditActorKind;
 
     use super::*;
     use crate::usecases::ceremony_test_support::{
@@ -109,6 +112,7 @@ mod tests {
                 ceremony_id(),
                 guard_name.clone(),
                 role_id(),
+                AuditActorKind::Human,
             ))
             .await
             .unwrap();

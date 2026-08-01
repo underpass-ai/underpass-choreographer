@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-use crate::value_objects::RoleId;
+use crate::value_objects::{AuditActorKind, RoleId};
 
 use super::{CeremonyGuardDeferralContent, GuardName};
 
@@ -11,6 +11,7 @@ use super::{CeremonyGuardDeferralContent, GuardName};
 pub struct CeremonyGuardDeferral {
     guard_name: GuardName,
     deferred_by: RoleId,
+    deferred_by_kind: AuditActorKind,
     content: CeremonyGuardDeferralContent,
     #[serde(with = "time::serde::rfc3339")]
     deferred_at: OffsetDateTime,
@@ -21,12 +22,14 @@ impl CeremonyGuardDeferral {
     pub fn record(
         guard_name: GuardName,
         deferred_by: RoleId,
+        deferred_by_kind: AuditActorKind,
         content: CeremonyGuardDeferralContent,
         deferred_at: OffsetDateTime,
     ) -> Self {
         Self {
             guard_name,
             deferred_by,
+            deferred_by_kind,
             content,
             deferred_at,
         }
@@ -43,6 +46,13 @@ impl CeremonyGuardDeferral {
     #[must_use]
     pub fn deferred_by(&self) -> &RoleId {
         &self.deferred_by
+    }
+
+    /// What kind of party the caller says filled the seat. Declared,
+    /// never deduced.
+    #[must_use]
+    pub fn deferred_by_kind(&self) -> AuditActorKind {
+        self.deferred_by_kind
     }
 
     #[must_use]

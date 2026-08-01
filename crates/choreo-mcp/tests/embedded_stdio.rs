@@ -1010,6 +1010,7 @@ fn approval_call(id: u64, ceremony_id: &str, guard_name: &str) -> Value {
             "ceremony_id": ceremony_id,
             "guard_name": guard_name,
             "role_id": "ENGINEER",
+            "role_kind": "human",
         }),
     )
 }
@@ -1025,6 +1026,7 @@ fn deferral_call(id: u64, ceremony_id: &str, guard_name: &str) -> Value {
             "reason": "The resolution is not clear.",
             "reconsider_when": ["New evidence explains the resolution."],
             "role_id": "ENGINEER",
+            "role_kind": "human",
         }),
     )
 }

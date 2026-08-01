@@ -883,6 +883,14 @@ message ApproveCeremonyGuardRequest {
   // taken — the same objection the deferral below already answers for
   // what and why.
   string role_id = 3;
+  // What kind of party filled that seat: "human", "agent", "service"
+  // or "engine".
+  //
+  // Declared by you, because only you know. That this guard demands a
+  // human approval says one was required, not that one turned up, and
+  // an engine reading compliance off its own requirement would write
+  // exactly the receipt it refuses to write.
+  string role_kind = 4;
 }
 
 message ApproveCeremonyGuardResponse {
@@ -902,6 +910,8 @@ message DeferCeremonyGuardRequest {
   // And who decided it. The fourth of the four, and the only one
   // nobody can reconstruct afterwards.
   string role_id = 6;
+  // What kind of party filled that seat. Declared, never deduced.
+  string role_kind = 7;
 }
 
 // Something this session produced that a reason can point at.
