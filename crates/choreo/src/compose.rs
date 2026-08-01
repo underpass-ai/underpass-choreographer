@@ -361,7 +361,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
     ));
     let close_ceremony_intervention = Arc::new(CloseCeremonyInterventionUseCase::new(
         resolve_ceremony_definition.clone(),
-        ceremony_instances.clone(),
+        ceremony_journal.clone(),
         clock.clone(),
     ));
     // No evidence source ships with the server, so this answers

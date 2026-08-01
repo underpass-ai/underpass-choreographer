@@ -774,11 +774,16 @@ fn close_ceremony_intervention_schema() -> Value {
     json!({
         "type": "object",
         "additionalProperties": false,
-        "required": ["ceremony_id", "intervention_id", "role_id"],
+        "required": ["ceremony_id", "intervention_id", "role_id", "role_kind"],
         "properties": {
             "ceremony_id": string_schema("Started ceremony instance id."),
             "intervention_id": string_schema("Open intervention id."),
-            "role_id": string_schema("Requesting role closing the intervention.")
+            "role_id": string_schema("Requesting role closing the intervention."),
+            "role_kind": {
+                "type": "string",
+                "enum": ["human", "agent", "service", "engine"],
+                "description": "What kind of party fills that seat. Declared by you, because only you know: closing an item is a decision that it has been answered enough, and who made it reads differently depending on what kind of party they were."
+            }
         }
     })
 }

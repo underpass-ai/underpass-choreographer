@@ -244,6 +244,7 @@ async fn an_agenda_item_is_opened_answered_and_closed() {
     let settled = client
         .close_ceremony_intervention(CloseCeremonyInterventionRequest {
             ceremony_id: ceremony_id.to_owned(),
+            role_kind: "human".to_owned(),
             intervention_id: "item-1".to_owned(),
             role_id: "APPROVER".to_owned(),
         })

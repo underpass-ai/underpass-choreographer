@@ -968,6 +968,7 @@ fn close_intervention_call(
             "ceremony_id": ceremony_id,
             "intervention_id": intervention_id,
             "role_id": role_id,
+            "role_kind": "human",
         }),
     )
 }

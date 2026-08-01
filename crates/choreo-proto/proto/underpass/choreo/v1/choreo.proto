@@ -1031,6 +1031,16 @@ message CloseCeremonyInterventionRequest {
   string ceremony_id = 1;
   string intervention_id = 2;
   string role_id = 3;
+  // What kind of party fills that seat: "human", "agent", "service" or
+  // "engine".
+  //
+  // Declared by you, because only you know. Closing an item is a
+  // decision that it has been answered enough, and who made it reads
+  // differently depending on what kind of party they were.
+  //
+  // Refused when missing or unrecognised. A default would put a kind
+  // in the journal that nobody chose.
+  string role_kind = 4;
 }
 
 message CloseCeremonyInterventionResponse {

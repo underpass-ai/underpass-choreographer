@@ -195,6 +195,7 @@ pub fn close_ceremony_intervention_input_from_proto(
         CeremonyId::new(request.ceremony_id)?,
         CeremonyInterventionId::new(request.intervention_id)?,
         RoleId::new(request.role_id)?,
+        actor_kind_from_proto(&request.role_kind, "role_kind")?,
     ))
 }
 

@@ -1,9 +1,9 @@
 use choreo_app::usecases::CloseCeremonyInterventionInput;
-use choreo_core::value_objects::{CeremonyId, CeremonyInterventionId, RoleId};
+use choreo_core::value_objects::{AuditActorKind, CeremonyId, CeremonyInterventionId, RoleId};
 use choreo_embedded::EmbeddedChoreographer;
 use serde_json::Value;
 
-use super::embedded_request_fields::required_string;
+use super::embedded_request_fields::{required_actor_kind, required_string};
 
 /// Validated MCP request that closes a dynamic ceremony intervention.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -11,6 +11,7 @@ pub(super) struct EmbeddedCloseCeremonyInterventionRequest {
     ceremony: CeremonyId,
     intervention: CeremonyInterventionId,
     role: RoleId,
+    role_kind: AuditActorKind,
 }
 
 impl EmbeddedCloseCeremonyInterventionRequest {
@@ -23,6 +24,7 @@ impl EmbeddedCloseCeremonyInterventionRequest {
                 self.ceremony.clone(),
                 self.intervention,
                 self.role,
+                self.role_kind,
             ))
             .await
             .map_err(|error| format!("failed to close ceremony intervention: {error}"))?;
@@ -42,6 +44,7 @@ impl TryFrom<&Value> for EmbeddedCloseCeremonyInterventionRequest {
                 .map_err(|error| error.to_string())?,
             intervention: CeremonyInterventionId::new(required_string(object, "intervention_id")?)
                 .map_err(|error| error.to_string())?,
+            role_kind: required_actor_kind(object, "role_kind")?,
             role: RoleId::new(required_string(object, "role_id")?)
                 .map_err(|error| error.to_string())?,
         })

@@ -180,3 +180,23 @@ pub(crate) fn intervention_responded(
         occurred_at,
     )
 }
+
+/// The fact that a seat judged an agenda item answered enough.
+pub(crate) fn intervention_closed(
+    instance: &CeremonyInstance,
+    intervention_id: &CeremonyInterventionId,
+    closed_by: &RoleId,
+    closed_by_kind: AuditActorKind,
+    occurred_at: OffsetDateTime,
+) -> Result<AuditFact, DomainError> {
+    // Keyed on the item alone, unlike a response: an item is closed
+    // once, and a second attempt is either a retry — which must derive
+    // the same id — or something the session refuses outright.
+    fact(
+        instance,
+        AuditEventType::InterventionClosed,
+        &format!("intervention:{intervention_id}"),
+        actor(closed_by, closed_by_kind)?,
+        occurred_at,
+    )
+}
