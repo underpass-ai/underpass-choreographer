@@ -792,11 +792,16 @@ fn collect_ceremony_evidence_schema() -> Value {
     json!({
         "type": "object",
         "additionalProperties": false,
-        "required": ["ceremony_id", "intervention_id", "role_id", "source_id", "query"],
+        "required": ["ceremony_id", "intervention_id", "role_id", "role_kind", "source_id", "query"],
         "properties": {
             "ceremony_id": string_schema("Started ceremony instance id."),
             "intervention_id": string_schema("Open investigation or action intervention receiving the evidence."),
             "role_id": string_schema("Targeted role represented by the configured evidence source."),
+            "role_kind": {
+                "type": "string",
+                "enum": ["human", "agent", "service", "engine"],
+                "description": "What kind of party fills that seat. Declared by you, because only you know: this call answers the item as well as fetching what backs the answer, and it is recorded the same way a plain response is."
+            },
             "source_id": string_schema("Host-configured evidence source, such as observability."),
             "query": string_schema("Specific read-only evidence request in the participant's words."),
             "details": attributes_schema("Structured query parameters such as time window or service identity.")

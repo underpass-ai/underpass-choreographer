@@ -353,7 +353,7 @@ impl EmbeddedChoreographer {
     ) -> Result<CeremonyInstance, DomainError> {
         CollectCeremonyEvidenceUseCase::new(
             self.resolve_definition(),
-            self.instances.clone(),
+            self.journal.clone(),
             self.evidence_source.clone(),
             self.clock.clone(),
             self.session_memory.clone(),

@@ -990,6 +990,7 @@ fn collect_evidence_call(
             "ceremony_id": ceremony_id,
             "intervention_id": intervention_id,
             "role_id": role_id,
+            "role_kind": "agent",
             "source_id": source_id,
             "query": query,
             "details": details,

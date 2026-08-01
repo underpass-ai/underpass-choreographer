@@ -1,12 +1,12 @@
 use choreo_app::usecases::CollectCeremonyEvidenceInput;
 use choreo_core::value_objects::{
-    CeremonyEvidenceSourceId, CeremonyId, CeremonyInterventionContent, CeremonyInterventionId,
-    RoleId,
+    AuditActorKind, CeremonyEvidenceSourceId, CeremonyId, CeremonyInterventionContent,
+    CeremonyInterventionId, RoleId,
 };
 use choreo_embedded::EmbeddedChoreographer;
 use serde_json::Value;
 
-use super::embedded_request_fields::{optional_attributes, required_string};
+use super::embedded_request_fields::{optional_attributes, required_actor_kind, required_string};
 
 /// Validated MCP request that collects evidence for one open intervention.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -14,6 +14,7 @@ pub(super) struct EmbeddedCollectCeremonyEvidenceRequest {
     ceremony_id: CeremonyId,
     intervention_id: CeremonyInterventionId,
     role_id: RoleId,
+    role_kind: AuditActorKind,
     source_id: CeremonyEvidenceSourceId,
     query: CeremonyInterventionContent,
 }
@@ -28,6 +29,7 @@ impl EmbeddedCollectCeremonyEvidenceRequest {
                 self.ceremony_id.clone(),
                 self.intervention_id,
                 self.role_id,
+                self.role_kind,
                 self.source_id,
                 self.query,
             ))
@@ -52,6 +54,7 @@ impl TryFrom<&Value> for EmbeddedCollectCeremonyEvidenceRequest {
                 "intervention_id",
             )?)
             .map_err(|error| error.to_string())?,
+            role_kind: required_actor_kind(object, "role_kind")?,
             role_id: RoleId::new(required_string(object, "role_id")?)
                 .map_err(|error| error.to_string())?,
             source_id: CeremonyEvidenceSourceId::new(required_string(object, "source_id")?)

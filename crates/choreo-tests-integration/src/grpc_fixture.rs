@@ -242,7 +242,7 @@ impl GrpcFixture {
         // a missing method or an invented answer.
         let collect_ceremony_evidence = Arc::new(CollectCeremonyEvidenceUseCase::new(
             resolve_ceremony_definition.clone(),
-            ceremony_instances.clone(),
+            ceremony_journal.clone(),
             Arc::new(NoopCeremonyEvidenceSource::new()),
             clock.clone(),
             session_memory.clone(),
@@ -518,7 +518,7 @@ impl GrpcFixture {
         // a missing method or an invented answer.
         let collect_ceremony_evidence = Arc::new(CollectCeremonyEvidenceUseCase::new(
             resolve_ceremony_definition.clone(),
-            ceremony_instances.clone(),
+            ceremony_journal.clone(),
             Arc::new(NoopCeremonyEvidenceSource::new()),
             clock.clone(),
             session_memory.clone(),

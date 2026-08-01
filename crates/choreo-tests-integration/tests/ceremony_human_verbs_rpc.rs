@@ -295,6 +295,7 @@ async fn collecting_evidence_says_there_is_no_source_rather_than_inventing_one()
     let status = client
         .collect_ceremony_evidence(CollectCeremonyEvidenceRequest {
             ceremony_id: ceremony_id.to_owned(),
+            role_kind: "agent".to_owned(),
             intervention_id: "item-1".to_owned(),
             role_id: "APPROVER".to_owned(),
             source_id: "dead-letter-queue".to_owned(),

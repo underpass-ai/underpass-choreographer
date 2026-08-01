@@ -16,7 +16,8 @@
 use choreo_core::entities::{AuditFact, CeremonyDefinition, CeremonyInstance};
 use choreo_core::error::DomainError;
 use choreo_core::value_objects::{
-    AuditActor, AuditActorKind, AuditEventType, CeremonyInterventionId, EventId, GuardName, RoleId,
+    AuditActor, AuditActorKind, AuditEventType, CeremonyEvidenceSourceId, CeremonyInterventionId,
+    EventId, GuardName, RoleId,
 };
 use time::OffsetDateTime;
 
@@ -199,4 +200,41 @@ pub(crate) fn intervention_closed(
         actor(closed_by, closed_by_kind)?,
         occurred_at,
     )
+}
+
+/// The facts produced by answering an item out of a configured source.
+///
+/// Two, because two things happened: a source was consulted, and the
+/// item was answered. The answer is sealed exactly as a plain response
+/// is — same event type, same derived id — so a reader counting what
+/// the table said gets the same number however the answer arrived. A
+/// path that only recorded the fetching would leave contributions that
+/// no response fact accounts for.
+pub(crate) fn evidence_collected(
+    instance: &CeremonyInstance,
+    intervention_id: &CeremonyInterventionId,
+    source_id: &CeremonyEvidenceSourceId,
+    collected_by: &RoleId,
+    collected_by_kind: AuditActorKind,
+    occurred_at: OffsetDateTime,
+) -> Result<Vec<AuditFact>, DomainError> {
+    Ok(vec![
+        // Keyed on the source as well as the item: an item answered out
+        // of two sources was looked into twice, and those are two
+        // things to have happened.
+        fact(
+            instance,
+            AuditEventType::EvidenceCollected,
+            &format!("intervention:{intervention_id}:source:{source_id}"),
+            actor(collected_by, collected_by_kind)?,
+            occurred_at,
+        )?,
+        intervention_responded(
+            instance,
+            intervention_id,
+            collected_by,
+            collected_by_kind,
+            occurred_at,
+        )?,
+    ])
 }
