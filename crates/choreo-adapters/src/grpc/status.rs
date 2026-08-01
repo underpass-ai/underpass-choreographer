@@ -27,6 +27,11 @@ pub fn domain_error_to_status(err: DomainError) -> Status {
         DomainError::InvalidTransition { .. }
         | DomainError::InvariantViolated { .. }
         | DomainError::NoValidProposal { .. } => Status::failed_precondition(msg),
+        // Aborted rather than failed_precondition: the canonical
+        // meaning is "you raced somebody and lost, read again and
+        // retry", where a failed precondition tells a client that
+        // retrying is pointless until something else changes.
+        DomainError::Conflict { .. } => Status::aborted(msg),
         DomainError::NotFound { .. } => Status::not_found(msg),
         DomainError::AlreadyExists { .. } => Status::already_exists(msg),
     }
@@ -76,6 +81,26 @@ mod tests {
                 contract_id: "decision-contract".to_owned(),
             })
             .code(),
+            Code::FailedPrecondition
+        );
+    }
+
+    /// A conflict is not a failed precondition, and a client that
+    /// cannot tell them apart retries the wrong ones.
+    ///
+    /// Aborted says "you raced somebody and lost — read again and try".
+    /// Failed precondition says "retrying changes nothing until
+    /// something else does". Sending both under one code makes a
+    /// client either give up on races it would have won or hammer a
+    /// call that will never succeed.
+    #[test]
+    fn a_conflict_is_aborted_and_not_a_failed_precondition() {
+        assert_eq!(
+            domain_error_to_status(DomainError::Conflict { what: "ceremony" }).code(),
+            Code::Aborted
+        );
+        assert_eq!(
+            domain_error_to_status(DomainError::InvariantViolated { reason: "x" }).code(),
             Code::FailedPrecondition
         );
     }

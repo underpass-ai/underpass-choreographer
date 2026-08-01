@@ -65,6 +65,19 @@ pub enum DomainError {
     #[error("already exists: {what}")]
     AlreadyExists { what: &'static str },
 
+    /// Somebody else changed this first.
+    ///
+    /// A distinct variant rather than an invariant violation, because
+    /// the two ask different things of a caller. An invariant that was
+    /// violated will be violated again by the same call; a conflict is
+    /// the expected outcome of two callers reaching the same thing at
+    /// once, and the answer is to reload and decide, not to give up.
+    ///
+    /// Collapsing them made a caller unable to tell "try again from
+    /// what is stored now" from "this can never work".
+    #[error("conflict: {what} was changed by someone else first")]
+    Conflict { what: &'static str },
+
     /// No candidate satisfied the structured output contract.
     #[error("no valid proposal satisfied output contract `{contract_id}`")]
     NoValidProposal { contract_id: String },
