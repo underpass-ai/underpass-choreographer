@@ -15,7 +15,11 @@ human decision.
 2. Keep the ceremony id stable when the user supplies one; otherwise let the
    engine generate it.
 3. Put caller-provided data in the ceremony `context` object.
-4. Call `choreo_run_ceremony` with `definition_yaml` and the optional context.
+4. Call `choreo_run_ceremony` with `definition_yaml`, the optional context, and
+   `actor_id` / `actor_kind` for whoever is running it. Declare what you
+   actually are — an agent running this on someone's behalf is `agent`, not
+   `human`. The engine records what you say and infers nothing, and every
+   entry the run leaves behind names it.
 5. Report the final state, completion status, and step results. Surface the
    Mermaid sequence when it materially helps explain the execution.
 
@@ -24,27 +28,32 @@ Do not claim that a ceremony completed if the tool returned `isError: true` or
 
 ## Incremental ceremonies with human authorization
 
-1. Call `choreo_start_ceremony` with the YAML and initial context. Keep its
-   `ceremony_id` for every later call.
+1. Call `choreo_start_ceremony` with the YAML, initial context, and
+   `actor_id` / `actor_kind` for whoever is opening it.
+   Keep its `ceremony_id` for every later call.
 2. While `next_step_id` is present, call `choreo_run_ceremony_step` for that
-   exact step. Re-read the returned instance after every action.
+   exact step, declaring `actor_kind`. Re-read the returned instance after
+   every action.
 3. When `waiting_for_human` contains guard names, pause the ceremony and ask
    the user to authorize or reject the concrete decision. Explain what
    transition the approval would enable.
 4. Never infer approval from silence, prior instructions, an agent result, or
    the fact that approval seems operationally sensible. Call
    `choreo_approve_ceremony_guard` only after explicit human authorization in
-   the current conversation.
-5. Call `choreo_apply_ceremony_transition` only when the returned transition
-   reports `enabled: true`.
+   the current conversation. Its `role_kind` is `human` only when a person
+   authorized it in this conversation; if you are recording your own decision,
+   say `agent`. The engine writes down what you declare and checks nothing, so
+   this field is where a receipt becomes true or false.
+5. Call `choreo_apply_ceremony_transition`, declaring `actor_kind`, only when
+   the returned transition reports `enabled: true`.
 6. Repeat from step 2 until `completed: true`. Use
    `choreo_get_ceremony_instance` whenever state must be refreshed without a
    mutation.
 
 If the user is uncertain or defers approval, call
 `choreo_defer_ceremony_guard`. Preserve their own words in `statement`, state
-why the decision remains unclear in `reason`, and record concrete
-`reconsider_when` conditions. Leave the persistent ceremony paused and report
+why the decision remains unclear in `reason`, record concrete
+`reconsider_when` conditions, and declare `role_kind` as above. Leave the persistent ceremony paused and report
 its `ceremony_id`, current state, and blocking guard. A deferral never satisfies
 the guard. Do not convert a refusal into a tool error or silently choose another
 transition.
@@ -75,7 +84,9 @@ something, keep the ceremony instance active and use
 `choreo_request_ceremony_intervention`:
 
 1. Preserve the participant's own request in `message`. Use `opinion`,
-   `investigation`, or `action` for `kind`.
+   `investigation`, or `action` for `kind`. Declare `role_kind` for the seat
+   making the request, and likewise on every later call about that item:
+   responding, closing it, and collecting evidence for it.
 2. Omit `target_role_ids` when addressing the whole table. Supply explicit
    role ids when the participant named a specialist.
 3. When the participant selects an option proposed in an earlier intervention,
