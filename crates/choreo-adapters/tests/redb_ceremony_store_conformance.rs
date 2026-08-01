@@ -10,7 +10,7 @@
 use choreo_adapters::redb::RedbCeremonyStore;
 use choreo_core::conformance::{
     AuditJournalConformance, CeremonyDefinitionPublicationConformance,
-    CeremonyUnitOfWorkConformance, OutboxConformance,
+    CeremonySessionStoreConformance, CeremonyUnitOfWorkConformance, OutboxConformance,
 };
 use tempfile::TempDir;
 
@@ -236,4 +236,15 @@ async fn saving_outside_a_unit_of_work_makes_a_stale_commit_conflict() {
         outcome.is_conflict(),
         "a commit against a revision that was overwritten was accepted"
     );
+}
+
+#[tokio::test]
+async fn it_serves_both_session_ports_over_one_storage() {
+    let (_directory, store) = store();
+
+    let passed = CeremonySessionStoreConformance::run(&store, &store)
+        .await
+        .unwrap_or_else(|failure| panic!("{failure}"));
+
+    assert_eq!(passed.len(), 3, "properties run: {passed:?}");
 }

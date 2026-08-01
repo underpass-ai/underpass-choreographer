@@ -9,9 +9,9 @@ use choreo_adapters::config::EnvConfiguration;
 use choreo_adapters::memory::ForgetfulMemory;
 use choreo_adapters::memory::{
     InMemoryAgentRegistry, InMemoryCeremonyDefinitionPublications,
-    InMemoryCeremonyDefinitionRepository, InMemoryCeremonyInstanceRepository,
-    InMemoryCeremonyTranscriptStore, InMemoryContractRegistry, InMemoryCouncilRegistry,
-    InMemoryDeliberationRepository, InMemoryStatistics,
+    InMemoryCeremonyDefinitionRepository, InMemoryCeremonyStore, InMemoryCeremonyTranscriptStore,
+    InMemoryContractRegistry, InMemoryCouncilRegistry, InMemoryDeliberationRepository,
+    InMemoryStatistics,
 };
 use choreo_adapters::metrics::PrometheusMetricsRecorder;
 use choreo_adapters::nats::{NatsConfig, NatsMessaging, NatsTriggerSubscriber};
@@ -31,6 +31,7 @@ use choreo_adapters::validators::{
     JsonSchemaValidator, RequiredFieldsValidator,
 };
 use choreo_app::services::AutoDispatchService;
+use choreo_app::services::SessionJournal;
 use choreo_app::services::SessionMemoryRecorder;
 use choreo_app::usecases::{
     ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase, AssertCeremonyReasonUseCase,
@@ -48,9 +49,9 @@ use choreo_core::error::DomainError;
 use choreo_core::ports::{
     AgentFactoryPort, AgentRegistryPort, AgentResolverPort, CeremonyDefinitionPublicationPort,
     CeremonyDefinitionRepositoryPort, CeremonyInstanceRepositoryPort, CeremonyStepHandlerPort,
-    CeremonyTranscriptStorePort, ConfigurationPort, ContractRegistryPort, CouncilRegistryPort,
-    DeliberationRepositoryPort, ExecutorPort, MessagingPort, MetricsRecorderPort, ScoringPort,
-    ServiceConfig, StatisticsPort, ValidatorPort,
+    CeremonyTranscriptStorePort, CeremonyUnitOfWorkPort, ConfigurationPort, ContractRegistryPort,
+    CouncilRegistryPort, DeliberationRepositoryPort, ExecutorPort, MessagingPort,
+    MetricsRecorderPort, ScoringPort, ServiceConfig, StatisticsPort, ValidatorPort,
 };
 use thiserror::Error;
 use tracing::{info, warn};
@@ -205,16 +206,15 @@ pub async fn compose() -> Result<Application, ComposeError> {
     // deployment and a silent data-loss bug in any other, so an
     // unconfigured server says what it is giving up rather than
     // discovering it at the first restart.
-    // Ceremony state is durable only when a store path is configured.
-    // Leaving it in memory is a valid choice for a throwaway
-    // deployment and a silent data-loss bug in any other, so an
-    // unconfigured server says what it is giving up rather than
-    // discovering it at the first restart.
-    // One store serves both ports when durable: an instance and the
-    // published definition it is bound to have to survive together, or
-    // a restart leaves instances pointing at versions that are gone.
-    let (ceremony_instances, ceremony_publications): (
+    // One store serves every ceremony port, durable or not. An instance
+    // and the published definition it is bound to have to survive
+    // together, or a restart leaves instances pointing at versions that
+    // are gone; and a session and the record of what it did have to
+    // land together, which they cannot if the unit of work commits into
+    // storage the reader never sees.
+    let (ceremony_instances, ceremony_unit_of_work, ceremony_publications): (
         Arc<dyn CeremonyInstanceRepositoryPort>,
+        Arc<dyn CeremonyUnitOfWorkPort>,
         Arc<dyn CeremonyDefinitionPublicationPort>,
     ) = if let Some(path) = service_config.ceremony_store_path.as_deref() {
         let store = Arc::new(
@@ -222,17 +222,23 @@ pub async fn compose() -> Result<Application, ComposeError> {
                 .map_err(|error| ComposeError::CeremonyStore(format!("at {path}: {error}")))?,
         );
         info!(path, "ceremony state is durable");
-        (store.clone(), store)
+        (store.clone(), store.clone(), store)
     } else {
         warn!(
             "CHOREO_CEREMONY_STORE_PATH is unset: ceremony state is held in memory. Step \
              leases, idempotency keys and pending human guards will not survive a restart."
         );
+        let store = Arc::new(InMemoryCeremonyStore::new());
         (
-            Arc::new(InMemoryCeremonyInstanceRepository::new()),
+            store.clone(),
+            store,
             Arc::new(InMemoryCeremonyDefinitionPublications::new()),
         )
     };
+    let ceremony_journal = Arc::new(SessionJournal::new(
+        ceremony_unit_of_work,
+        ceremony_instances.clone(),
+    ));
 
     let ceremony_transcript_store: Arc<dyn CeremonyTranscriptStorePort> =
         Arc::new(InMemoryCeremonyTranscriptStore::new());
@@ -332,13 +338,13 @@ pub async fn compose() -> Result<Application, ComposeError> {
     ));
     let approve_ceremony_guard = Arc::new(ApproveCeremonyGuardUseCase::new(
         resolve_ceremony_definition.clone(),
-        ceremony_instances.clone(),
+        ceremony_journal.clone(),
         clock.clone(),
         session_memory.clone(),
     ));
     let defer_ceremony_guard = Arc::new(DeferCeremonyGuardUseCase::new(
         resolve_ceremony_definition.clone(),
-        ceremony_instances.clone(),
+        ceremony_journal.clone(),
         clock.clone(),
         session_memory.clone(),
     ));

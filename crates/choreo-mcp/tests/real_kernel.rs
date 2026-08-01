@@ -254,6 +254,6 @@ async fn mcp_lists_full_tool_catalog_and_calls_read_endpoints() {
             .get("isError")
             .and_then(Value::as_bool)
             .unwrap_or(false);
-        assert!(!is_error, "{tool}: returned isError=true: {result:?}",);
+        assert!(!is_error, "{tool}: returned isError=true: {result:?}");
     }
 }

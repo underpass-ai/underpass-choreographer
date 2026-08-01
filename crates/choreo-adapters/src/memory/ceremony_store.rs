@@ -13,7 +13,9 @@ use choreo_core::entities::{
     AuditFact, AuditRecord, CeremonyCommit, CeremonyInstance, CommitOutcome,
 };
 use choreo_core::error::DomainError;
-use choreo_core::ports::{AuditJournalPort, CeremonyUnitOfWorkPort, OutboxPort};
+use choreo_core::ports::{
+    AuditJournalPort, CeremonyInstanceRepositoryPort, CeremonyUnitOfWorkPort, OutboxPort,
+};
 use choreo_core::value_objects::{
     CeremonyId, CeremonyRevision, ClaimedOutboxMessage, DurationMs, EventId, OutboxAttempt,
     OutboxMessage, OutboxQuarantineReason,
@@ -280,5 +282,62 @@ impl OutboxPort for InMemoryCeremonyStore {
             .filter(|entry| entry.quarantine.is_some())
             .map(|entry| ClaimedOutboxMessage::new(entry.message.clone(), entry.attempt))
             .collect())
+    }
+}
+
+/// Reading and writing sessions outside a unit of work.
+///
+/// The same storage the transactional path uses, on purpose. Splitting
+/// them across two adapters is what this module's opening paragraph
+/// warns about: a session committed through one would be invisible to
+/// the other, and every property would hold except the one that
+/// matters.
+///
+/// The revision advances on a plain save even though nothing checks it
+/// here, exactly as the durable store does — so a concurrent commit
+/// holding a stale expectation conflicts as it should, and the weaker
+/// path cannot quietly defeat the stronger one.
+#[async_trait]
+impl CeremonyInstanceRepositoryPort for InMemoryCeremonyStore {
+    async fn save(&self, instance: &CeremonyInstance) -> Result<(), DomainError> {
+        let mut ceremonies = self.inner.write().await;
+        let stored = ceremonies.entry(instance.id().clone()).or_default();
+        stored.revision = Some(
+            stored
+                .revision
+                .map_or(CeremonyRevision::INITIAL, CeremonyRevision::next),
+        );
+        stored.instance = Some(instance.clone());
+        Ok(())
+    }
+
+    async fn get(&self, id: &CeremonyId) -> Result<CeremonyInstance, DomainError> {
+        self.inner
+            .read()
+            .await
+            .get(id)
+            .and_then(|stored| stored.instance.clone())
+            .ok_or(DomainError::NotFound {
+                what: "ceremony_instance",
+            })
+    }
+
+    async fn list(&self) -> Result<Vec<CeremonyInstance>, DomainError> {
+        Ok(self
+            .inner
+            .read()
+            .await
+            .values()
+            .filter_map(|stored| stored.instance.clone())
+            .collect())
+    }
+
+    async fn exists(&self, id: &CeremonyId) -> Result<bool, DomainError> {
+        Ok(self
+            .inner
+            .read()
+            .await
+            .get(id)
+            .is_some_and(|stored| stored.instance.is_some()))
     }
 }

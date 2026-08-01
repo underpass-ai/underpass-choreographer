@@ -1,7 +1,7 @@
 use std::fmt;
 use std::sync::Arc;
 
-use choreo_app::services::SessionMemoryRecorder;
+use choreo_app::services::{SessionJournal, SessionMemoryRecorder};
 use choreo_app::usecases::{
     ApplyCeremonyTransitionInput, ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardInput,
     ApproveCeremonyGuardUseCase, AssertCeremonyReasonInput, AssertCeremonyReasonUseCase,
@@ -26,7 +26,8 @@ use choreo_core::error::DomainError;
 use choreo_core::ports::{
     CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort,
     CeremonyEvidenceSourcePort, CeremonyInstanceRepositoryPort, CeremonyStepHandlerPort,
-    CeremonyTranscriptStorePort, ClockPort, MemoryWriterPort, MetricsRecorderPort,
+    CeremonyTranscriptStorePort, CeremonyUnitOfWorkPort, ClockPort, MemoryWriterPort,
+    MetricsRecorderPort,
 };
 use choreo_core::value_objects::{
     CeremonyDefinitionDiff, CeremonyId, CeremonyName, CeremonyTranscript, CeremonyVersion,
@@ -41,6 +42,14 @@ pub struct EmbeddedChoreographer {
     definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
     publications: Arc<dyn CeremonyDefinitionPublicationPort>,
     instances: Arc<dyn CeremonyInstanceRepositoryPort>,
+    /// Reading a session with its revision, and storing it with the
+    /// record of what it did.
+    ///
+    /// Kept alongside `instances` rather than replacing it: reads that
+    /// change nothing have no revision to honour and no fact to seal,
+    /// and routing them through here would only make them look
+    /// transactional.
+    journal: Arc<SessionJournal>,
     transcript_store: Arc<dyn CeremonyTranscriptStorePort>,
     step_handler: Arc<dyn CeremonyStepHandlerPort>,
     evidence_source: Arc<dyn CeremonyEvidenceSourcePort>,
@@ -59,6 +68,7 @@ impl EmbeddedChoreographer {
         definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
         publications: Arc<dyn CeremonyDefinitionPublicationPort>,
         instances: Arc<dyn CeremonyInstanceRepositoryPort>,
+        unit_of_work: Arc<dyn CeremonyUnitOfWorkPort>,
         transcript_store: Arc<dyn CeremonyTranscriptStorePort>,
         step_handler: Arc<dyn CeremonyStepHandlerPort>,
         evidence_source: Arc<dyn CeremonyEvidenceSourcePort>,
@@ -69,6 +79,7 @@ impl EmbeddedChoreographer {
         Self {
             definitions,
             publications,
+            journal: Arc::new(SessionJournal::new(unit_of_work, instances.clone())),
             instances,
             transcript_store,
             step_handler,
@@ -287,7 +298,7 @@ impl EmbeddedChoreographer {
     ) -> Result<CeremonyInstance, DomainError> {
         ApproveCeremonyGuardUseCase::new(
             self.resolve_definition(),
-            self.instances.clone(),
+            self.journal.clone(),
             self.clock.clone(),
             self.session_memory.clone(),
         )
@@ -301,7 +312,7 @@ impl EmbeddedChoreographer {
     ) -> Result<CeremonyInstance, DomainError> {
         DeferCeremonyGuardUseCase::new(
             self.resolve_definition(),
-            self.instances.clone(),
+            self.journal.clone(),
             self.clock.clone(),
             self.session_memory.clone(),
         )

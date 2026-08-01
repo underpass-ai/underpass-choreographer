@@ -3,17 +3,19 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use choreo_core::entities::{
-    CeremonyDefinition, CeremonyInstance, PublicationOutcome, PublishedCeremonyDefinition,
+    AuditFact, CeremonyCommit, CeremonyDefinition, CeremonyInstance, CommitOutcome,
+    PublicationOutcome, PublishedCeremonyDefinition,
 };
 use choreo_core::error::DomainError;
 use choreo_core::ports::{
     CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort,
     CeremonyInstanceRepositoryPort, CeremonyStepHandlerPort, CeremonyStepHandlerRequest,
-    CeremonyTranscriptStorePort, ClockPort, MemoryWriteOutcome, MemoryWriterPort,
+    CeremonyTranscriptStorePort, CeremonyUnitOfWorkPort, ClockPort, MemoryWriteOutcome,
+    MemoryWriterPort,
 };
 use choreo_core::value_objects::{
-    CeremonyContext, CeremonyGuard, CeremonyId, CeremonyName, CeremonyRole, CeremonyState,
-    CeremonyStep, CeremonyStepContribution, CeremonyTranscript, CeremonyTransition,
+    CeremonyContext, CeremonyGuard, CeremonyId, CeremonyName, CeremonyRevision, CeremonyRole,
+    CeremonyState, CeremonyStep, CeremonyStepContribution, CeremonyTranscript, CeremonyTransition,
     CeremonyVersion, DurationMs, GuardCondition, GuardName, IdempotencyKey, LeaseOwnerId,
     MemoryCapabilities, MemoryCapability, MemoryEntry, MemoryRelation, MemoryScope, MemoryWrite,
     RetryPolicy, RoleAction, RoleId, StateId, StepAttempt, StepHandlerConfig, StepHandlerKind,
@@ -24,7 +26,7 @@ use time::OffsetDateTime;
 use tokio::sync::RwLock;
 
 use super::resolve_ceremony_definition_use_case::ResolveCeremonyDefinitionUseCase;
-use crate::services::SessionMemoryRecorder;
+use crate::services::{SessionJournal, SessionMemoryRecorder};
 
 #[derive(Debug, Clone, Copy)]
 pub(super) struct FixedClock {
@@ -569,4 +571,142 @@ pub(super) fn recorder(memory: Arc<RecordingMemory>) -> Arc<SessionMemoryRecorde
 /// The recorder for the many tests that do not care about memory.
 pub(super) fn a_recorder() -> Arc<SessionMemoryRecorder> {
     recorder(recording_memory())
+}
+
+/// A unit of work over the same storage the repository reads.
+///
+/// Sharing the store is not a shortcut: the real one implements both
+/// ports over a single database, and a fake that kept its own copy
+/// would let a committed session be invisible to the next read — a
+/// failure no adapter can actually have.
+#[derive(Debug)]
+pub(super) struct UnitOfWorkFake {
+    instances: Arc<InstanceRepositoryFake>,
+    revisions: RwLock<BTreeMap<CeremonyId, CeremonyRevision>>,
+    facts: RwLock<Vec<AuditFact>>,
+}
+
+impl UnitOfWorkFake {
+    pub(super) fn over(instances: Arc<InstanceRepositoryFake>) -> Self {
+        Self {
+            instances,
+            revisions: RwLock::new(BTreeMap::new()),
+            facts: RwLock::new(Vec::new()),
+        }
+    }
+
+    pub(super) async fn facts(&self) -> Vec<AuditFact> {
+        self.facts.read().await.clone()
+    }
+
+    /// Move a session on behind the caller's back, the way another
+    /// writer would.
+    pub(super) async fn someone_else_writes(&self, ceremony_id: &CeremonyId) {
+        let mut revisions = self.revisions.write().await;
+        let next = revisions
+            .get(ceremony_id)
+            .map_or(CeremonyRevision::INITIAL, |revision| revision.next());
+        revisions.insert(ceremony_id.clone(), next);
+    }
+}
+
+#[async_trait]
+impl CeremonyUnitOfWorkPort for UnitOfWorkFake {
+    async fn commit(&self, commit: CeremonyCommit) -> Result<CommitOutcome, DomainError> {
+        let ceremony_id = commit.instance().id().clone();
+        let mut revisions = self.revisions.write().await;
+        let stored = revisions.get(&ceremony_id).copied();
+        if !commit.expected_revision().matches(stored) {
+            return Ok(CommitOutcome::Conflict {
+                expected: commit.expected_revision(),
+                stored,
+            });
+        }
+
+        let revision = commit.expected_revision().resulting_revision();
+        revisions.insert(ceremony_id, revision);
+        self.instances.save(commit.instance()).await?;
+        self.facts.write().await.extend(commit.facts().to_vec());
+        Ok(CommitOutcome::Committed {
+            revision,
+            records: Vec::new(),
+        })
+    }
+
+    async fn revision(
+        &self,
+        ceremony_id: &CeremonyId,
+    ) -> Result<Option<CeremonyRevision>, DomainError> {
+        Ok(self.revisions.read().await.get(ceremony_id).copied())
+    }
+}
+
+pub(super) fn journal(instances: Arc<InstanceRepositoryFake>) -> Arc<SessionJournal> {
+    Arc::new(SessionJournal::new(
+        Arc::new(UnitOfWorkFake::over(instances.clone())),
+        instances,
+    ))
+}
+
+/// A journal a test can look inside.
+pub(super) fn journal_over(
+    instances: Arc<InstanceRepositoryFake>,
+) -> (Arc<SessionJournal>, Arc<UnitOfWorkFake>) {
+    let unit_of_work = Arc::new(UnitOfWorkFake::over(instances.clone()));
+    (
+        Arc::new(SessionJournal::new(unit_of_work.clone(), instances)),
+        unit_of_work,
+    )
+}
+
+/// A repository that loses the race on every read.
+///
+/// Reading a session is two reads, and this fake makes a competing
+/// write land in the gap between them — every time, instead of once in
+/// a thousand runs on a loaded machine.
+///
+/// Which of the two reads it lands between is the whole point. Reading
+/// the revision first leaves a stale expectation against fresh state
+/// and the commit is refused; reading it second leaves an expectation
+/// as fresh as the state, the commit is accepted, and the other
+/// writer's work is gone with nothing logged. The two orders are told
+/// apart here and nowhere else.
+#[derive(Debug)]
+pub(super) struct ARepositoryThatLosesTheRace {
+    instances: Arc<InstanceRepositoryFake>,
+    unit_of_work: Arc<UnitOfWorkFake>,
+}
+
+#[async_trait]
+impl CeremonyInstanceRepositoryPort for ARepositoryThatLosesTheRace {
+    async fn save(&self, instance: &CeremonyInstance) -> Result<(), DomainError> {
+        self.instances.save(instance).await
+    }
+
+    async fn get(&self, id: &CeremonyId) -> Result<CeremonyInstance, DomainError> {
+        self.unit_of_work.someone_else_writes(id).await;
+        self.instances.get(id).await
+    }
+
+    async fn list(&self) -> Result<Vec<CeremonyInstance>, DomainError> {
+        self.instances.list().await
+    }
+
+    async fn exists(&self, id: &CeremonyId) -> Result<bool, DomainError> {
+        self.instances.exists(id).await
+    }
+}
+
+/// A journal whose every read is overtaken by another writer.
+pub(super) fn journal_losing_every_race(
+    instances: Arc<InstanceRepositoryFake>,
+) -> Arc<SessionJournal> {
+    let unit_of_work = Arc::new(UnitOfWorkFake::over(instances.clone()));
+    Arc::new(SessionJournal::new(
+        unit_of_work.clone(),
+        Arc::new(ARepositoryThatLosesTheRace {
+            instances,
+            unit_of_work,
+        }),
+    ))
 }

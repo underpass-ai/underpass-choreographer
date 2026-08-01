@@ -26,9 +26,9 @@ use choreo_adapters::grpc::ChoreographerGrpcService;
 use choreo_adapters::memory::ForgetfulMemory;
 use choreo_adapters::memory::{
     InMemoryAgentRegistry, InMemoryCeremonyDefinitionPublications,
-    InMemoryCeremonyDefinitionRepository, InMemoryCeremonyInstanceRepository,
-    InMemoryCeremonyTranscriptStore, InMemoryContractRegistry, InMemoryCouncilRegistry,
-    InMemoryDeliberationRepository, InMemoryStatistics,
+    InMemoryCeremonyDefinitionRepository, InMemoryCeremonyStore, InMemoryCeremonyTranscriptStore,
+    InMemoryContractRegistry, InMemoryCouncilRegistry, InMemoryDeliberationRepository,
+    InMemoryStatistics,
 };
 use choreo_adapters::noop::{NoopCeremonyEvidenceSource, NoopExecutor, NoopMessaging};
 use choreo_adapters::scoring::UniformScoring;
@@ -37,6 +37,7 @@ use choreo_adapters::validators::{
     JsonSchemaValidator, RequiredFieldsValidator,
 };
 use choreo_app::services::AutoDispatchService;
+use choreo_app::services::SessionJournal;
 use choreo_app::services::SessionMemoryRecorder;
 use choreo_app::usecases::{
     ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase, AssertCeremonyReasonUseCase,
@@ -120,8 +121,12 @@ impl GrpcFixture {
             Arc::new(InMemoryContractRegistry::new());
         let ceremony_definitions: Arc<dyn CeremonyDefinitionRepositoryPort> =
             Arc::new(InMemoryCeremonyDefinitionRepository::new());
-        let ceremony_instances: Arc<dyn CeremonyInstanceRepositoryPort> =
-            Arc::new(InMemoryCeremonyInstanceRepository::new());
+        let ceremony_store = Arc::new(InMemoryCeremonyStore::new());
+        let ceremony_instances: Arc<dyn CeremonyInstanceRepositoryPort> = ceremony_store.clone();
+        let ceremony_journal = Arc::new(SessionJournal::new(
+            ceremony_store,
+            ceremony_instances.clone(),
+        ));
         let ceremony_publications: Arc<dyn CeremonyDefinitionPublicationPort> =
             Arc::new(InMemoryCeremonyDefinitionPublications::new());
         let resolve_ceremony_definition = Arc::new(ResolveCeremonyDefinitionUseCase::new(
@@ -206,13 +211,13 @@ impl GrpcFixture {
         ));
         let approve_ceremony_guard = Arc::new(ApproveCeremonyGuardUseCase::new(
             resolve_ceremony_definition.clone(),
-            ceremony_instances.clone(),
+            ceremony_journal.clone(),
             clock.clone(),
             session_memory.clone(),
         ));
         let defer_ceremony_guard = Arc::new(DeferCeremonyGuardUseCase::new(
             resolve_ceremony_definition.clone(),
-            ceremony_instances.clone(),
+            ceremony_journal.clone(),
             clock.clone(),
             session_memory.clone(),
         ));
@@ -394,8 +399,12 @@ impl GrpcFixture {
             Arc::new(InMemoryContractRegistry::new());
         let ceremony_definitions: Arc<dyn CeremonyDefinitionRepositoryPort> =
             Arc::new(InMemoryCeremonyDefinitionRepository::new());
-        let ceremony_instances: Arc<dyn CeremonyInstanceRepositoryPort> =
-            Arc::new(InMemoryCeremonyInstanceRepository::new());
+        let ceremony_store = Arc::new(InMemoryCeremonyStore::new());
+        let ceremony_instances: Arc<dyn CeremonyInstanceRepositoryPort> = ceremony_store.clone();
+        let ceremony_journal = Arc::new(SessionJournal::new(
+            ceremony_store,
+            ceremony_instances.clone(),
+        ));
         let ceremony_publications: Arc<dyn CeremonyDefinitionPublicationPort> =
             Arc::new(InMemoryCeremonyDefinitionPublications::new());
         let resolve_ceremony_definition = Arc::new(ResolveCeremonyDefinitionUseCase::new(
@@ -478,13 +487,13 @@ impl GrpcFixture {
         ));
         let approve_ceremony_guard = Arc::new(ApproveCeremonyGuardUseCase::new(
             resolve_ceremony_definition.clone(),
-            ceremony_instances.clone(),
+            ceremony_journal.clone(),
             clock.clone(),
             session_memory.clone(),
         ));
         let defer_ceremony_guard = Arc::new(DeferCeremonyGuardUseCase::new(
             resolve_ceremony_definition.clone(),
-            ceremony_instances.clone(),
+            ceremony_journal.clone(),
             clock.clone(),
             session_memory.clone(),
         ));

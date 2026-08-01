@@ -6,7 +6,7 @@ use choreo_adapters::clock::SystemClock;
 use choreo_adapters::memory::ForgetfulMemory;
 use choreo_adapters::memory::{
     InMemoryCeremonyDefinitionPublications, InMemoryCeremonyDefinitionRepository,
-    InMemoryCeremonyInstanceRepository, InMemoryCeremonyTranscriptStore,
+    InMemoryCeremonyStore, InMemoryCeremonyTranscriptStore,
 };
 use choreo_adapters::noop::{NoopCeremonyEvidenceSource, NoopCeremonyStepHandler};
 use choreo_core::entities::CeremonyEvidencePack;
@@ -14,8 +14,8 @@ use choreo_core::error::DomainError;
 use choreo_core::ports::{
     CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort, CeremonyEvidenceRequest,
     CeremonyEvidenceSourcePort, CeremonyInstanceRepositoryPort, CeremonyStepHandlerPort,
-    CeremonyStepHandlerRequest, CeremonyTranscriptStorePort, ClockPort, MemoryWriterPort,
-    MetricsRecorderPort, NoopMetricsRecorder,
+    CeremonyStepHandlerRequest, CeremonyTranscriptStorePort, CeremonyUnitOfWorkPort, ClockPort,
+    MemoryWriterPort, MetricsRecorderPort, NoopMetricsRecorder,
 };
 use choreo_core::value_objects::StepResult;
 
@@ -33,6 +33,7 @@ pub struct EmbeddedChoreographerBuilder {
     definitions: Option<Arc<dyn CeremonyDefinitionRepositoryPort>>,
     publications: Option<Arc<dyn CeremonyDefinitionPublicationPort>>,
     instances: Option<Arc<dyn CeremonyInstanceRepositoryPort>>,
+    unit_of_work: Option<Arc<dyn CeremonyUnitOfWorkPort>>,
     transcript_store: Option<Arc<dyn CeremonyTranscriptStorePort>>,
     step_handler: Option<Arc<dyn CeremonyStepHandlerPort>>,
     evidence_source: Option<Arc<dyn CeremonyEvidenceSourcePort>>,
@@ -69,12 +70,21 @@ impl EmbeddedChoreographerBuilder {
         self
     }
 
+    /// The store sessions are read from and committed to.
+    ///
+    /// One object serves both ports, and the signature is what makes
+    /// that true rather than a note asking hosts to be careful. Reading
+    /// state from one storage while committing it to another is not a
+    /// configuration a host should be able to express: the commit would
+    /// land, the read would not see it, and every port would look
+    /// correctly implemented.
     #[must_use]
-    pub fn with_instance_repository(
-        mut self,
-        adapter: Arc<dyn CeremonyInstanceRepositoryPort>,
-    ) -> Self {
-        self.instances = Some(adapter);
+    pub fn with_ceremony_store<S>(mut self, adapter: Arc<S>) -> Self
+    where
+        S: CeremonyInstanceRepositoryPort + CeremonyUnitOfWorkPort + 'static,
+    {
+        self.instances = Some(adapter.clone());
+        self.unit_of_work = Some(adapter);
         self
     }
 
@@ -148,10 +158,18 @@ impl EmbeddedChoreographerBuilder {
             Arc::new(InMemoryCeremonyDefinitionPublications::new())
                 as Arc<dyn CeremonyDefinitionPublicationPort>
         });
-        let instances = self.instances.unwrap_or_else(|| {
-            Arc::new(InMemoryCeremonyInstanceRepository::new())
-                as Arc<dyn CeremonyInstanceRepositoryPort>
-        });
+        // Zipped rather than defaulted one at a time, for the reason
+        // `with_ceremony_store` takes them together: the pair is set by
+        // one call or by neither, and a host that configures nothing
+        // still gets one storage behind both.
+        let (instances, unit_of_work) =
+            self.instances.zip(self.unit_of_work).unwrap_or_else(|| {
+                let store = Arc::new(InMemoryCeremonyStore::new());
+                (
+                    store.clone() as Arc<dyn CeremonyInstanceRepositoryPort>,
+                    store as Arc<dyn CeremonyUnitOfWorkPort>,
+                )
+            });
         let transcript_store = self.transcript_store.unwrap_or_else(|| {
             Arc::new(InMemoryCeremonyTranscriptStore::new()) as Arc<dyn CeremonyTranscriptStorePort>
         });
@@ -172,6 +190,7 @@ impl EmbeddedChoreographerBuilder {
             definitions,
             publications,
             instances,
+            unit_of_work,
             transcript_store,
             step_handler,
             evidence_source,
@@ -188,7 +207,7 @@ impl fmt::Debug for EmbeddedChoreographerBuilder {
         formatter
             .debug_struct("EmbeddedChoreographerBuilder")
             .field("has_definition_repository", &self.definitions.is_some())
-            .field("has_instance_repository", &self.instances.is_some())
+            .field("has_ceremony_store", &self.instances.is_some())
             .field("has_transcript_store", &self.transcript_store.is_some())
             .field("has_step_handler", &self.step_handler.is_some())
             .field("has_evidence_source", &self.evidence_source.is_some())
