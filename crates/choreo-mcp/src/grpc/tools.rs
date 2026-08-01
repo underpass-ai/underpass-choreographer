@@ -629,6 +629,8 @@ fn minted_id(obj: &serde_json::Map<String, Value>, key: &str) -> String {
 fn build_start_ceremony_request(args: &Value) -> Result<pb::StartCeremonyRequest, String> {
     let obj = j2p::require_object(args, "tools/call.arguments")?;
     Ok(pb::StartCeremonyRequest {
+        actor_id: j2p::require_str(obj, "actor_id")?.to_owned(),
+        actor_kind: j2p::require_str(obj, "actor_kind")?.to_owned(),
         ceremony_id: minted_id(obj, "ceremony_id"),
         definition_yaml: j2p::require_str(obj, "definition_yaml")?.to_owned(),
         context: j2p::optional_pb_struct(obj, "context")?,
@@ -640,6 +642,8 @@ fn build_start_published_ceremony_request(
 ) -> Result<pb::StartPublishedCeremonyRequest, String> {
     let obj = j2p::require_object(args, "tools/call.arguments")?;
     Ok(pb::StartPublishedCeremonyRequest {
+        actor_id: j2p::require_str(obj, "actor_id")?.to_owned(),
+        actor_kind: j2p::require_str(obj, "actor_kind")?.to_owned(),
         ceremony_id: minted_id(obj, "ceremony_id"),
         ceremony: j2p::require_str(obj, "ceremony")?.to_owned(),
         version: j2p::require_str(obj, "version")?.to_owned(),

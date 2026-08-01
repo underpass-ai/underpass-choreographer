@@ -138,6 +138,8 @@ async fn host_can_drive_a_human_guard_incrementally() {
             definition.name().clone(),
             definition.version().clone(),
             CeremonyContext::empty(),
+            "operator-1",
+            AuditActorKind::Service,
         ))
         .await
         .unwrap();

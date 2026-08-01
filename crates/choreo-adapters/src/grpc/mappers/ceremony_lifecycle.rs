@@ -46,6 +46,8 @@ pub fn start_ceremony_from_proto(
         definition.name().clone(),
         definition.version().clone(),
         context,
+        request.actor_id,
+        actor_kind_from_proto(&request.actor_kind, "actor_kind")?,
     );
     Ok(StartCeremonyFromYaml { definition, input })
 }
@@ -58,6 +60,8 @@ pub fn start_published_ceremony_input_from_proto(
         CeremonyName::new(request.ceremony)?,
         CeremonyVersion::new(request.version)?,
         CeremonyContext::new(attributes_from_struct(request.context)?),
+        request.actor_id,
+        actor_kind_from_proto(&request.actor_kind, "actor_kind")?,
     ))
 }
 

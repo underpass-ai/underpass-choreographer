@@ -51,6 +51,8 @@ async fn start(
     client
         .start_ceremony(StartCeremonyRequest {
             ceremony_id: ceremony_id.to_owned(),
+            actor_id: "operator-1".to_owned(),
+            actor_kind: "service".to_owned(),
             definition_yaml: HUMAN_GUARD_CEREMONY.to_owned(),
             context: None,
         })

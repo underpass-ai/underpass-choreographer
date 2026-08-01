@@ -1,10 +1,14 @@
 use choreo_app::usecases::StartCeremonyInput;
-use choreo_core::value_objects::{CeremonyContext, CeremonyId, CeremonyName, CeremonyVersion};
+use choreo_core::value_objects::{
+    AuditActorKind, CeremonyContext, CeremonyId, CeremonyName, CeremonyVersion,
+};
 use choreo_embedded::EmbeddedChoreographer;
 use serde_json::Value;
 use uuid::Uuid;
 
-use super::embedded_request_fields::{context_from_json, optional_string, required_string};
+use super::embedded_request_fields::{
+    context_from_json, optional_string, required_actor_kind, required_string,
+};
 
 /// Validated MCP request that starts a ceremony from a published
 /// definition.
@@ -19,6 +23,8 @@ pub(super) struct EmbeddedStartPublishedCeremonyRequest {
     definition_name: CeremonyName,
     definition_version: CeremonyVersion,
     context: CeremonyContext,
+    actor_id: String,
+    actor_kind: AuditActorKind,
 }
 
 impl EmbeddedStartPublishedCeremonyRequest {
@@ -32,6 +38,8 @@ impl EmbeddedStartPublishedCeremonyRequest {
                 self.definition_name,
                 self.definition_version,
                 self.context,
+                self.actor_id,
+                self.actor_kind,
             ))
             .await
             .map_err(|error| format!("failed to start published ceremony: {error}"))?;
@@ -59,6 +67,8 @@ impl TryFrom<&Value> for EmbeddedStartPublishedCeremonyRequest {
             definition_version: CeremonyVersion::new(required_string(object, "version")?)
                 .map_err(|error| error.to_string())?,
             context,
+            actor_id: required_string(object, "actor_id")?,
+            actor_kind: required_actor_kind(object, "actor_kind")?,
         })
     }
 }

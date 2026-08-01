@@ -98,4 +98,32 @@ impl SessionJournal {
             }),
         }
     }
+
+    /// Store a session that did not exist until now, with the facts
+    /// that opening it produced.
+    ///
+    /// Committed against `New`, which is what makes opening atomic.
+    /// Asking whether the session exists and then storing it leaves a
+    /// gap: two starts of the same id both find nothing, both store,
+    /// and the second silently replaces the first — no error raised,
+    /// and the context the first caller opened with simply gone.
+    ///
+    /// The race surfaces as `AlreadyExists` rather than `Conflict`
+    /// because that is what actually happened, and it is the answer a
+    /// caller starting a session already knows how to handle.
+    pub async fn open(
+        &self,
+        instance: CeremonyInstance,
+        facts: Vec<AuditFact>,
+    ) -> Result<CeremonyInstance, DomainError> {
+        let commit =
+            CeremonyCommit::new(instance.clone(), ExpectedRevision::New, facts, Vec::new())?;
+
+        match self.unit_of_work.commit(commit).await? {
+            CommitOutcome::Committed { .. } => Ok(instance),
+            CommitOutcome::Conflict { .. } => Err(DomainError::AlreadyExists {
+                what: "ceremony_instance",
+            }),
+        }
+    }
 }

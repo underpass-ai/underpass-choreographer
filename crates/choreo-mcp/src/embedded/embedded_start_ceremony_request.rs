@@ -1,10 +1,12 @@
 use choreo_app::usecases::StartCeremonyInput;
-use choreo_core::value_objects::{CeremonyContext, CeremonyId};
+use choreo_core::value_objects::{AuditActorKind, CeremonyContext, CeremonyId};
 use choreo_embedded::EmbeddedChoreographer;
 use serde_json::Value;
 use uuid::Uuid;
 
-use super::embedded_request_fields::{context_from_json, optional_string, required_string};
+use super::embedded_request_fields::{
+    context_from_json, optional_string, required_actor_kind, required_string,
+};
 
 /// Validated MCP request that starts, but does not advance, a ceremony.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -12,6 +14,8 @@ pub(super) struct EmbeddedStartCeremonyRequest {
     definition_yaml: String,
     ceremony_id: CeremonyId,
     context: CeremonyContext,
+    actor_id: String,
+    actor_kind: AuditActorKind,
 }
 
 impl EmbeddedStartCeremonyRequest {
@@ -33,6 +37,8 @@ impl EmbeddedStartCeremonyRequest {
                 definition.name().clone(),
                 definition.version().clone(),
                 self.context,
+                self.actor_id,
+                self.actor_kind,
             ))
             .await
             .map_err(|error| format!("failed to start ceremony: {error}"))?;
@@ -57,6 +63,8 @@ impl TryFrom<&Value> for EmbeddedStartCeremonyRequest {
             definition_yaml: required_string(object, "definition_yaml")?,
             ceremony_id: CeremonyId::new(ceremony_id).map_err(|error| error.to_string())?,
             context,
+            actor_id: required_string(object, "actor_id")?,
+            actor_kind: required_actor_kind(object, "actor_kind")?,
         })
     }
 }

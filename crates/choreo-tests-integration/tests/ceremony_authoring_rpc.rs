@@ -239,6 +239,8 @@ async fn a_published_version_is_something_an_instance_can_be_started_from() {
     let started = client
         .start_published_ceremony(StartPublishedCeremonyRequest {
             ceremony_id: "authored-session".to_owned(),
+            actor_id: "operator-1".to_owned(),
+            actor_kind: "service".to_owned(),
             ceremony: "authored_ceremony".to_owned(),
             version: "1.0".to_owned(),
             context: None,

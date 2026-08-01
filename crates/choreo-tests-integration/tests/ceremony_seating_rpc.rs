@@ -45,6 +45,8 @@ async fn start(client: &mut ChoreographerServiceClient<tonic::transport::Channel
     client
         .start_ceremony(StartCeremonyRequest {
             ceremony_id: id.to_owned(),
+            actor_id: "operator-1".to_owned(),
+            actor_kind: "service".to_owned(),
             definition_yaml: SEATED_CEREMONY.to_owned(),
             context: None,
         })

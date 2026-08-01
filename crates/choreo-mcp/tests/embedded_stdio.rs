@@ -779,6 +779,8 @@ fn start_ceremony_call(id: u64, ceremony_id: &str) -> Value {
         &json!({
             "ceremony_id": ceremony_id,
             "definition_yaml": HUMAN_APPROVAL_CEREMONY_YAML,
+            "actor_id": "smoke-operator",
+            "actor_kind": "service",
             "context": { "requested_by": "incremental-smoke" }
         }),
     )
@@ -791,6 +793,8 @@ fn start_collaborative_ceremony_call(id: u64, ceremony_id: &str) -> Value {
         &json!({
             "ceremony_id": ceremony_id,
             "definition_yaml": COLLABORATIVE_TABLE_CEREMONY_YAML,
+            "actor_id": "smoke-operator",
+            "actor_kind": "service",
             "context": { "incident_ref": "INC-42" }
         }),
     )
@@ -1142,7 +1146,9 @@ async fn an_instance_started_from_a_published_version_carries_its_digest() {
             &json!({
                 "ceremony_id": "bound-instance",
                 "ceremony": "publishable_ceremony",
-                "version": "1.0"
+                "version": "1.0",
+                "actor_id": "smoke-operator",
+                "actor_kind": "service"
             }),
         ),
     )
@@ -1169,7 +1175,9 @@ async fn a_published_instance_can_actually_be_advanced() {
             &json!({
                 "ceremony_id": "advanced-bound",
                 "ceremony": "publishable_ceremony",
-                "version": "1.0"
+                "version": "1.0",
+                "actor_id": "smoke-operator",
+                "actor_kind": "service"
             }),
         ),
     )

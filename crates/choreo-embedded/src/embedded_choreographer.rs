@@ -256,7 +256,7 @@ impl EmbeddedChoreographer {
     ) -> Result<CeremonyInstance, DomainError> {
         StartPublishedCeremonyUseCase::new(
             self.publications.clone(),
-            self.instances.clone(),
+            self.journal.clone(),
             self.clock.clone(),
         )
         .execute(input)
@@ -266,7 +266,7 @@ impl EmbeddedChoreographer {
     pub async fn start(&self, input: StartCeremonyInput) -> Result<CeremonyInstance, DomainError> {
         StartCeremonyUseCase::new(
             self.definitions.clone(),
-            self.instances.clone(),
+            self.journal.clone(),
             self.clock.clone(),
         )
         .execute(input)

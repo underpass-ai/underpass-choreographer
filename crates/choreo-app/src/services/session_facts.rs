@@ -347,3 +347,29 @@ fn step_fact(
         occurred_at,
     )
 }
+
+/// The fact that somebody opened this session.
+///
+/// # Why the actor has no seat
+///
+/// Every other fact names a seat from the definition, because by then
+/// the session exists and its roles mean something. At the start they
+/// do not: whoever opens a session may be a participant, or an
+/// operator, or a scheduler that will never take part. So the caller
+/// declares an identity of their own choosing and what kind of party
+/// it is, and the fact records both without pretending either is a
+/// role this ceremony declared.
+pub(crate) fn ceremony_started(
+    instance: &CeremonyInstance,
+    started_by: &str,
+    started_by_kind: AuditActorKind,
+    occurred_at: OffsetDateTime,
+) -> Result<AuditFact, DomainError> {
+    fact(
+        instance,
+        AuditEventType::CeremonyInstanceStarted,
+        "session",
+        AuditActor::new(started_by, started_by_kind, None)?,
+        occurred_at,
+    )
+}

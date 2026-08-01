@@ -140,6 +140,8 @@ async fn build_remote_session(fixture: &GrpcFixture) {
     client
         .start_ceremony(StartCeremonyRequest {
             ceremony_id: CEREMONY_ID.to_owned(),
+            actor_id: "operator-1".to_owned(),
+            actor_kind: "service".to_owned(),
             definition_yaml: PARITY_CEREMONY.to_owned(),
             context: None,
         })
@@ -215,7 +217,7 @@ async fn build_embedded_session(backend: &EmbeddedChoreoMcpBackend) {
 
     call(
         "choreo_start_ceremony",
-        json!({ "ceremony_id": CEREMONY_ID, "definition_yaml": PARITY_CEREMONY }),
+        json!({ "ceremony_id": CEREMONY_ID, "definition_yaml": PARITY_CEREMONY, "actor_id": "parity-operator", "actor_kind": "service" }),
     )
     .await;
     call(
@@ -390,7 +392,7 @@ async fn the_same_tool_calls_drive_both_backends_to_the_same_shape() {
         for (tool, args) in [
             (
                 "choreo_start_ceremony",
-                json!({ "ceremony_id": "tools-parity", "definition_yaml": PARITY_CEREMONY }),
+                json!({ "ceremony_id": "tools-parity", "definition_yaml": PARITY_CEREMONY, "actor_id": "parity-operator", "actor_kind": "service" }),
             ),
             (
                 "choreo_run_ceremony_step",

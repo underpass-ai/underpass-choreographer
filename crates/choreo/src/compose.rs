@@ -302,12 +302,12 @@ pub async fn compose() -> Result<Application, ComposeError> {
     // to be there for the next step whichever way the run was driven.
     let start_ceremony = Arc::new(StartCeremonyUseCase::new(
         ceremony_definitions.clone(),
-        ceremony_instances.clone(),
+        ceremony_journal.clone(),
         clock.clone(),
     ));
     let start_published_ceremony = Arc::new(StartPublishedCeremonyUseCase::new(
         ceremony_publications.clone(),
-        ceremony_instances.clone(),
+        ceremony_journal.clone(),
         clock.clone(),
     ));
     let run_ceremony_step = Arc::new(

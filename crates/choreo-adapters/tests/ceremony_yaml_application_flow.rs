@@ -107,13 +107,15 @@ async fn yaml_definition_can_drive_the_application_ceremony_flow() {
         .await
         .unwrap();
 
-    let start = StartCeremonyUseCase::new(definitions.clone(), instances.clone(), clock.clone());
+    let start = StartCeremonyUseCase::new(definitions.clone(), journal.clone(), clock.clone());
     let instance = start
         .execute(StartCeremonyInput::new(
             CeremonyId::new("meeting-1").unwrap(),
             definition_name.clone(),
             definition_version.clone(),
             CeremonyContext::empty(),
+            "operator-1",
+            AuditActorKind::Service,
         ))
         .await
         .unwrap();

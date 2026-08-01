@@ -5,15 +5,14 @@ use std::sync::Arc;
 
 use choreo_core::entities::CeremonyInstance;
 use choreo_core::error::DomainError;
-use choreo_core::ports::{
-    CeremonyDefinitionPublicationPort, CeremonyInstanceRepositoryPort, ClockPort,
-};
+use choreo_core::ports::{CeremonyDefinitionPublicationPort, ClockPort};
 
 use super::start_ceremony_input::StartCeremonyInput;
+use crate::services::{session_facts, SessionJournal};
 
 pub struct StartPublishedCeremonyUseCase {
     publications: Arc<dyn CeremonyDefinitionPublicationPort>,
-    instances: Arc<dyn CeremonyInstanceRepositoryPort>,
+    journal: Arc<SessionJournal>,
     clock: Arc<dyn ClockPort>,
 }
 
@@ -27,12 +26,12 @@ impl StartPublishedCeremonyUseCase {
     #[must_use]
     pub fn new(
         publications: Arc<dyn CeremonyDefinitionPublicationPort>,
-        instances: Arc<dyn CeremonyInstanceRepositoryPort>,
+        journal: Arc<SessionJournal>,
         clock: Arc<dyn ClockPort>,
     ) -> Self {
         Self {
             publications,
-            instances,
+            journal,
             clock,
         }
     }
@@ -53,12 +52,10 @@ impl StartPublishedCeremonyUseCase {
         &self,
         input: StartCeremonyInput,
     ) -> Result<CeremonyInstance, DomainError> {
-        if self.instances.exists(&input.id).await? {
-            return Err(DomainError::AlreadyExists {
-                what: "ceremony_instance",
-            });
-        }
-
+        // No `exists` check before storing. Asking and then storing
+        // leaves a gap two concurrent starts both walk through, and the
+        // second would replace the first in silence. The commit itself
+        // refuses, because it expects the session to be new.
         let published = self
             .publications
             .published(&input.definition_name, &input.definition_version)
@@ -67,9 +64,12 @@ impl StartPublishedCeremonyUseCase {
                 what: "published_ceremony_definition",
             })?;
 
-        let instance =
-            CeremonyInstance::start_bound(input.id, &published, input.context, self.clock.now());
-        self.instances.save(&instance).await?;
-        Ok(instance)
+        let now = self.clock.now();
+        let instance = CeremonyInstance::start_bound(input.id, &published, input.context, now);
+        // Built before the commit so a caller who named themselves
+        // badly is refused without a session being left behind.
+        let fact =
+            session_facts::ceremony_started(&instance, &input.actor_id, input.actor_kind, now)?;
+        self.journal.open(instance, vec![fact]).await
     }
 }

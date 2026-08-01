@@ -827,6 +827,17 @@ message StartCeremonyRequest {
   string ceremony_id = 1;
   string definition_yaml = 2;
   google.protobuf.Struct context = 3;
+  // Who is opening it, in whatever terms you identify callers by.
+  //
+  // Not a role from the definition: at the start its roles are not
+  // filled yet, and whoever opens a session may be a participant, an
+  // operator, or a scheduler that never takes part.
+  string actor_id = 4;
+  // What kind of party that is: "human", "agent", "service" or
+  // "engine".
+  //
+  // Refused when missing or unrecognised, like every other actor kind.
+  string actor_kind = 5;
 }
 
 message StartCeremonyResponse {
@@ -841,6 +852,11 @@ message StartPublishedCeremonyRequest {
   string ceremony = 2;
   string version = 3;
   google.protobuf.Struct context = 4;
+  // Who is opening it. See StartCeremonyRequest.actor_id.
+  string actor_id = 5;
+  // What kind of party that is: "human", "agent", "service" or
+  // "engine". Refused when missing or unrecognised.
+  string actor_kind = 6;
 }
 
 message StartPublishedCeremonyResponse {

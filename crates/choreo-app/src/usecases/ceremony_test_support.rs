@@ -96,6 +96,34 @@ impl CeremonyDefinitionRepositoryPort for DefinitionRepositoryFake {
 #[derive(Debug, Default)]
 pub(super) struct InstanceRepositoryFake {
     inner: RwLock<BTreeMap<CeremonyId, CeremonyInstance>>,
+    /// Revisions live here, not in the unit of work over this store.
+    ///
+    /// The conformance suite requires a plain save to advance the
+    /// revision, so that a commit holding an expectation from before it
+    /// conflicts instead of overwriting. A fake that kept revisions to
+    /// one side would let every test seed a session by saving it and
+    /// then commit against `New` — passing while exercising the easy
+    /// path of the very machinery under test.
+    revisions: RwLock<BTreeMap<CeremonyId, CeremonyRevision>>,
+}
+
+impl InstanceRepositoryFake {
+    pub(super) async fn revision_of(&self, id: &CeremonyId) -> Option<CeremonyRevision> {
+        self.revisions.read().await.get(id).copied()
+    }
+
+    pub(super) async fn advance(&self, id: &CeremonyId) -> CeremonyRevision {
+        let mut revisions = self.revisions.write().await;
+        let next = revisions
+            .get(id)
+            .map_or(CeremonyRevision::INITIAL, |revision| revision.next());
+        revisions.insert(id.clone(), next);
+        next
+    }
+
+    pub(super) async fn set_revision(&self, id: &CeremonyId, revision: CeremonyRevision) {
+        self.revisions.write().await.insert(id.clone(), revision);
+    }
 }
 
 impl InstanceRepositoryFake {
@@ -107,6 +135,7 @@ impl InstanceRepositoryFake {
 #[async_trait]
 impl CeremonyInstanceRepositoryPort for InstanceRepositoryFake {
     async fn save(&self, instance: &CeremonyInstance) -> Result<(), DomainError> {
+        self.advance(instance.id()).await;
         self.inner
             .write()
             .await
@@ -582,7 +611,6 @@ pub(super) fn a_recorder() -> Arc<SessionMemoryRecorder> {
 #[derive(Debug)]
 pub(super) struct UnitOfWorkFake {
     instances: Arc<InstanceRepositoryFake>,
-    revisions: RwLock<BTreeMap<CeremonyId, CeremonyRevision>>,
     facts: RwLock<Vec<AuditFact>>,
 }
 
@@ -590,7 +618,6 @@ impl UnitOfWorkFake {
     pub(super) fn over(instances: Arc<InstanceRepositoryFake>) -> Self {
         Self {
             instances,
-            revisions: RwLock::new(BTreeMap::new()),
             facts: RwLock::new(Vec::new()),
         }
     }
@@ -602,11 +629,7 @@ impl UnitOfWorkFake {
     /// Move a session on behind the caller's back, the way another
     /// writer would.
     pub(super) async fn someone_else_writes(&self, ceremony_id: &CeremonyId) {
-        let mut revisions = self.revisions.write().await;
-        let next = revisions
-            .get(ceremony_id)
-            .map_or(CeremonyRevision::INITIAL, |revision| revision.next());
-        revisions.insert(ceremony_id.clone(), next);
+        self.instances.advance(ceremony_id).await;
     }
 }
 
@@ -614,8 +637,7 @@ impl UnitOfWorkFake {
 impl CeremonyUnitOfWorkPort for UnitOfWorkFake {
     async fn commit(&self, commit: CeremonyCommit) -> Result<CommitOutcome, DomainError> {
         let ceremony_id = commit.instance().id().clone();
-        let mut revisions = self.revisions.write().await;
-        let stored = revisions.get(&ceremony_id).copied();
+        let stored = self.instances.revision_of(&ceremony_id).await;
         if !commit.expected_revision().matches(stored) {
             return Ok(CommitOutcome::Conflict {
                 expected: commit.expected_revision(),
@@ -624,8 +646,10 @@ impl CeremonyUnitOfWorkPort for UnitOfWorkFake {
         }
 
         let revision = commit.expected_revision().resulting_revision();
-        revisions.insert(ceremony_id, revision);
         self.instances.save(commit.instance()).await?;
+        // Set rather than advanced: the save above already moved it,
+        // and the commit decides what the resulting revision is.
+        self.instances.set_revision(&ceremony_id, revision).await;
         self.facts.write().await.extend(commit.facts().to_vec());
         Ok(CommitOutcome::Committed {
             revision,
@@ -637,7 +661,7 @@ impl CeremonyUnitOfWorkPort for UnitOfWorkFake {
         &self,
         ceremony_id: &CeremonyId,
     ) -> Result<Option<CeremonyRevision>, DomainError> {
-        Ok(self.revisions.read().await.get(ceremony_id).copied())
+        Ok(self.instances.revision_of(ceremony_id).await)
     }
 }
 

@@ -36,6 +36,8 @@ async fn start(
     client
         .start_ceremony(StartCeremonyRequest {
             ceremony_id: ceremony_id.to_owned(),
+            actor_id: "operator-1".to_owned(),
+            actor_kind: "service".to_owned(),
             definition_yaml: EDITORIAL_MEETING_CEREMONY.to_owned(),
             context: None,
         })
@@ -237,6 +239,8 @@ async fn a_published_ceremony_is_bound_to_its_digest_and_can_be_advanced() {
     let started = client
         .start_published_ceremony(StartPublishedCeremonyRequest {
             ceremony_id: ceremony_id.to_owned(),
+            actor_id: "operator-1".to_owned(),
+            actor_kind: "service".to_owned(),
             ceremony: "editorial_planning_meeting".to_owned(),
             version: "1.0".to_owned(),
             context: None,

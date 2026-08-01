@@ -4,15 +4,14 @@ use std::sync::Arc;
 
 use choreo_core::entities::CeremonyInstance;
 use choreo_core::error::DomainError;
-use choreo_core::ports::{
-    CeremonyDefinitionRepositoryPort, CeremonyInstanceRepositoryPort, ClockPort,
-};
+use choreo_core::ports::{CeremonyDefinitionRepositoryPort, ClockPort};
 
 use super::start_ceremony_input::StartCeremonyInput;
+use crate::services::{session_facts, SessionJournal};
 
 pub struct StartCeremonyUseCase {
     definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
-    instances: Arc<dyn CeremonyInstanceRepositoryPort>,
+    journal: Arc<SessionJournal>,
     clock: Arc<dyn ClockPort>,
 }
 
@@ -26,12 +25,12 @@ impl StartCeremonyUseCase {
     #[must_use]
     pub fn new(
         definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
-        instances: Arc<dyn CeremonyInstanceRepositoryPort>,
+        journal: Arc<SessionJournal>,
         clock: Arc<dyn ClockPort>,
     ) -> Self {
         Self {
             definitions,
-            instances,
+            journal,
             clock,
         }
     }
@@ -45,20 +44,21 @@ impl StartCeremonyUseCase {
         &self,
         input: StartCeremonyInput,
     ) -> Result<CeremonyInstance, DomainError> {
-        if self.instances.exists(&input.id).await? {
-            return Err(DomainError::AlreadyExists {
-                what: "ceremony_instance",
-            });
-        }
-
+        // No `exists` check before storing. Asking and then storing
+        // leaves a gap two concurrent starts both walk through, and the
+        // second would replace the first in silence. The commit itself
+        // refuses, because it expects the session to be new.
         let definition = self
             .definitions
             .get(&input.definition_name, &input.definition_version)
             .await?;
-        let instance =
-            CeremonyInstance::start(input.id, &definition, input.context, self.clock.now());
-        self.instances.save(&instance).await?;
-        Ok(instance)
+        let now = self.clock.now();
+        let instance = CeremonyInstance::start(input.id, &definition, input.context, now);
+        // Built before the commit so a caller who named themselves
+        // badly is refused without a session being left behind.
+        let fact =
+            session_facts::ceremony_started(&instance, &input.actor_id, input.actor_kind, now)?;
+        self.journal.open(instance, vec![fact]).await
     }
 }
 
@@ -68,12 +68,12 @@ mod tests {
 
     use choreo_core::error::DomainError;
     use choreo_core::ports::CeremonyInstanceRepositoryPort;
-    use choreo_core::value_objects::{CeremonyContext, StateId};
+    use choreo_core::value_objects::{AuditActorKind, AuditEventType, CeremonyContext, StateId};
 
     use super::*;
     use crate::usecases::ceremony_test_support::{
-        ceremony_id, definition, definition_name, now, started_instance, version,
-        DefinitionRepositoryFake, FixedClock, InstanceRepositoryFake,
+        ceremony_id, definition, definition_name, journal, journal_over, now, started_instance,
+        version, DefinitionRepositoryFake, FixedClock, InstanceRepositoryFake,
     };
 
     #[tokio::test]
@@ -83,7 +83,7 @@ mod tests {
         let instances = Arc::new(InstanceRepositoryFake::default());
         let usecase = StartCeremonyUseCase::new(
             definitions,
-            instances.clone(),
+            journal(instances.clone()),
             Arc::new(FixedClock::new(now())),
         );
 
@@ -93,6 +93,8 @@ mod tests {
                 definition_name(),
                 version(),
                 CeremonyContext::empty(),
+                "operator-1",
+                AuditActorKind::Service,
             ))
             .await
             .unwrap();
@@ -114,8 +116,11 @@ mod tests {
             .save(&started_instance(&definition))
             .await
             .unwrap();
-        let usecase =
-            StartCeremonyUseCase::new(definitions, instances, Arc::new(FixedClock::new(now())));
+        let usecase = StartCeremonyUseCase::new(
+            definitions,
+            journal(instances),
+            Arc::new(FixedClock::new(now())),
+        );
 
         let err = usecase
             .execute(StartCeremonyInput::new(
@@ -123,6 +128,8 @@ mod tests {
                 definition_name(),
                 version(),
                 CeremonyContext::empty(),
+                "operator-1",
+                AuditActorKind::Service,
             ))
             .await
             .unwrap_err();
@@ -133,5 +140,76 @@ mod tests {
                 what: "ceremony_instance"
             }
         ));
+    }
+
+    /// Opening a session is the journal's first entry.
+    ///
+    /// The actor has no seat, on purpose: at the start the definition's
+    /// roles are not filled, and whoever opened this may never take
+    /// part in it.
+    #[tokio::test]
+    async fn seals_the_opening_into_the_journal() {
+        let definition = definition();
+        let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
+        let instances = Arc::new(InstanceRepositoryFake::default());
+        let (journal, unit_of_work) = journal_over(instances);
+        let usecase =
+            StartCeremonyUseCase::new(definitions, journal, Arc::new(FixedClock::new(now())));
+
+        usecase
+            .execute(StartCeremonyInput::new(
+                ceremony_id(),
+                definition_name(),
+                version(),
+                CeremonyContext::empty(),
+                "scheduler-1",
+                AuditActorKind::Service,
+            ))
+            .await
+            .unwrap();
+
+        let facts = unit_of_work.facts().await;
+        assert_eq!(facts.len(), 1, "one opening, one fact: {facts:?}");
+        assert_eq!(facts[0].event_type, AuditEventType::CeremonyInstanceStarted);
+        assert_eq!(facts[0].actor.kind(), AuditActorKind::Service);
+        assert_eq!(facts[0].actor.actor_id(), "scheduler-1");
+        assert!(
+            facts[0].actor.role_id().is_none(),
+            "the opener was given a seat this ceremony never assigned"
+        );
+    }
+
+    /// A session opened badly leaves nothing behind.
+    ///
+    /// The fact is built before the commit, so a caller who names
+    /// themselves with something the journal will not accept is refused
+    /// without a session existing that has no record of being opened.
+    #[tokio::test]
+    async fn a_caller_who_cannot_be_named_opens_nothing() {
+        let definition = definition();
+        let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
+        let instances = Arc::new(InstanceRepositoryFake::default());
+        let usecase = StartCeremonyUseCase::new(
+            definitions,
+            journal(instances.clone()),
+            Arc::new(FixedClock::new(now())),
+        );
+
+        usecase
+            .execute(StartCeremonyInput::new(
+                ceremony_id(),
+                definition_name(),
+                version(),
+                CeremonyContext::empty(),
+                "   ",
+                AuditActorKind::Service,
+            ))
+            .await
+            .unwrap_err();
+
+        assert!(
+            !instances.exists(&ceremony_id()).await.unwrap(),
+            "a session was opened that the journal cannot account for"
+        );
     }
 }
