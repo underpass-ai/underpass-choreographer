@@ -2,6 +2,7 @@
 
 mod embedded_apply_ceremony_transition_request;
 mod embedded_approve_ceremony_guard_request;
+mod embedded_assert_ceremony_reason_request;
 mod embedded_bind_ceremony_participants_request;
 mod embedded_ceremony_draft_presenter;
 mod embedded_ceremony_draft_request;
@@ -30,7 +31,7 @@ use serde_json::Value;
 use crate::backend::{ChoreoMcpToolBackend, ChoreoMcpToolFuture};
 use crate::protocol::{
     tool_success_result, APPLY_CEREMONY_TRANSITION_TOOL, APPROVE_CEREMONY_GUARD_TOOL,
-    BIND_CEREMONY_PARTICIPANTS_TOOL, CLOSE_CEREMONY_INTERVENTION_TOOL,
+    ASSERT_CEREMONY_REASON_TOOL, BIND_CEREMONY_PARTICIPANTS_TOOL, CLOSE_CEREMONY_INTERVENTION_TOOL,
     COLLECT_CEREMONY_EVIDENCE_TOOL, DEFER_CEREMONY_GUARD_TOOL, DIFF_CEREMONY_DEFINITIONS_TOOL,
     EXPLAIN_CEREMONY_DRAFT_TOOL, GET_CEREMONY_INSTANCE_TOOL, LIST_CEREMONY_INSTANCES_TOOL,
     PUBLISH_CEREMONY_DEFINITION_TOOL, REQUEST_CEREMONY_INTERVENTION_TOOL,
@@ -40,6 +41,7 @@ use crate::protocol::{
 
 use self::embedded_apply_ceremony_transition_request::EmbeddedApplyCeremonyTransitionRequest;
 use self::embedded_approve_ceremony_guard_request::EmbeddedApproveCeremonyGuardRequest;
+use self::embedded_assert_ceremony_reason_request::EmbeddedAssertCeremonyReasonRequest;
 use self::embedded_bind_ceremony_participants_request::EmbeddedBindCeremonyParticipantsRequest;
 use self::embedded_ceremony_draft_presenter::{
     present_definition_diff, EmbeddedCeremonyDraftPresenter,
@@ -120,6 +122,7 @@ impl ChoreoMcpToolBackend for EmbeddedChoreoMcpBackend {
                 | RESPOND_TO_CEREMONY_INTERVENTION_TOOL
                 | CLOSE_CEREMONY_INTERVENTION_TOOL
                 | COLLECT_CEREMONY_EVIDENCE_TOOL
+                | ASSERT_CEREMONY_REASON_TOOL
                 | VALIDATE_CEREMONY_DRAFT_TOOL
                 | EXPLAIN_CEREMONY_DRAFT_TOOL
                 | PUBLISH_CEREMONY_DEFINITION_TOOL
@@ -196,6 +199,11 @@ impl ChoreoMcpToolBackend for EmbeddedChoreoMcpBackend {
                 }
                 APPROVE_CEREMONY_GUARD_TOOL => {
                     let request = EmbeddedApproveCeremonyGuardRequest::try_from(arguments)?;
+                    let ceremony_id = request.execute(&self.choreographer).await?;
+                    self.present_instance(&ceremony_id).await
+                }
+                ASSERT_CEREMONY_REASON_TOOL => {
+                    let request = EmbeddedAssertCeremonyReasonRequest::try_from(arguments)?;
                     let ceremony_id = request.execute(&self.choreographer).await?;
                     self.present_instance(&ceremony_id).await
                 }

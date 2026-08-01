@@ -19,6 +19,7 @@ pub(crate) const RUN_CEREMONY_STEP_TOOL: &str = "choreo_run_ceremony_step";
 pub(crate) const APPROVE_CEREMONY_GUARD_TOOL: &str = "choreo_approve_ceremony_guard";
 pub(crate) const DEFER_CEREMONY_GUARD_TOOL: &str = "choreo_defer_ceremony_guard";
 pub(crate) const APPLY_CEREMONY_TRANSITION_TOOL: &str = "choreo_apply_ceremony_transition";
+pub(crate) const ASSERT_CEREMONY_REASON_TOOL: &str = "choreo_assert_ceremony_reason";
 pub(crate) const GET_CEREMONY_INSTANCE_TOOL: &str = "choreo_get_ceremony_instance";
 pub(crate) const LIST_CEREMONY_INSTANCES_TOOL: &str = "choreo_list_ceremony_instances";
 pub(crate) const REQUEST_CEREMONY_INTERVENTION_TOOL: &str = "choreo_request_ceremony_intervention";
@@ -33,7 +34,7 @@ pub(crate) const DIFF_CEREMONY_DEFINITIONS_TOOL: &str = "choreo_diff_ceremony_de
 pub(crate) const BIND_CEREMONY_PARTICIPANTS_TOOL: &str = "choreo_bind_ceremony_participants";
 pub(crate) const START_PUBLISHED_CEREMONY_TOOL: &str = "choreo_start_published_ceremony";
 
-const GRPC_TOOL_NAMES: [&str; 34] = [
+const GRPC_TOOL_NAMES: [&str; 35] = [
     "choreo_deliberate",
     "choreo_stream_deliberation",
     "choreo_get_deliberation_result",
@@ -61,6 +62,7 @@ const GRPC_TOOL_NAMES: [&str; 34] = [
     RESPOND_TO_CEREMONY_INTERVENTION_TOOL,
     CLOSE_CEREMONY_INTERVENTION_TOOL,
     COLLECT_CEREMONY_EVIDENCE_TOOL,
+    ASSERT_CEREMONY_REASON_TOOL,
     VALIDATE_CEREMONY_DRAFT_TOOL,
     EXPLAIN_CEREMONY_DRAFT_TOOL,
     PUBLISH_CEREMONY_DEFINITION_TOOL,
@@ -403,6 +405,11 @@ fn grpc_tool_catalog() -> Vec<Value> {
             collect_ceremony_evidence_schema(),
         ),
         tool_def(
+            ASSERT_CEREMONY_REASON_TOOL,
+            "Record why one thing this session produced led to another. Only whoever decided something may say what decided them, and only whoever did it may say how; claims about the world are open to any seat, with a stated confidence.",
+            ceremony_reason_schema(),
+        ),
+        tool_def(
             VALIDATE_CEREMONY_DRAFT_TOOL,
             "Analyse a ceremony draft and report every structural defect at once. Read-only: it neither publishes nor executes the draft.",
             ceremony_draft_schema(),
@@ -595,6 +602,64 @@ fn ceremony_guard_deferral_schema() -> Value {
                 "uniqueItems": true,
                 "items": { "type": "string", "minLength": 1 },
                 "description": "Concrete conditions that would make it appropriate to ask again."
+            }
+        }
+    })
+}
+
+/// Something this session produced that a reason can point at.
+fn ceremony_record_ref_schema(description: &str) -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind"],
+        "description": description,
+        "properties": {
+            "kind": {
+                "type": "string",
+                "enum": ["step", "agenda_item", "contribution", "guard_decision", "transition"],
+                "description": "Which of the five it names. Only the field it names is read."
+            },
+            "step_id": string_schema("For kind `step`."),
+            "agenda_item": string_schema("For kind `agenda_item` or `contribution`."),
+            "ordinal": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "For kind `contribution`, its place among the answers to its item, counting from zero. For kind `transition`, the move's place in the session, counting from one."
+            },
+            "guard_name": string_schema("For kind `guard_decision`.")
+        }
+    })
+}
+
+fn ceremony_reason_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ceremony_id", "role_id", "from", "to", "kind", "why", "confidence"],
+        "properties": {
+            "ceremony_id": string_schema("Started ceremony instance id."),
+            "role_id": string_schema("Seat saying so, declared by this ceremony's definition."),
+            "from": ceremony_record_ref_schema("What is being explained."),
+            "to": ceremony_record_ref_schema("What explains it."),
+            "kind": {
+                "type": "string",
+                "enum": [
+                    "chosen_because",
+                    "achieved_by",
+                    "follows_from",
+                    "satisfies_constraint",
+                    "violates_constraint",
+                    "supersedes",
+                    "contradicts"
+                ],
+                "description": "How the first came from the second. `achieved_by` is the how, and it is what turns a resolved session from a precedent into a procedure. `answers` is absent: it states the shape of the session rather than anyone's judgement, and only the engine asserts it."
+            },
+            "why": string_schema("The reason itself, in one line. Required: an edge asserting a connection while declining to say how is a guess written down as a fact."),
+            "confidence": {
+                "type": "string",
+                "enum": ["high", "medium", "low"],
+                "description": "How sure you are. There is no fourth for `not sure enough to say` — a caller who would reach for it can decline to make the claim."
             }
         }
     })
@@ -1057,7 +1122,7 @@ mod tests {
         let all_names = catalog_tool_names();
         let unique_names = all_names.iter().collect::<std::collections::BTreeSet<_>>();
 
-        assert_eq!(all_names.len(), 34);
+        assert_eq!(all_names.len(), 35);
         assert_eq!(unique_names.len(), all_names.len());
         assert!(all_names.contains(&VALIDATE_CEREMONY_DRAFT_TOOL.to_owned()));
         assert!(all_names.contains(&PUBLISH_CEREMONY_DEFINITION_TOOL.to_owned()));

@@ -6,10 +6,10 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use choreo_app::services::AutoDispatchService;
 use choreo_app::usecases::{
-    ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase, BindCeremonyParticipantsUseCase,
-    CeremonyDraftView, CeremonyInstanceView, CloseCeremonyInterventionUseCase,
-    CollectCeremonyEvidenceUseCase, CreateCouncilInput, CreateCouncilUseCase,
-    DeferCeremonyGuardUseCase, DeleteCouncilUseCase, DeliberateUseCase,
+    ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase, AssertCeremonyReasonUseCase,
+    BindCeremonyParticipantsUseCase, CeremonyDraftView, CeremonyInstanceView,
+    CloseCeremonyInterventionUseCase, CollectCeremonyEvidenceUseCase, CreateCouncilInput,
+    CreateCouncilUseCase, DeferCeremonyGuardUseCase, DeleteCouncilUseCase, DeliberateUseCase,
     DiffCeremonyDefinitionsUseCase, GetCeremonyInstanceUseCase, GetDeliberationUseCase,
     ListCeremonyInstancesUseCase, ListCouncilsUseCase, OrchestrateUseCase,
     PrepareCeremonyParticipantsUseCase, PublishCeremonyDefinitionUseCase, RegisterAgentUseCase,
@@ -32,10 +32,10 @@ use tracing::debug;
 
 use super::mappers::{
     apply_ceremony_transition_input_from_proto, approve_ceremony_guard_input_from_proto,
-    bind_ceremony_participants_input_from_proto, ceremony_definition_source_from_proto,
-    ceremony_instance_state_from, close_ceremony_intervention_input_from_proto,
-    collect_ceremony_evidence_input_from_proto, council_summary_from,
-    defer_ceremony_guard_input_from_proto, deliberate_response_from,
+    assert_ceremony_reason_input_from_proto, bind_ceremony_participants_input_from_proto,
+    ceremony_definition_source_from_proto, ceremony_instance_state_from,
+    close_ceremony_intervention_input_from_proto, collect_ceremony_evidence_input_from_proto,
+    council_summary_from, defer_ceremony_guard_input_from_proto, deliberate_response_from,
     diff_ceremony_definitions_response_from, explain_ceremony_draft_response_from,
     orchestrate_response_from, output_contract_from_proto, output_contract_to_proto,
     publish_ceremony_definition_response_from, request_ceremony_intervention_input_from_proto,
@@ -73,6 +73,7 @@ pub struct ChoreographerGrpcService {
     apply_ceremony_transition: Arc<ApplyCeremonyTransitionUseCase>,
     approve_ceremony_guard: Arc<ApproveCeremonyGuardUseCase>,
     defer_ceremony_guard: Arc<DeferCeremonyGuardUseCase>,
+    assert_ceremony_reason: Arc<AssertCeremonyReasonUseCase>,
     request_ceremony_intervention: Arc<RequestCeremonyInterventionUseCase>,
     respond_to_ceremony_intervention: Arc<RespondToCeremonyInterventionUseCase>,
     close_ceremony_intervention: Arc<CloseCeremonyInterventionUseCase>,
@@ -203,6 +204,7 @@ pub struct ChoreographerGrpcServiceBuilder {
     apply_ceremony_transition: Option<Arc<ApplyCeremonyTransitionUseCase>>,
     approve_ceremony_guard: Option<Arc<ApproveCeremonyGuardUseCase>>,
     defer_ceremony_guard: Option<Arc<DeferCeremonyGuardUseCase>>,
+    assert_ceremony_reason: Option<Arc<AssertCeremonyReasonUseCase>>,
     request_ceremony_intervention: Option<Arc<RequestCeremonyInterventionUseCase>>,
     respond_to_ceremony_intervention: Option<Arc<RespondToCeremonyInterventionUseCase>>,
     close_ceremony_intervention: Option<Arc<CloseCeremonyInterventionUseCase>>,
@@ -298,6 +300,11 @@ impl ChoreographerGrpcServiceBuilder {
         defer_ceremony_guard
     );
     setter!(
+        assert_ceremony_reason,
+        AssertCeremonyReasonUseCase,
+        assert_ceremony_reason
+    );
+    setter!(
         request_ceremony_intervention,
         RequestCeremonyInterventionUseCase,
         request_ceremony_intervention
@@ -390,6 +397,7 @@ impl ChoreographerGrpcServiceBuilder {
             apply_ceremony_transition: required!(self, apply_ceremony_transition),
             approve_ceremony_guard: required!(self, approve_ceremony_guard),
             defer_ceremony_guard: required!(self, defer_ceremony_guard),
+            assert_ceremony_reason: required!(self, assert_ceremony_reason),
             request_ceremony_intervention: required!(self, request_ceremony_intervention),
             respond_to_ceremony_intervention: required!(self, respond_to_ceremony_intervention),
             close_ceremony_intervention: required!(self, close_ceremony_intervention),
@@ -946,6 +954,25 @@ impl ChoreographerService for ChoreographerGrpcService {
             .map_err(domain_error_to_status)?;
         let state = self.project(&instance).await?;
         Ok(Response::new(pb::DeferCeremonyGuardResponse {
+            instance: Some(state),
+        }))
+    }
+
+    #[tracing::instrument(name = "rpc.assert_ceremony_reason", skip_all)]
+    async fn assert_ceremony_reason(
+        &self,
+        request: Request<pb::AssertCeremonyReasonRequest>,
+    ) -> GrpcResult<pb::AssertCeremonyReasonResponse> {
+        link_span_to_metadata(&request);
+        let input = assert_ceremony_reason_input_from_proto(request.into_inner())
+            .map_err(domain_error_to_status)?;
+        let instance = self
+            .assert_ceremony_reason
+            .execute(input)
+            .await
+            .map_err(domain_error_to_status)?;
+        let state = self.project(&instance).await?;
+        Ok(Response::new(pb::AssertCeremonyReasonResponse {
             instance: Some(state),
         }))
     }

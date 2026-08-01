@@ -39,16 +39,16 @@ use choreo_adapters::validators::{
 use choreo_app::services::AutoDispatchService;
 use choreo_app::services::SessionMemoryRecorder;
 use choreo_app::usecases::{
-    ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase, BindCeremonyParticipantsUseCase,
-    CloseCeremonyInterventionUseCase, CollectCeremonyEvidenceUseCase, CreateCouncilUseCase,
-    DeferCeremonyGuardUseCase, DeleteCouncilUseCase, DeliberateUseCase,
-    DiffCeremonyDefinitionsUseCase, GetCeremonyInstanceUseCase, GetDeliberationUseCase,
-    ListCeremonyInstancesUseCase, ListCouncilsUseCase, OrchestrateUseCase,
-    PrepareCeremonyParticipantsUseCase, PublishCeremonyDefinitionUseCase, RegisterAgentUseCase,
-    RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
-    RespondToCeremonyInterventionUseCase, RunCeremonyStepUseCase, RunCeremonyUseCase,
-    RunCouncilDecisionUseCase, StartCeremonyUseCase, StartPublishedCeremonyUseCase,
-    UnregisterAgentUseCase,
+    ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase, AssertCeremonyReasonUseCase,
+    BindCeremonyParticipantsUseCase, CloseCeremonyInterventionUseCase,
+    CollectCeremonyEvidenceUseCase, CreateCouncilUseCase, DeferCeremonyGuardUseCase,
+    DeleteCouncilUseCase, DeliberateUseCase, DiffCeremonyDefinitionsUseCase,
+    GetCeremonyInstanceUseCase, GetDeliberationUseCase, ListCeremonyInstancesUseCase,
+    ListCouncilsUseCase, OrchestrateUseCase, PrepareCeremonyParticipantsUseCase,
+    PublishCeremonyDefinitionUseCase, RegisterAgentUseCase, RequestCeremonyInterventionUseCase,
+    ResolveCeremonyDefinitionUseCase, RespondToCeremonyInterventionUseCase, RunCeremonyStepUseCase,
+    RunCeremonyUseCase, RunCouncilDecisionUseCase, StartCeremonyUseCase,
+    StartPublishedCeremonyUseCase, UnregisterAgentUseCase,
 };
 use choreo_core::ports::{
     AgentRegistryPort, AgentResolverPort, CeremonyDefinitionPublicationPort,
@@ -198,6 +198,12 @@ impl GrpcFixture {
             clock.clone(),
             session_memory.clone(),
         ));
+        let assert_ceremony_reason = Arc::new(AssertCeremonyReasonUseCase::new(
+            resolve_ceremony_definition.clone(),
+            ceremony_instances.clone(),
+            clock.clone(),
+            session_memory.clone(),
+        ));
         let approve_ceremony_guard = Arc::new(ApproveCeremonyGuardUseCase::new(
             resolve_ceremony_definition.clone(),
             ceremony_instances.clone(),
@@ -291,6 +297,7 @@ impl GrpcFixture {
             .apply_ceremony_transition(apply_ceremony_transition)
             .approve_ceremony_guard(approve_ceremony_guard)
             .defer_ceremony_guard(defer_ceremony_guard)
+            .assert_ceremony_reason(assert_ceremony_reason)
             .request_ceremony_intervention(request_ceremony_intervention)
             .respond_to_ceremony_intervention(respond_to_ceremony_intervention)
             .close_ceremony_intervention(close_ceremony_intervention)
@@ -463,6 +470,12 @@ impl GrpcFixture {
             clock.clone(),
             session_memory.clone(),
         ));
+        let assert_ceremony_reason = Arc::new(AssertCeremonyReasonUseCase::new(
+            resolve_ceremony_definition.clone(),
+            ceremony_instances.clone(),
+            clock.clone(),
+            session_memory.clone(),
+        ));
         let approve_ceremony_guard = Arc::new(ApproveCeremonyGuardUseCase::new(
             resolve_ceremony_definition.clone(),
             ceremony_instances.clone(),
@@ -556,6 +569,7 @@ impl GrpcFixture {
             .apply_ceremony_transition(apply_ceremony_transition)
             .approve_ceremony_guard(approve_ceremony_guard)
             .defer_ceremony_guard(defer_ceremony_guard)
+            .assert_ceremony_reason(assert_ceremony_reason)
             .request_ceremony_intervention(request_ceremony_intervention)
             .respond_to_ceremony_intervention(respond_to_ceremony_intervention)
             .close_ceremony_intervention(close_ceremony_intervention)

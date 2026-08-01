@@ -145,6 +145,12 @@ service ChoreographerService {
   rpc RespondToCeremonyIntervention(RespondToCeremonyInterventionRequest) returns (RespondToCeremonyInterventionResponse);
   rpc CloseCeremonyIntervention(CloseCeremonyInterventionRequest) returns (CloseCeremonyInterventionResponse);
   rpc CollectCeremonyEvidence(CollectCeremonyEvidenceRequest) returns (CollectCeremonyEvidenceResponse);
+  // Saying why one thing this session produced led to another. Its own
+  // call rather than a field on contributing, because understanding
+  // usually arrives afterwards — "in fact I did that because…" is how
+  // people reason, and a field gets filled in by inertia where a call
+  // is chosen.
+  rpc AssertCeremonyReason(AssertCeremonyReasonRequest) returns (AssertCeremonyReasonResponse);
 
   // Authoring. A draft is checked and explained before it is put in
   // the catalogue, and publishing is what makes a version something
@@ -896,6 +902,51 @@ message DeferCeremonyGuardRequest {
   // And who decided it. The fourth of the four, and the only one
   // nobody can reconstruct afterwards.
   string role_id = 6;
+}
+
+// Something this session produced that a reason can point at.
+//
+// Flat with a discriminator rather than a oneof, so it reads the same
+// on the wire and in the tool JSON. Only the field its kind names is
+// read; the rest are ignored.
+message CeremonyRecordRefState {
+  // "step", "agenda_item", "contribution", "guard_decision" or
+  // "transition".
+  string kind = 1;
+  string step_id = 2;
+  string agenda_item = 3;
+  // The contribution's place among the answers to its item, or the
+  // move's place in the session, counting from one.
+  uint32 ordinal = 4;
+  string guard_name = 5;
+}
+
+message AssertCeremonyReasonRequest {
+  string ceremony_id = 1;
+  // The seat saying so. Who may say what follows from what the claim
+  // is about: only whoever decided something may say what decided
+  // them, and only whoever did it may say how.
+  string role_id = 2;
+  CeremonyRecordRefState from = 3;
+  CeremonyRecordRefState to = 4;
+  // "chosen_because", "achieved_by", "follows_from",
+  // "satisfies_constraint", "violates_constraint", "supersedes" or
+  // "contradicts".
+  //
+  // "answers" is absent on purpose: it states the shape of the session
+  // rather than anyone's judgement, and only the engine asserts it.
+  string kind = 5;
+  // The reason itself, in one line. Required — an edge asserting a
+  // connection while declining to say how is a guess written down as a
+  // fact. Whatever needs paragraphs belongs on the record it points at.
+  string why = 6;
+  // "high", "medium" or "low". No fourth for "not sure enough to say":
+  // a caller who would reach for it can decline to make the claim.
+  string confidence = 7;
+}
+
+message AssertCeremonyReasonResponse {
+  CeremonyInstanceState instance = 1;
 }
 
 message DeferCeremonyGuardResponse {

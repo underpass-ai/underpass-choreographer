@@ -6,15 +6,16 @@
 //! deciding anything: what a role may do is the engine's business.
 
 use choreo_app::usecases::{
-    ApproveCeremonyGuardInput, BindCeremonyParticipantsInput, CloseCeremonyInterventionInput,
-    CollectCeremonyEvidenceInput, DeferCeremonyGuardInput, RequestCeremonyInterventionInput,
-    RespondToCeremonyInterventionInput,
+    ApproveCeremonyGuardInput, AssertCeremonyReasonInput, BindCeremonyParticipantsInput,
+    CloseCeremonyInterventionInput, CollectCeremonyEvidenceInput, DeferCeremonyGuardInput,
+    RequestCeremonyInterventionInput, RespondToCeremonyInterventionInput,
 };
 use choreo_core::error::DomainError;
 use choreo_core::value_objects::{
     CeremonyEvidenceSourceId, CeremonyGuardDeferralContent, CeremonyId,
     CeremonyInterventionContent, CeremonyInterventionId, CeremonyInterventionKind,
-    CeremonyInterventionProvenance, CeremonyInterventionTarget, GuardName, RoleId, Specialty,
+    CeremonyInterventionProvenance, CeremonyInterventionTarget, CeremonyReasonKind,
+    CeremonyRecordRef, GuardName, MemoryConfidence, RoleId, Specialty, StepId,
 };
 use choreo_proto::v1 as pb;
 use uuid::Uuid;
@@ -28,6 +29,87 @@ pub fn approve_ceremony_guard_input_from_proto(
         CeremonyId::new(request.ceremony_id)?,
         GuardName::new(request.guard_name)?,
         RoleId::new(request.role_id)?,
+    ))
+}
+
+/// Something a session produced, from the flat shape on the wire.
+///
+/// Only the field the kind names is read. A caller that fills the rest
+/// is not corrected: the discriminator is what the message means, and
+/// treating stray fields as an error would make a tolerant client an
+/// error case for no gain.
+pub fn ceremony_record_ref_from_proto(
+    state: Option<pb::CeremonyRecordRefState>,
+    field: &'static str,
+) -> Result<CeremonyRecordRef, DomainError> {
+    let state = state.ok_or(DomainError::EmptyField { field })?;
+    Ok(match state.kind.as_str() {
+        "step" => CeremonyRecordRef::step(StepId::new(state.step_id)?),
+        "agenda_item" => {
+            CeremonyRecordRef::agenda_item(CeremonyInterventionId::new(state.agenda_item)?)
+        }
+        "contribution" => CeremonyRecordRef::contribution(
+            CeremonyInterventionId::new(state.agenda_item)?,
+            state.ordinal,
+        ),
+        "guard_decision" => CeremonyRecordRef::guard_decision(GuardName::new(state.guard_name)?),
+        "transition" => CeremonyRecordRef::transition(state.ordinal),
+        _ => {
+            return Err(DomainError::InvalidCharacters {
+                field: "ceremony_record_ref.kind",
+            })
+        }
+    })
+}
+
+fn reason_kind_from_proto(raw: &str) -> Result<CeremonyReasonKind, DomainError> {
+    Ok(match raw {
+        "chosen_because" => CeremonyReasonKind::ChosenBecause,
+        "achieved_by" => CeremonyReasonKind::AchievedBy,
+        "follows_from" => CeremonyReasonKind::FollowsFrom,
+        "satisfies_constraint" => CeremonyReasonKind::SatisfiesConstraint,
+        "violates_constraint" => CeremonyReasonKind::ViolatesConstraint,
+        "supersedes" => CeremonyReasonKind::Supersedes,
+        "contradicts" => CeremonyReasonKind::Contradicts,
+        // Not an oversight: it states the shape of the session rather
+        // than anyone's judgement, and only the engine asserts it.
+        "answers" => {
+            return Err(DomainError::InvariantViolated {
+                reason: "only the engine may assert that one thing answers another",
+            })
+        }
+        _ => {
+            return Err(DomainError::InvalidCharacters {
+                field: "ceremony_reason.kind",
+            })
+        }
+    })
+}
+
+fn confidence_from_proto(raw: &str) -> Result<MemoryConfidence, DomainError> {
+    Ok(match raw {
+        "high" => MemoryConfidence::High,
+        "medium" => MemoryConfidence::Medium,
+        "low" => MemoryConfidence::Low,
+        _ => {
+            return Err(DomainError::InvalidCharacters {
+                field: "ceremony_reason.confidence",
+            })
+        }
+    })
+}
+
+pub fn assert_ceremony_reason_input_from_proto(
+    request: pb::AssertCeremonyReasonRequest,
+) -> Result<AssertCeremonyReasonInput, DomainError> {
+    Ok(AssertCeremonyReasonInput::new(
+        CeremonyId::new(request.ceremony_id)?,
+        RoleId::new(request.role_id)?,
+        ceremony_record_ref_from_proto(request.from, "ceremony_reason.from")?,
+        ceremony_record_ref_from_proto(request.to, "ceremony_reason.to")?,
+        reason_kind_from_proto(&request.kind)?,
+        request.why,
+        confidence_from_proto(&request.confidence)?,
     ))
 }
 

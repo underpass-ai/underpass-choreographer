@@ -296,6 +296,18 @@ pub(crate) async fn dispatch(
                 .ok_or_else(|| "choreographer returned no ceremony instance".to_owned())
         }
 
+        "choreo_assert_ceremony_reason" => {
+            let request = build_assert_ceremony_reason_request(arguments)?;
+            let response = client
+                .assert_ceremony_reason(request)
+                .await
+                .map_err(|s| status_error(&s))?;
+            let pb::AssertCeremonyReasonResponse { instance } = response.into_inner();
+            instance
+                .map(p2j::ceremony_instance_state_to_json)
+                .ok_or_else(|| "choreographer returned no ceremony instance".to_owned())
+        }
+
         "choreo_request_ceremony_intervention" => {
             let request = build_request_ceremony_intervention_request(arguments)?;
             let response = client
@@ -668,6 +680,61 @@ fn build_approve_ceremony_guard_request(
         ceremony_id: j2p::require_str(obj, "ceremony_id")?.to_owned(),
         guard_name: j2p::require_str(obj, "guard_name")?.to_owned(),
         role_id: j2p::require_str(obj, "role_id")?.to_owned(),
+    })
+}
+
+/// One end of a reason, from the tool's JSON.
+///
+/// Only the field the kind names is read, which is what the wire does
+/// too — the discriminator is what the object means.
+fn build_ceremony_record_ref(
+    value: &Value,
+    field: &str,
+) -> Result<pb::CeremonyRecordRefState, String> {
+    let obj = j2p::require_object(value, field)?;
+    Ok(pb::CeremonyRecordRefState {
+        kind: j2p::require_str(obj, "kind")?.to_owned(),
+        step_id: obj
+            .get("step_id")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned(),
+        agenda_item: obj
+            .get("agenda_item")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned(),
+        ordinal: obj
+            .get("ordinal")
+            .and_then(Value::as_u64)
+            .and_then(|value| u32::try_from(value).ok())
+            .unwrap_or_default(),
+        guard_name: obj
+            .get("guard_name")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned(),
+    })
+}
+
+fn build_assert_ceremony_reason_request(
+    args: &Value,
+) -> Result<pb::AssertCeremonyReasonRequest, String> {
+    let obj = j2p::require_object(args, "tools/call.arguments")?;
+    Ok(pb::AssertCeremonyReasonRequest {
+        ceremony_id: j2p::require_str(obj, "ceremony_id")?.to_owned(),
+        role_id: j2p::require_str(obj, "role_id")?.to_owned(),
+        from: Some(build_ceremony_record_ref(
+            obj.get("from").ok_or("`from` is required")?,
+            "from",
+        )?),
+        to: Some(build_ceremony_record_ref(
+            obj.get("to").ok_or("`to` is required")?,
+            "to",
+        )?),
+        kind: j2p::require_str(obj, "kind")?.to_owned(),
+        why: j2p::require_str(obj, "why")?.to_owned(),
+        confidence: j2p::require_str(obj, "confidence")?.to_owned(),
     })
 }
 

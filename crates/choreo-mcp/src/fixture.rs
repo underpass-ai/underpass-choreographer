@@ -63,6 +63,7 @@ impl ChoreoMcpToolBackend for FixtureChoreoMcpBackend {
                 "choreo_respond_to_ceremony_intervention" => ceremony_instance_fixture(),
                 "choreo_close_ceremony_intervention" => ceremony_instance_fixture(),
                 "choreo_collect_ceremony_evidence" => ceremony_instance_fixture(),
+                "choreo_assert_ceremony_reason" => ceremony_instance_fixture(),
                 "choreo_list_ceremony_instances" => {
                     json!({ "instances": [ceremony_instance_fixture()] })
                 }

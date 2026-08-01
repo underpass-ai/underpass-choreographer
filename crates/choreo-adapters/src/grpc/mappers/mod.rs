@@ -35,9 +35,10 @@ pub use ceremony_authoring::{
     validate_ceremony_draft_response_from,
 };
 pub use ceremony_human_verbs::{
-    approve_ceremony_guard_input_from_proto, bind_ceremony_participants_input_from_proto,
-    close_ceremony_intervention_input_from_proto, collect_ceremony_evidence_input_from_proto,
-    defer_ceremony_guard_input_from_proto, request_ceremony_intervention_input_from_proto,
+    approve_ceremony_guard_input_from_proto, assert_ceremony_reason_input_from_proto,
+    bind_ceremony_participants_input_from_proto, close_ceremony_intervention_input_from_proto,
+    collect_ceremony_evidence_input_from_proto, defer_ceremony_guard_input_from_proto,
+    request_ceremony_intervention_input_from_proto,
     respond_to_ceremony_intervention_input_from_proto,
 };
 pub use ceremony_instance::ceremony_instance_state_from;

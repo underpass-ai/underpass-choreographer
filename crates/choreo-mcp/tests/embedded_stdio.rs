@@ -141,6 +141,7 @@ async fn embedded_server_advertises_only_executable_tools() {
             "choreo_respond_to_ceremony_intervention",
             "choreo_close_ceremony_intervention",
             "choreo_collect_ceremony_evidence",
+            "choreo_assert_ceremony_reason",
             "choreo_validate_ceremony_draft",
             "choreo_explain_ceremony_draft",
             "choreo_publish_ceremony_definition",
@@ -718,7 +719,7 @@ async fn embedded_binary_completes_incremental_human_authorization_over_stdio() 
     let completed = read_response(&mut lines).await;
 
     assert_eq!(initialized["result"]["metadata"]["backend"], "embedded");
-    assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 18);
+    assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 19);
     assert_eq!(structured(&started)["next_step_id"], "investigate");
     assert_eq!(
         structured(&stepped)["waiting_for_human"],
@@ -821,6 +822,114 @@ fn request_intervention_call(
         arguments["provenance"] = provenance.clone();
     }
     tool_call(id, "choreo_request_ceremony_intervention", &arguments)
+}
+
+/// A seat can say why one contribution led to another, over the wire.
+///
+/// And cannot say two things: what only the engine observes, and what
+/// only somebody else could testify to. Those refusals are the whole
+/// authority model, and they have to survive the crossing — a rule
+/// enforced in the aggregate and waved through by the transport would
+/// be no rule at all.
+#[tokio::test]
+async fn a_seat_says_why_over_stdio_and_is_refused_what_is_not_its_to_say() {
+    let server = ChoreoMcpServer::embedded();
+    let ceremony_id = "embedded-reasons";
+
+    send(&server, start_collaborative_ceremony_call(1, ceremony_id)).await;
+    for (id, item, question) in [
+        (2, "what-happened", "What did you see?"),
+        (3, "what-now", "What should we do?"),
+    ] {
+        send(
+            &server,
+            request_intervention_call(
+                id,
+                ceremony_id,
+                item,
+                "opinion",
+                None,
+                question,
+                &json!({}),
+                None,
+            ),
+        )
+        .await;
+    }
+    for (id, item, said) in [
+        (4, "what-happened", "the queue was backing up"),
+        (5, "what-now", "roll back rather than restart"),
+    ] {
+        let responded = send(
+            &server,
+            respond_intervention_call(id, ceremony_id, item, "OBSERVER", said, &json!({})),
+        )
+        .await;
+        assert!(
+            responded["result"]["isError"] != json!(true),
+            "the contribution did not land: {responded}"
+        );
+    }
+
+    let said_why = send(
+        &server,
+        reason_call(
+            6,
+            ceremony_id,
+            "OBSERVER",
+            "chosen_because",
+            "the queue growth is what made a rollback necessary",
+        ),
+    )
+    .await;
+    assert!(
+        said_why["result"]["isError"] != json!(true),
+        "a seat could not say why its own contribution was made: {said_why}"
+    );
+
+    let structural = send(
+        &server,
+        reason_call(7, ceremony_id, "OBSERVER", "answers", "because it does"),
+    )
+    .await;
+    assert_eq!(
+        structural["result"]["isError"],
+        json!(true),
+        "the shape of the session is the engine's to state, not a seat's"
+    );
+
+    let someone_elses = send(
+        &server,
+        reason_call(
+            8,
+            ceremony_id,
+            "DATABASE_SPECIALIST",
+            "chosen_because",
+            "they must have thought the queue mattered",
+        ),
+    )
+    .await;
+    assert_eq!(
+        someone_elses["result"]["isError"],
+        json!(true),
+        "only whoever decided something may say what decided them"
+    );
+}
+
+fn reason_call(id: u64, ceremony_id: &str, role_id: &str, kind: &str, why: &str) -> Value {
+    tool_call(
+        id,
+        "choreo_assert_ceremony_reason",
+        &json!({
+            "ceremony_id": ceremony_id,
+            "role_id": role_id,
+            "from": {"kind": "contribution", "agenda_item": "what-now", "ordinal": 0},
+            "to": {"kind": "contribution", "agenda_item": "what-happened", "ordinal": 0},
+            "kind": kind,
+            "why": why,
+            "confidence": "high",
+        }),
+    )
 }
 
 fn respond_intervention_call(
