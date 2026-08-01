@@ -11,6 +11,7 @@ use uuid::Uuid;
 use crate::mermaid::CeremonyConversationDiagram;
 use crate::yaml::CeremonyDefinitionYaml;
 
+use super::actor_kind::actor_kind_from_proto;
 use super::attributes::attributes_from_struct;
 
 const DEFAULT_LEASE_OWNER_ID: &str = "grpc-run-ceremony";
@@ -43,6 +44,8 @@ pub fn run_ceremony_input_from_proto(
         context,
         lease_owner_id,
         lease_ttl,
+        request.actor_id,
+        actor_kind_from_proto(&request.actor_kind, "actor_kind")?,
     ))
 }
 
@@ -132,6 +135,8 @@ roles:
     #[test]
     fn request_maps_yaml_to_run_ceremony_input() {
         let input = run_ceremony_input_from_proto(pb::RunCeremonyRequest {
+            actor_id: "operator-1".to_owned(),
+            actor_kind: "service".to_owned(),
             ceremony_id: "ceremony-rpc-1".to_owned(),
             definition_yaml: CEREMONY.to_owned(),
             context: None,

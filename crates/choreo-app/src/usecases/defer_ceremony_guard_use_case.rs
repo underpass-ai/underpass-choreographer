@@ -77,7 +77,7 @@ impl DeferCeremonyGuardUseCase {
         )?;
         // Deciding not to decide is a decision, and it lands with its
         // record for the same reason an approval does.
-        let instance = self.journal.commit(session, vec![fact]).await?;
+        let instance = self.journal.commit(session, vec![fact]).await?.instance;
         // A human decision is the kind a later session weighs hardest,
         // and now it can say who made it.
         self.memory

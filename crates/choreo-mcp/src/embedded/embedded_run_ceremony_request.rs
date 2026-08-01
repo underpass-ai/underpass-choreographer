@@ -1,11 +1,13 @@
 use choreo_app::usecases::{RunCeremonyInput, RunCeremonyOutput};
-use choreo_core::value_objects::{CeremonyContext, CeremonyId, DurationMs, LeaseOwnerId};
+use choreo_core::value_objects::{
+    AuditActorKind, CeremonyContext, CeremonyId, DurationMs, LeaseOwnerId,
+};
 use choreo_embedded::EmbeddedChoreographer;
 use serde_json::Value;
 use uuid::Uuid;
 
 use super::embedded_request_fields::{
-    context_from_json, optional_string, optional_u64, required_string,
+    context_from_json, optional_string, optional_u64, required_actor_kind, required_string,
 };
 
 const DEFAULT_LEASE_OWNER_ID: &str = "choreo-mcp-embedded";
@@ -19,6 +21,8 @@ pub(crate) struct EmbeddedRunCeremonyRequest {
     context: CeremonyContext,
     lease_owner_id: LeaseOwnerId,
     lease_ttl: DurationMs,
+    actor_id: String,
+    actor_kind: AuditActorKind,
 }
 
 impl EmbeddedRunCeremonyRequest {
@@ -43,6 +47,8 @@ impl EmbeddedRunCeremonyRequest {
                 self.context,
                 self.lease_owner_id,
                 self.lease_ttl,
+                self.actor_id,
+                self.actor_kind,
             ))
             .await
             .map_err(|error| format!("ceremony execution failed: {error}"))
@@ -76,6 +82,8 @@ impl TryFrom<&Value> for EmbeddedRunCeremonyRequest {
             } else {
                 lease_ttl_ms
             }),
+            actor_id: required_string(object, "actor_id")?,
+            actor_kind: required_actor_kind(object, "actor_kind")?,
         })
     }
 }

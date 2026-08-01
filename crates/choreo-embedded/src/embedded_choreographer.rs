@@ -164,7 +164,7 @@ impl EmbeddedChoreographer {
     pub async fn run(&self, input: RunCeremonyInput) -> Result<RunCeremonyOutput, DomainError> {
         RunCeremonyUseCase::new(
             self.definitions.clone(),
-            self.instances.clone(),
+            self.journal.clone(),
             self.step_handler.clone(),
             self.transcript_store.clone(),
             self.clock.clone(),

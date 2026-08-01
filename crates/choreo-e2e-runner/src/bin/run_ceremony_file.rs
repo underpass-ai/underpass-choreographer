@@ -43,6 +43,8 @@ async fn main() -> Result<()> {
 
     let response = client
         .run_ceremony(RunCeremonyRequest {
+            actor_id: "operator-1".to_owned(),
+            actor_kind: "service".to_owned(),
             ceremony_id: ceremony_id.clone(),
             definition_yaml,
             context,

@@ -16,6 +16,8 @@ async fn run_sprint_planning_executes_threaded_ceremony() {
 
     let response = client
         .run_ceremony(RunCeremonyRequest {
+            actor_id: "operator-1".to_owned(),
+            actor_kind: "service".to_owned(),
             ceremony_id: "integration-sprint-planning".to_owned(),
             definition_yaml: SPRINT_PLANNING_CEREMONY.to_owned(),
             context: None,

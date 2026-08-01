@@ -15,6 +15,8 @@ pub(crate) async fn verify_editorial_meeting_ceremony_against_vllm_kind(
 
     let response = client
         .run_ceremony(RunCeremonyRequest {
+            actor_id: "operator-1".to_owned(),
+            actor_kind: "service".to_owned(),
             ceremony_id: "e2e-editorial-planning-meeting-vllm".to_owned(),
             definition_yaml: definition.as_yaml().to_owned(),
             context: None,

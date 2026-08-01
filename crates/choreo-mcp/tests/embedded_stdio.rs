@@ -824,6 +824,8 @@ fn run_ceremony_call(id: u64, ceremony_id: &str) -> Value {
             "arguments": {
                 "ceremony_id": ceremony_id,
                 "definition_yaml": CEREMONY_YAML,
+                "actor_id": "smoke-operator",
+                "actor_kind": "service",
                 "context": { "requested_by": "codex-smoke" }
             }
         })),

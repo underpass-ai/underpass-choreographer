@@ -72,6 +72,8 @@ fn input(definition: CeremonyDefinition) -> RunCeremonyInput {
         CeremonyContext::empty(),
         LeaseOwnerId::new("embedded-host").unwrap(),
         DurationMs::from_millis(30_000),
+        "operator-1",
+        AuditActorKind::Service,
     )
 }
 

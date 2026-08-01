@@ -76,7 +76,7 @@ impl ApproveCeremonyGuardUseCase {
         // The session and the record of a human having decided land
         // together. Apart, a crash between them leaves an approval
         // nobody can show was ever made.
-        let instance = self.journal.commit(session, vec![fact]).await?;
+        let instance = self.journal.commit(session, vec![fact]).await?.instance;
         // A human decision is the kind a later session weighs hardest,
         // and now it can say who made it.
         self.memory

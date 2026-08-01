@@ -12,6 +12,8 @@ pub(crate) async fn verify_speaker_talk_qa_ceremony(
 ) -> Result<()> {
     let response = client
         .run_ceremony(RunCeremonyRequest {
+            actor_id: "operator-1".to_owned(),
+            actor_kind: "service".to_owned(),
             ceremony_id: "e2e-speaker-talk-qa".to_owned(),
             definition_yaml: SPEAKER_TALK_QA_CEREMONY.to_owned(),
             context: None,

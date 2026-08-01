@@ -1,5 +1,7 @@
 use choreo_core::entities::CeremonyDefinition;
-use choreo_core::value_objects::{CeremonyContext, CeremonyId, DurationMs, LeaseOwnerId};
+use choreo_core::value_objects::{
+    AuditActorKind, CeremonyContext, CeremonyId, DurationMs, LeaseOwnerId,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunCeremonyInput {
@@ -8,6 +10,8 @@ pub struct RunCeremonyInput {
     context: CeremonyContext,
     lease_owner_id: LeaseOwnerId,
     lease_ttl: DurationMs,
+    actor_id: String,
+    actor_kind: AuditActorKind,
 }
 
 impl RunCeremonyInput {
@@ -18,6 +22,8 @@ impl RunCeremonyInput {
         context: CeremonyContext,
         lease_owner_id: LeaseOwnerId,
         lease_ttl: DurationMs,
+        actor_id: impl Into<String>,
+        actor_kind: AuditActorKind,
     ) -> Self {
         Self {
             id,
@@ -25,6 +31,8 @@ impl RunCeremonyInput {
             context,
             lease_owner_id,
             lease_ttl,
+            actor_id: actor_id.into(),
+            actor_kind,
         }
     }
 
@@ -62,6 +70,8 @@ impl RunCeremonyInput {
         CeremonyContext,
         LeaseOwnerId,
         DurationMs,
+        String,
+        AuditActorKind,
     ) {
         (
             self.id,
@@ -69,6 +79,8 @@ impl RunCeremonyInput {
             self.context,
             self.lease_owner_id,
             self.lease_ttl,
+            self.actor_id,
+            self.actor_kind,
         )
     }
 }

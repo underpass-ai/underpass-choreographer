@@ -25,6 +25,8 @@ async fn a_finished_ceremony_can_be_read_back_over_grpc() {
 
     let run = client
         .run_ceremony(RunCeremonyRequest {
+            actor_id: "operator-1".to_owned(),
+            actor_kind: "service".to_owned(),
             ceremony_id: CEREMONY_ID.to_owned(),
             definition_yaml: EDITORIAL_MEETING_CEREMONY.to_owned(),
             context: None,

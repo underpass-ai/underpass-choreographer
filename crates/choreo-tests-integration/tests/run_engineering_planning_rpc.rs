@@ -30,6 +30,8 @@ async fn run_engineering_planning_executes_with_a_context_brief() {
 
     let response = client
         .run_ceremony(RunCeremonyRequest {
+            actor_id: "operator-1".to_owned(),
+            actor_kind: "service".to_owned(),
             ceremony_id: "integration-engineering-planning".to_owned(),
             definition_yaml: ENGINEERING_PLANNING_CEREMONY.to_owned(),
             context: Some(brief_context(

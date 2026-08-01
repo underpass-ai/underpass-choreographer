@@ -83,7 +83,7 @@ impl RespondToCeremonyInterventionUseCase {
             input.role_kind,
             now,
         )?;
-        let instance = self.journal.commit(session, vec![fact]).await?;
+        let instance = self.journal.commit(session, vec![fact]).await?.instance;
         // After the session is safely stored, never before: a memory
         // of something that failed to persist would outlive the thing
         // it describes.

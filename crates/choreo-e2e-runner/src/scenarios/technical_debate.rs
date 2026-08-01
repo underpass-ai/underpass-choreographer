@@ -12,6 +12,8 @@ pub(crate) async fn verify_technical_debate_ceremony(
 ) -> Result<()> {
     let response = client
         .run_ceremony(RunCeremonyRequest {
+            actor_id: "operator-1".to_owned(),
+            actor_kind: "service".to_owned(),
             ceremony_id: "e2e-technical-debate".to_owned(),
             definition_yaml: TECHNICAL_DEBATE_CEREMONY.to_owned(),
             context: None,

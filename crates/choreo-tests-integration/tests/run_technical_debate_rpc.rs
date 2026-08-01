@@ -16,6 +16,8 @@ async fn run_technical_debate_executes_threaded_ceremony() {
 
     let response = client
         .run_ceremony(RunCeremonyRequest {
+            actor_id: "operator-1".to_owned(),
+            actor_kind: "service".to_owned(),
             ceremony_id: "integration-technical-debate".to_owned(),
             definition_yaml: TECHNICAL_DEBATE_CEREMONY.to_owned(),
             context: None,

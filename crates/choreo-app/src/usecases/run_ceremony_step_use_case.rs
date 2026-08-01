@@ -108,7 +108,7 @@ impl RunCeremonyStepUseCase {
             input.role_kind,
             now,
         )?;
-        let instance = self.journal.commit(session, vec![started]).await?;
+        let instance = self.journal.commit(session, vec![started]).await?.instance;
 
         let transcript = self.transcript_store.transcript(instance.id()).await?;
         let request = CeremonyStepHandlerRequest::new(
@@ -148,7 +148,7 @@ impl RunCeremonyStepUseCase {
             input.role_kind,
             finished_at,
         )?;
-        let refreshed = self.journal.commit(session, vec![finished]).await?;
+        let refreshed = self.journal.commit(session, vec![finished]).await?.instance;
         if result.is_success() {
             self.transcript_store
                 .append(

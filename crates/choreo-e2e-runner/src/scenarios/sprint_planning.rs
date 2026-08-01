@@ -12,6 +12,8 @@ pub(crate) async fn verify_sprint_planning_ceremony(
 ) -> Result<()> {
     let response = client
         .run_ceremony(RunCeremonyRequest {
+            actor_id: "operator-1".to_owned(),
+            actor_kind: "service".to_owned(),
             ceremony_id: "e2e-sprint-planning".to_owned(),
             definition_yaml: SPRINT_PLANNING_CEREMONY.to_owned(),
             context: None,

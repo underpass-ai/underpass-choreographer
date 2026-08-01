@@ -83,16 +83,28 @@ impl SessionJournal {
     /// A conflict is returned as one rather than as an invariant
     /// violation: the caller lost a race and should read again, which
     /// is a different instruction from "this can never work".
+    ///
+    /// # Why this hands the session back rather than the instance
+    ///
+    /// A caller that writes once wants the stored session and nothing
+    /// else. A caller that keeps going — the driver, running a whole
+    /// ceremony through — needs the revision its next commit has to
+    /// hold, and the only alternatives are reading the session again
+    /// for something already known, or working the next revision out
+    /// on its own, which is this type's job and not a caller's.
     pub async fn commit(
         &self,
         session: LoadedSession,
         facts: Vec<AuditFact>,
-    ) -> Result<CeremonyInstance, DomainError> {
+    ) -> Result<LoadedSession, DomainError> {
         let LoadedSession { instance, expected } = session;
         let commit = CeremonyCommit::new(instance.clone(), expected, facts, Vec::new())?;
 
         match self.unit_of_work.commit(commit).await? {
-            CommitOutcome::Committed { .. } => Ok(instance),
+            CommitOutcome::Committed { revision, .. } => Ok(LoadedSession {
+                instance,
+                expected: ExpectedRevision::Exactly(revision),
+            }),
             CommitOutcome::Conflict { .. } => Err(DomainError::Conflict {
                 what: "ceremony_instance",
             }),
@@ -115,12 +127,15 @@ impl SessionJournal {
         &self,
         instance: CeremonyInstance,
         facts: Vec<AuditFact>,
-    ) -> Result<CeremonyInstance, DomainError> {
+    ) -> Result<LoadedSession, DomainError> {
         let commit =
             CeremonyCommit::new(instance.clone(), ExpectedRevision::New, facts, Vec::new())?;
 
         match self.unit_of_work.commit(commit).await? {
-            CommitOutcome::Committed { .. } => Ok(instance),
+            CommitOutcome::Committed { revision, .. } => Ok(LoadedSession {
+                instance,
+                expected: ExpectedRevision::Exactly(revision),
+            }),
             CommitOutcome::Conflict { .. } => Err(DomainError::AlreadyExists {
                 what: "ceremony_instance",
             }),

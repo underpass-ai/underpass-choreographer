@@ -98,7 +98,7 @@ impl CollectCeremonyEvidenceUseCase {
             input.role_kind,
             now,
         )?;
-        let instance = self.journal.commit(session, facts).await?;
+        let instance = self.journal.commit(session, facts).await?.instance;
         // The contribution and what backs it are remembered together,
         // because an observation whose evidence arrived separately
         // would read as a claim nobody checked.

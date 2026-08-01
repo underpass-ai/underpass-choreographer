@@ -283,7 +283,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
     let run_ceremony = Arc::new(
         RunCeremonyUseCase::new(
             ceremony_definitions.clone(),
-            ceremony_instances.clone(),
+            ceremony_journal.clone(),
             ceremony_step_handler.clone(),
             ceremony_transcript_store.clone(),
             clock.clone(),

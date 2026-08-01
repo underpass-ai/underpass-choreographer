@@ -12,6 +12,8 @@ pub(crate) async fn verify_editorial_meeting_ceremony_diagram(
 ) -> Result<()> {
     let response = client
         .run_ceremony(RunCeremonyRequest {
+            actor_id: "operator-1".to_owned(),
+            actor_kind: "service".to_owned(),
             ceremony_id: "e2e-editorial-planning-meeting".to_owned(),
             definition_yaml: EDITORIAL_MEETING_CEREMONY.to_owned(),
             context: None,

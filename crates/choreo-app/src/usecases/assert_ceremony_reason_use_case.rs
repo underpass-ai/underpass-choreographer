@@ -75,7 +75,7 @@ impl AssertCeremonyReasonUseCase {
         // together.
         let fact =
             session_facts::reason_asserted(&session.instance, &asserted_by, input.role_kind, now)?;
-        let instance = self.journal.commit(session, vec![fact]).await?;
+        let instance = self.journal.commit(session, vec![fact]).await?.instance;
         // The reason a later session will follow, sent on once the
         // session that holds it is safely stored.
         self.memory

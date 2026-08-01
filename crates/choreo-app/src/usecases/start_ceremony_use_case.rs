@@ -58,7 +58,10 @@ impl StartCeremonyUseCase {
         // badly is refused without a session being left behind.
         let fact =
             session_facts::ceremony_started(&instance, &input.actor_id, input.actor_kind, now)?;
-        self.journal.open(instance, vec![fact]).await
+        self.journal
+            .open(instance, vec![fact])
+            .await
+            .map(|session| session.instance)
     }
 }
 

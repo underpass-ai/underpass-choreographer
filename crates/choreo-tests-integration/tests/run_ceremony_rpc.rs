@@ -12,6 +12,8 @@ async fn run_ceremony_executes_yaml_and_returns_trace_diagram() {
 
     let response = client
         .run_ceremony(RunCeremonyRequest {
+            actor_id: "operator-1".to_owned(),
+            actor_kind: "service".to_owned(),
             ceremony_id: "integration-editorial-meeting".to_owned(),
             definition_yaml: EDITORIAL_MEETING_CEREMONY.to_owned(),
             context: None,

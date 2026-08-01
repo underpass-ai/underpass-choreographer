@@ -16,6 +16,8 @@ async fn run_daily_standup_executes_threaded_ceremony() {
 
     let response = client
         .run_ceremony(RunCeremonyRequest {
+            actor_id: "operator-1".to_owned(),
+            actor_kind: "service".to_owned(),
             ceremony_id: "integration-daily-standup".to_owned(),
             definition_yaml: DAILY_STANDUP_CEREMONY.to_owned(),
             context: None,

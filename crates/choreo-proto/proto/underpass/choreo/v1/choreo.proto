@@ -634,6 +634,16 @@ message DeleteContractResponse {
 message RunCeremonyRequest {
   // Optional. When empty the server mints a ceremony id.
   string ceremony_id = 1;
+  // Who is running it, in whatever terms you identify callers by.
+  //
+  // One run drives a whole ceremony — opening it, taking its steps,
+  // moving it on — and every fact it seals names this caller. The seats
+  // for steps and transitions come from the definition; what fills them
+  // is `actor_kind`.
+  string actor_id = 6;
+  // What kind of party that is: "human", "agent", "service" or
+  // "engine". Refused when missing or unrecognised.
+  string actor_kind = 7;
   // Declarative ceremony definition in the YAML format accepted by
   // Choreographer's ceremony YAML adapter.
   string definition_yaml = 2;

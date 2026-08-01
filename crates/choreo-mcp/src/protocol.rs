@@ -558,10 +558,16 @@ fn start_ceremony_schema() -> Value {
     json!({
         "type": "object",
         "additionalProperties": false,
-        "required": ["definition_yaml"],
+        "required": ["definition_yaml", "actor_id", "actor_kind"],
         "properties": {
             "ceremony_id": string_schema("Optional stable ceremony instance id. The server mints one when omitted."),
             "definition_yaml": string_schema("Declarative ceremony YAML definition."),
+            "actor_id": string_schema("Who is opening it, in whatever terms you identify callers by. Not a role from the definition: at the start its roles are not filled yet, and whoever opens a session may be a participant, an operator, or a scheduler that never takes part."),
+            "actor_kind": {
+                "type": "string",
+                "enum": ["human", "agent", "service", "engine"],
+                "description": "What kind of party that is. Refused when missing or unrecognised, like every other actor kind."
+            },
             "context": {
                 "type": "object",
                 "additionalProperties": true,

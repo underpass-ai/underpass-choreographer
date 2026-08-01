@@ -78,7 +78,10 @@ impl CloseCeremonyInterventionUseCase {
             input.role_kind,
             now,
         )?;
-        self.journal.commit(session, vec![fact]).await
+        self.journal
+            .commit(session, vec![fact])
+            .await
+            .map(|session| session.instance)
     }
 }
 

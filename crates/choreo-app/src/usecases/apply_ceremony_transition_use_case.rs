@@ -73,7 +73,7 @@ impl ApplyCeremonyTransitionUseCase {
         // The move and the state it moved to land together. Apart, a
         // crash between them leaves a session sitting in a state no
         // recorded move can account for.
-        let instance = self.journal.commit(session, facts).await?;
+        let instance = self.journal.commit(session, facts).await?.instance;
         // A transition is how a session reaches its end, so this is
         // where an ending becomes something a later session can weigh.
         // Nothing is written while it is still running.
