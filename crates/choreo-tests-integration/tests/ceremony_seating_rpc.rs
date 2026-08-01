@@ -90,6 +90,8 @@ async fn a_seated_role_sends_its_work_to_the_panel_the_session_chose() {
     let seated_session = client
         .bind_ceremony_participants(BindCeremonyParticipantsRequest {
             ceremony_id: ceremony_id.to_owned(),
+            actor_id: "operator-1".to_owned(),
+            actor_kind: "service".to_owned(),
             seating: HashMap::from([("RISK_REVIEWER".to_owned(), "senior_sre_panel".to_owned())]),
         })
         .await
@@ -185,6 +187,8 @@ async fn a_seat_the_ceremony_never_declared_is_refused() {
     let status = client
         .bind_ceremony_participants(BindCeremonyParticipantsRequest {
             ceremony_id: ceremony_id.to_owned(),
+            actor_id: "operator-1".to_owned(),
+            actor_kind: "service".to_owned(),
             seating: HashMap::from([("NOT_A_ROLE".to_owned(), "senior_sre_panel".to_owned())]),
         })
         .await
@@ -203,6 +207,8 @@ async fn seating_nobody_is_refused_rather_than_answered_with_done() {
     let status = client
         .bind_ceremony_participants(BindCeremonyParticipantsRequest {
             ceremony_id: ceremony_id.to_owned(),
+            actor_id: "operator-1".to_owned(),
+            actor_kind: "service".to_owned(),
             seating: HashMap::new(),
         })
         .await
@@ -222,6 +228,8 @@ async fn a_panel_can_be_changed_halfway_through() {
         client
             .bind_ceremony_participants(BindCeremonyParticipantsRequest {
                 ceremony_id: ceremony_id.to_owned(),
+                actor_id: "operator-1".to_owned(),
+                actor_kind: "service".to_owned(),
                 seating: HashMap::from([("RISK_REVIEWER".to_owned(), specialty.to_owned())]),
             })
             .await

@@ -1200,6 +1200,15 @@ message BindCeremonyParticipantsRequest {
   // Role id to specialty. Empty seating is refused: it would change
   // nothing and answering "done" to it would be a small lie.
   map<string, string> seating = 2;
+  // Who is seating them, in whatever terms you identify callers by.
+  //
+  // Not a role from the definition: seating the table is something
+  // done to a session rather than in it, and whoever does it need hold
+  // no seat at all.
+  string actor_id = 3;
+  // What kind of party that is: "human", "agent", "service" or
+  // "engine". Refused when missing or unrecognised.
+  string actor_kind = 4;
 }
 
 message BindCeremonyParticipantsResponse {

@@ -249,7 +249,12 @@ pub fn bind_ceremony_participants_input_from_proto(
         .into_iter()
         .map(|(role_id, specialty)| Ok((RoleId::new(role_id)?, Specialty::new(specialty)?)))
         .collect::<Result<Vec<_>, DomainError>>()?;
-    BindCeremonyParticipantsInput::new(CeremonyId::new(request.ceremony_id)?, seating)
+    BindCeremonyParticipantsInput::new(
+        CeremonyId::new(request.ceremony_id)?,
+        seating,
+        request.actor_id,
+        actor_kind_from_proto(&request.actor_kind, "actor_kind")?,
+    )
 }
 
 #[cfg(test)]

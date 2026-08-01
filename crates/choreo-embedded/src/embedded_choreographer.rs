@@ -231,7 +231,7 @@ impl EmbeddedChoreographer {
     ) -> Result<CeremonyInstance, DomainError> {
         BindCeremonyParticipantsUseCase::new(
             self.resolve_definition(),
-            self.instances.clone(),
+            self.journal.clone(),
             self.clock.clone(),
         )
         .execute(input)

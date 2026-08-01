@@ -6,7 +6,7 @@ use choreo_core::value_objects::{CeremonyId, RoleId, Specialty};
 use choreo_embedded::EmbeddedChoreographer;
 use serde_json::Value;
 
-use super::embedded_request_fields::required_string;
+use super::embedded_request_fields::{required_actor_kind, required_string};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct EmbeddedBindCeremonyParticipantsRequest {
@@ -53,6 +53,8 @@ impl TryFrom<&Value> for EmbeddedBindCeremonyParticipantsRequest {
                 CeremonyId::new(required_string(object, "ceremony_id")?)
                     .map_err(|error| error.to_string())?,
                 seats,
+                required_string(object, "actor_id")?,
+                required_actor_kind(object, "actor_kind")?,
             )
             .map_err(|error| error.to_string())?,
         })

@@ -382,7 +382,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
     ));
     let bind_ceremony_participants = Arc::new(BindCeremonyParticipantsUseCase::new(
         resolve_ceremony_definition.clone(),
-        ceremony_instances.clone(),
+        ceremony_journal.clone(),
         clock.clone(),
     ));
 

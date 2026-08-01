@@ -415,6 +415,8 @@ pub(crate) async fn dispatch(
                 .and_then(Value::as_object)
                 .ok_or_else(|| "missing required object `seating`".to_owned())?;
             let request = pb::BindCeremonyParticipantsRequest {
+                actor_id: j2p::require_str(obj, "actor_id")?.to_owned(),
+                actor_kind: j2p::require_str(obj, "actor_kind")?.to_owned(),
                 ceremony_id: j2p::require_str(obj, "ceremony_id")?.to_owned(),
                 seating: seating
                     .iter()

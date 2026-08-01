@@ -17,8 +17,9 @@ use choreo_core::entities::{AuditFact, CeremonyDefinition, CeremonyInstance};
 use choreo_core::error::DomainError;
 use choreo_core::value_objects::{
     AuditActor, AuditActorKind, AuditEventType, CeremonyEvidenceSourceId, CeremonyInterventionId,
-    EventId, GuardName, RoleId, StepAttempt, StepId, StepResult,
+    EventId, GuardName, RoleId, Specialty, StepAttempt, StepId, StepResult,
 };
+use std::collections::BTreeMap;
 use time::OffsetDateTime;
 
 /// The fact that a human guard was let through.
@@ -370,6 +371,45 @@ pub(crate) fn ceremony_started(
         AuditEventType::CeremonyInstanceStarted,
         "session",
         AuditActor::new(started_by, started_by_kind, None)?,
+        occurred_at,
+    )
+}
+
+/// The fact that somebody seated the table.
+///
+/// # Why the id is the seating itself
+///
+/// A role can be seated more than once — `bind_participant` replaces
+/// rather than refuses — so an id keyed on the roles alone would fold a
+/// genuine re-seating into the first one. But the session keeps only
+/// the current seating, never a history of them, so there is no
+/// position to number either.
+///
+/// So the seating *is* the identity: which roles, to which specialties.
+/// A retry derives the same id, which is what keeps it idempotent, and
+/// seating a role somewhere else derives a different one.
+///
+/// What this folds, on purpose: re-seating a role to the specialty it
+/// already had. That call changes a timestamp and nothing an auditor
+/// would ask about, and one entry saying the table is seated thus is
+/// the truer record of it.
+pub(crate) fn participants_bound(
+    instance: &CeremonyInstance,
+    seating: &BTreeMap<RoleId, Specialty>,
+    seated_by: &str,
+    seated_by_kind: AuditActorKind,
+    occurred_at: OffsetDateTime,
+) -> Result<AuditFact, DomainError> {
+    let seated = seating
+        .iter()
+        .map(|(role_id, specialty)| format!("{role_id}={specialty}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    fact(
+        instance,
+        AuditEventType::ParticipantsBound,
+        &format!("seating:{seated}"),
+        AuditActor::new(seated_by, seated_by_kind, None)?,
         occurred_at,
     )
 }

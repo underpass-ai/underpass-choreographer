@@ -449,9 +449,15 @@ fn grpc_tool_catalog() -> Vec<Value> {
             json!({
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["ceremony_id", "seating"],
+                "required": ["ceremony_id", "seating", "actor_id", "actor_kind"],
                 "properties": {
                     "ceremony_id": string_schema("Session being seated."),
+                    "actor_id": string_schema("Who is seating them, in whatever terms you identify callers by. Not a role from the definition: seating the table is done to a session rather than in it, and whoever does it need hold no seat at all."),
+                    "actor_kind": {
+                        "type": "string",
+                        "enum": ["human", "agent", "service", "engine"],
+                        "description": "What kind of party that is. Refused when missing or unrecognised."
+                    },
                     "seating": {
                         "type": "object",
                         "description": "Role id to specialty. At least one seat; an empty object would change nothing.",

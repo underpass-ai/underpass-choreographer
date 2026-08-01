@@ -286,6 +286,64 @@ async fn embedded_server_lists_started_instances_for_host_recovery() {
     );
 }
 
+/// Seating a table over stdio, which nothing exercised before.
+///
+/// The tool was in the catalog and in the parity list of names, and no
+/// test had ever called it. A tool nobody calls is a tool whose parser
+/// and whose declared schema have never had to agree.
+#[tokio::test]
+async fn a_table_can_be_seated_over_stdio_and_says_who_seated_it() {
+    let server = ChoreoMcpServer::embedded();
+
+    send(
+        &server,
+        start_collaborative_ceremony_call(1, "seated-table"),
+    )
+    .await;
+
+    let seated = send(
+        &server,
+        tool_call(
+            2,
+            "choreo_bind_ceremony_participants",
+            &json!({
+                "ceremony_id": "seated-table",
+                "seating": { "DATABASE_SPECIALIST": "databases" },
+                "actor_id": "smoke-operator",
+                "actor_kind": "human",
+            }),
+        ),
+    )
+    .await;
+
+    assert_eq!(
+        seated["result"]["isError"], false,
+        "seating the table failed: {seated:?}"
+    );
+
+    // The seat that was declared, refused when the caller does not say
+    // what kind of party they are — the field exists precisely so the
+    // engine never has to decide.
+    let undeclared = send(
+        &server,
+        tool_call(
+            3,
+            "choreo_bind_ceremony_participants",
+            &json!({
+                "ceremony_id": "seated-table",
+                "seating": { "QUEUE_SPECIALIST": "queues" },
+                "actor_id": "smoke-operator",
+            }),
+        ),
+    )
+    .await;
+
+    assert_eq!(
+        undeclared["result"]["isError"], true,
+        "an undeclared actor kind was accepted: {undeclared:?}"
+    );
+}
+
 #[tokio::test]
 async fn host_evidence_source_attaches_a_typed_pack_to_the_open_intervention() {
     let embedded = EmbeddedChoreographer::builder()

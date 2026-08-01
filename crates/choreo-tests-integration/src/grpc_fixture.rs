@@ -255,7 +255,7 @@ impl GrpcFixture {
         ));
         let bind_ceremony_participants = Arc::new(BindCeremonyParticipantsUseCase::new(
             resolve_ceremony_definition.clone(),
-            ceremony_instances.clone(),
+            ceremony_journal.clone(),
             clock.clone(),
         ));
         let create_council = Arc::new(CreateCouncilUseCase::new(
@@ -531,7 +531,7 @@ impl GrpcFixture {
         ));
         let bind_ceremony_participants = Arc::new(BindCeremonyParticipantsUseCase::new(
             resolve_ceremony_definition.clone(),
-            ceremony_instances.clone(),
+            ceremony_journal.clone(),
             clock.clone(),
         ));
         let create_council = Arc::new(CreateCouncilUseCase::new(
