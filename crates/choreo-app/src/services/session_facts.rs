@@ -16,7 +16,7 @@
 use choreo_core::entities::{AuditFact, CeremonyDefinition, CeremonyInstance};
 use choreo_core::error::DomainError;
 use choreo_core::value_objects::{
-    AuditActor, AuditActorKind, AuditEventType, EventId, GuardName, RoleId,
+    AuditActor, AuditActorKind, AuditEventType, CeremonyInterventionId, EventId, GuardName, RoleId,
 };
 use time::OffsetDateTime;
 
@@ -142,4 +142,21 @@ pub(crate) fn transition_applied(
         )?);
     }
     Ok(facts)
+}
+
+/// The fact that a session asked the table for something.
+pub(crate) fn intervention_requested(
+    instance: &CeremonyInstance,
+    intervention_id: &CeremonyInterventionId,
+    requested_by: &RoleId,
+    requested_by_kind: AuditActorKind,
+    occurred_at: OffsetDateTime,
+) -> Result<AuditFact, DomainError> {
+    fact(
+        instance,
+        AuditEventType::InterventionRequested,
+        &format!("intervention:{intervention_id}"),
+        actor(requested_by, requested_by_kind)?,
+        occurred_at,
+    )
 }

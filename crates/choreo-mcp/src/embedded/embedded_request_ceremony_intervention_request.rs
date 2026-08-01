@@ -1,14 +1,14 @@
 use choreo_app::usecases::RequestCeremonyInterventionInput;
 use choreo_core::value_objects::{
-    CeremonyId, CeremonyInterventionContent, CeremonyInterventionId, CeremonyInterventionKind,
-    CeremonyInterventionProvenance, CeremonyInterventionTarget, RoleId,
+    AuditActorKind, CeremonyId, CeremonyInterventionContent, CeremonyInterventionId,
+    CeremonyInterventionKind, CeremonyInterventionProvenance, CeremonyInterventionTarget, RoleId,
 };
 use choreo_embedded::EmbeddedChoreographer;
 use serde_json::Value;
 use uuid::Uuid;
 
 use super::embedded_request_fields::{
-    optional_attributes, optional_role_ids, optional_string, required_string,
+    optional_attributes, optional_role_ids, optional_string, required_actor_kind, required_string,
 };
 
 /// Validated MCP request that opens a dynamic ceremony intervention.
@@ -17,6 +17,7 @@ pub(super) struct EmbeddedRequestCeremonyInterventionRequest {
     ceremony_id: CeremonyId,
     intervention_id: CeremonyInterventionId,
     role_id: RoleId,
+    role_kind: AuditActorKind,
     kind: CeremonyInterventionKind,
     target: CeremonyInterventionTarget,
     content: CeremonyInterventionContent,
@@ -32,6 +33,7 @@ impl EmbeddedRequestCeremonyInterventionRequest {
             self.ceremony_id.clone(),
             self.intervention_id,
             self.role_id,
+            self.role_kind,
             self.kind,
             self.target,
             self.content,
@@ -67,6 +69,7 @@ impl TryFrom<&Value> for EmbeddedRequestCeremonyInterventionRequest {
                 .map_err(|error| error.to_string())?,
             intervention_id: CeremonyInterventionId::new(intervention_id)
                 .map_err(|error| error.to_string())?,
+            role_kind: required_actor_kind(object, "role_kind")?,
             role_id: RoleId::new(required_string(object, "role_id")?)
                 .map_err(|error| error.to_string())?,
             kind: parse_kind(&required_string(object, "kind")?)?,

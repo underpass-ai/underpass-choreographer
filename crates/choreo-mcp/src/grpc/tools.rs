@@ -763,6 +763,7 @@ fn build_request_ceremony_intervention_request(
         ceremony_id: j2p::require_str(obj, "ceremony_id")?.to_owned(),
         intervention_id: minted_id(obj, "intervention_id"),
         role_id: j2p::require_str(obj, "role_id")?.to_owned(),
+        role_kind: j2p::require_str(obj, "role_kind")?.to_owned(),
         kind: j2p::require_str(obj, "kind")?.to_owned(),
         target_role_ids: j2p::string_array(obj, "target_role_ids"),
         message: j2p::require_str(obj, "message")?.to_owned(),

@@ -707,11 +707,16 @@ fn request_ceremony_intervention_schema() -> Value {
     json!({
         "type": "object",
         "additionalProperties": false,
-        "required": ["ceremony_id", "role_id", "kind", "message"],
+        "required": ["ceremony_id", "role_id", "role_kind", "kind", "message"],
         "properties": {
             "ceremony_id": string_schema("Started ceremony instance id."),
             "intervention_id": string_schema("Optional stable intervention id. The server mints one when omitted."),
             "role_id": string_schema("Role requesting the intervention."),
+            "role_kind": {
+                "type": "string",
+                "enum": ["human", "agent", "service", "engine"],
+                "description": "What kind of party fills that seat. Declared by you, because only you know: the journal records who asked the table for help, and an entry that cannot say whether a person or an agent asked is not worth the write."
+            },
             "kind": {
                 "type": "string",
                 "enum": ["opinion", "investigation", "action"],

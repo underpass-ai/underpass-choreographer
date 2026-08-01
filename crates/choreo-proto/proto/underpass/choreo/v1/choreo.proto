@@ -980,6 +980,16 @@ message RequestCeremonyInterventionRequest {
   // Empty mints one server-side.
   string intervention_id = 2;
   string role_id = 3;
+  // What kind of party fills that seat: "human", "agent", "service" or
+  // "engine".
+  //
+  // Declared by you, because only you know. The journal records who
+  // asked the table for help, and an entry that cannot say whether a
+  // person or an agent asked is not worth the write.
+  //
+  // Refused when missing or unrecognised. A default would put a kind
+  // in the journal that nobody chose.
+  string role_kind = 9;
   // "opinion", "investigation" or "action".
   string kind = 4;
   // Whom it is put to. Empty asks the whole table.

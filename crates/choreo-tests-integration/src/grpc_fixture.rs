@@ -223,7 +223,7 @@ impl GrpcFixture {
         ));
         let request_ceremony_intervention = Arc::new(RequestCeremonyInterventionUseCase::new(
             resolve_ceremony_definition.clone(),
-            ceremony_instances.clone(),
+            ceremony_journal.clone(),
             clock.clone(),
         ));
         let respond_to_ceremony_intervention = Arc::new(RespondToCeremonyInterventionUseCase::new(
@@ -499,7 +499,7 @@ impl GrpcFixture {
         ));
         let request_ceremony_intervention = Arc::new(RequestCeremonyInterventionUseCase::new(
             resolve_ceremony_definition.clone(),
-            ceremony_instances.clone(),
+            ceremony_journal.clone(),
             clock.clone(),
         ));
         let respond_to_ceremony_intervention = Arc::new(RespondToCeremonyInterventionUseCase::new(

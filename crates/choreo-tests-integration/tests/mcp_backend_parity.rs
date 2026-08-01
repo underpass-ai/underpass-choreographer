@@ -178,6 +178,7 @@ async fn build_remote_session(fixture: &GrpcFixture) {
     client
         .request_ceremony_intervention(RequestCeremonyInterventionRequest {
             ceremony_id: CEREMONY_ID.to_owned(),
+            role_kind: "human".to_owned(),
             intervention_id: "item-1".to_owned(),
             role_id: "FACILITATOR".to_owned(),
             kind: "opinion".to_owned(),
@@ -229,7 +230,9 @@ async fn build_embedded_session(backend: &EmbeddedChoreoMcpBackend) {
         "choreo_defer_ceremony_guard",
         json!({
             "ceremony_id": CEREMONY_ID,
-            "role_id": "FACILITATOR", "role_kind": "human", "guard_name": "human_approved",
+            "role_id": "FACILITATOR",
+            "role_kind": "human",
+            "guard_name": "human_approved",
             "statement": "Not yet.",
             "reason": "The reviewer is out.",
             "reconsider_when": ["the reviewer is back"],
@@ -242,6 +245,7 @@ async fn build_embedded_session(backend: &EmbeddedChoreoMcpBackend) {
             "ceremony_id": CEREMONY_ID,
             "intervention_id": "item-1",
             "role_id": "FACILITATOR",
+            "role_kind": "human",
             "kind": "opinion",
             "message": "Does anyone object?",
         }),
@@ -399,6 +403,7 @@ async fn the_same_tool_calls_drive_both_backends_to_the_same_shape() {
                     "ceremony_id": "tools-parity",
                     "intervention_id": "item-1",
                     "role_id": "FACILITATOR",
+                    "role_kind": "human",
                     "kind": "opinion",
                     "message": "Does anyone object?",
                 }),

@@ -189,6 +189,7 @@ async fn an_agenda_item_is_opened_answered_and_closed() {
     let opened = client
         .request_ceremony_intervention(RequestCeremonyInterventionRequest {
             ceremony_id: ceremony_id.to_owned(),
+            role_kind: "human".to_owned(),
             intervention_id: "item-1".to_owned(),
             role_id: "APPROVER".to_owned(),
             kind: "investigation".to_owned(),
@@ -274,6 +275,7 @@ async fn collecting_evidence_says_there_is_no_source_rather_than_inventing_one()
     client
         .request_ceremony_intervention(RequestCeremonyInterventionRequest {
             ceremony_id: ceremony_id.to_owned(),
+            role_kind: "human".to_owned(),
             intervention_id: "item-1".to_owned(),
             role_id: "APPROVER".to_owned(),
             kind: "investigation".to_owned(),

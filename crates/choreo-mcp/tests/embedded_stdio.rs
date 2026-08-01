@@ -811,6 +811,7 @@ fn request_intervention_call(
         "ceremony_id": ceremony_id,
         "intervention_id": intervention_id,
         "role_id": "ENGINEER",
+        "role_kind": "human",
         "kind": kind,
         "message": message,
         "details": details,
