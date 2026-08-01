@@ -18,8 +18,10 @@ use crate::value_objects::{
     CeremonyContext, CeremonyDefinitionDigest, CeremonyEvidenceSourceId, CeremonyGuardApproval,
     CeremonyGuardDeferral, CeremonyGuardDeferralContent, CeremonyId, CeremonyInterventionContent,
     CeremonyInterventionId, CeremonyInterventionKind, CeremonyInterventionProvenance,
-    CeremonyInterventionTarget, CeremonyName, CeremonyParticipantBinding, CeremonyVersion,
-    GuardCondition, GuardName, IdempotencyKey, RoleAction, RoleId, Specialty, StateId, StepAttempt,
+    CeremonyInterventionResponse, CeremonyInterventionTarget, CeremonyName,
+    CeremonyParticipantBinding, CeremonyReason, CeremonyReasonKind, CeremonyRecordRef,
+    CeremonyTransitionRecord, CeremonyVersion, GuardCondition, GuardName, IdempotencyKey,
+    MemoryConfidence, ReasonAsserter, RoleAction, RoleId, Specialty, StateId, StepAttempt,
     StepExecutionRecord, StepId, StepLease, StepResult, StepStatus, TransitionTrigger,
 };
 
@@ -45,6 +47,22 @@ pub struct CeremonyInstance {
     /// it.
     #[serde(default)]
     guard_approvals: Vec<CeremonyGuardApproval>,
+    /// Every move this session made, in order.
+    ///
+    /// The current state says where a session is; this says how it got
+    /// there. Without it nothing could point at a move, so nothing
+    /// could say why one happened — and "why did this resolve" is the
+    /// question the whole thing is for.
+    #[serde(default)]
+    transitions: Vec<CeremonyTransitionRecord>,
+    /// Why one thing here led to another.
+    ///
+    /// Kept apart from the records rather than inside them, because a
+    /// reason is an edge and not a field: it belongs to the pair, and
+    /// putting it on either end would make it readable but not
+    /// followable.
+    #[serde(default)]
+    reasons: Vec<CeremonyReason>,
     /// Who sits in each seat for this session, where anyone was
     /// seated. A role with no binding is played the way the definition
     /// says, which is the usual case and not a lesser one.
@@ -130,6 +148,8 @@ impl CeremonyInstance {
             interventions: Vec::new(),
             guard_deferrals: Vec::new(),
             guard_approvals: Vec::new(),
+            transitions: Vec::new(),
+            reasons: Vec::new(),
             participant_bindings: BTreeMap::new(),
             context,
             idempotency_keys: BTreeSet::new(),
@@ -202,6 +222,18 @@ impl CeremonyInstance {
     #[must_use]
     pub fn guard_approvals(&self) -> &[CeremonyGuardApproval] {
         &self.guard_approvals
+    }
+
+    /// Every move this session made, in the order it made them.
+    #[must_use]
+    pub fn transitions(&self) -> &[CeremonyTransitionRecord] {
+        &self.transitions
+    }
+
+    /// Why one thing here led to another.
+    #[must_use]
+    pub fn reasons(&self) -> &[CeremonyReason] {
+        &self.reasons
     }
 
     #[must_use]
@@ -579,6 +611,7 @@ impl CeremonyInstance {
                 what: "ceremony_intervention",
             })?
             .respond(role_id, content, now)?;
+        self.record_that_it_answers(intervention_id, now);
         self.updated_at = now;
         Ok(())
     }
@@ -631,8 +664,179 @@ impl CeremonyInstance {
                 what: "ceremony_intervention",
             })?
             .respond_with_evidence(role_id, evidence_pack, now)?;
+        self.record_that_it_answers(intervention_id, now);
         self.updated_at = now;
         Ok(())
+    }
+
+    /// State why one thing here led to another.
+    ///
+    /// Its own act rather than a field on contributing, because a
+    /// reason is often known later — "in fact I did that because…" is
+    /// how people reason — and because a field gets filled in by
+    /// inertia while an act is chosen.
+    ///
+    /// What it refuses is the point:
+    ///
+    /// - a kind only the engine may assert, because a participant able
+    ///   to relabel the structure could rewrite the session's shape;
+    /// - a kind only an author may assert, claimed by anyone else,
+    ///   because nobody else has access to another's reasoning;
+    /// - either end naming something this session never produced.
+    #[allow(clippy::too_many_arguments)]
+    pub fn assert_reason_as(
+        &mut self,
+        definition: &CeremonyDefinition,
+        role_id: RoleId,
+        from: CeremonyRecordRef,
+        to: CeremonyRecordRef,
+        kind: CeremonyReasonKind,
+        why: impl Into<String>,
+        confidence: MemoryConfidence,
+        now: OffsetDateTime,
+    ) -> Result<(), DomainError> {
+        self.require_declared_role(definition, &role_id)?;
+        self.require_record(&from)?;
+        self.require_record(&to)?;
+
+        match kind.asserter() {
+            ReasonAsserter::TheEngine => {
+                return Err(DomainError::InvariantViolated {
+                    reason:
+                        "this kind of reason states the shape of the session, not a judgement, \
+                             and only the engine may assert it",
+                });
+            }
+            ReasonAsserter::ItsAuthor => {
+                if self.author_of(&from) != Some(&role_id) {
+                    return Err(DomainError::InvariantViolated {
+                        reason: "only whoever produced something may say why they decided it or \
+                                 how they did it",
+                    });
+                }
+            }
+            ReasonAsserter::AnySeat => {}
+        }
+
+        self.reasons.push(CeremonyReason::new(
+            from,
+            to,
+            kind,
+            why,
+            confidence,
+            Some(role_id),
+            now,
+        )?);
+        self.updated_at = now;
+        Ok(())
+    }
+
+    /// Who produced a record, where anyone did.
+    ///
+    /// A step has none: the engine ran it. A transition the engine
+    /// took has none either. Both are absences rather than gaps, and
+    /// they are what stops a reason of testimony being made about
+    /// something nobody can testify to.
+    fn author_of(&self, record: &CeremonyRecordRef) -> Option<&RoleId> {
+        match record {
+            CeremonyRecordRef::Step { .. } => None,
+            CeremonyRecordRef::AgendaItem { agenda_item } => self
+                .intervention(agenda_item)
+                .map(CeremonyIntervention::requested_by),
+            CeremonyRecordRef::Contribution {
+                agenda_item,
+                ordinal,
+            } => self
+                .intervention(agenda_item)
+                .and_then(|item| item.responses().get(*ordinal as usize))
+                .map(CeremonyInterventionResponse::role_id),
+            CeremonyRecordRef::GuardDecision { guard_name } => self
+                .guard_approvals
+                .iter()
+                .find(|approval| approval.guard_name() == guard_name)
+                .map(CeremonyGuardApproval::approved_by)
+                .or_else(|| {
+                    self.guard_deferrals
+                        .iter()
+                        .find(|deferral| deferral.guard_name() == guard_name)
+                        .map(CeremonyGuardDeferral::deferred_by)
+                }),
+            CeremonyRecordRef::Transition { ordinal } => self
+                .transitions
+                .get(ordinal.saturating_sub(1) as usize)
+                .and_then(CeremonyTransitionRecord::applied_by),
+        }
+    }
+
+    /// A record this session actually produced.
+    ///
+    /// Memory cannot check this — an edge there may reach something
+    /// written an hour ago — but a session knows everything it has
+    /// done, and letting a reason cite what never happened would be
+    /// declining to use the one advantage it has.
+    fn require_record(&self, record: &CeremonyRecordRef) -> Result<(), DomainError> {
+        let exists = match record {
+            CeremonyRecordRef::Step { step_id } => self.step_records.contains_key(step_id),
+            CeremonyRecordRef::AgendaItem { agenda_item } => {
+                self.intervention(agenda_item).is_some()
+            }
+            CeremonyRecordRef::Contribution {
+                agenda_item,
+                ordinal,
+            } => self
+                .intervention(agenda_item)
+                .is_some_and(|item| item.responses().len() > *ordinal as usize),
+            CeremonyRecordRef::GuardDecision { guard_name } => {
+                self.guard_approvals
+                    .iter()
+                    .any(|approval| approval.guard_name() == guard_name)
+                    || self
+                        .guard_deferrals
+                        .iter()
+                        .any(|deferral| deferral.guard_name() == guard_name)
+            }
+            CeremonyRecordRef::Transition { ordinal } => {
+                *ordinal >= 1 && (*ordinal as usize) <= self.transitions.len()
+            }
+        };
+        if exists {
+            Ok(())
+        } else {
+            Err(DomainError::NotFound {
+                what: "ceremony_record",
+            })
+        }
+    }
+
+    /// The reason the engine can see on its own: a contribution is the
+    /// reply to the item it was made against.
+    ///
+    /// The only kind it asserts. Everything explanatory comes from
+    /// whoever reasoned, because a session ending well after an action
+    /// is not the action having worked.
+    fn record_that_it_answers(
+        &mut self,
+        agenda_item: &CeremonyInterventionId,
+        now: OffsetDateTime,
+    ) {
+        let Some(ordinal) = self
+            .intervention(agenda_item)
+            .map(|item| item.responses().len())
+            .and_then(|count| u32::try_from(count.checked_sub(1)?).ok())
+        else {
+            return;
+        };
+        if let Ok(reason) = CeremonyReason::new(
+            CeremonyRecordRef::contribution(agenda_item.clone(), ordinal),
+            CeremonyRecordRef::agenda_item(agenda_item.clone()),
+            CeremonyReasonKind::Answers,
+            "a contribution made against this agenda item",
+            MemoryConfidence::High,
+            None,
+            now,
+        ) {
+            self.reasons.push(reason);
+        }
     }
 
     pub fn close_intervention_as(
@@ -670,13 +874,27 @@ impl CeremonyInstance {
             role_id,
             &RoleAction::transition(trigger.clone()),
         )?;
-        self.apply_transition(definition, trigger, now)
+        self.move_on(definition, trigger, Some(role_id.clone()), now)
     }
 
     pub fn apply_transition(
         &mut self,
         definition: &CeremonyDefinition,
         trigger: &TransitionTrigger,
+        now: OffsetDateTime,
+    ) -> Result<StateId, DomainError> {
+        self.move_on(definition, trigger, None, now)
+    }
+
+    /// The one place a session moves.
+    ///
+    /// `applied_by` is absent when the engine took the move itself,
+    /// and naming somebody would be inventing them.
+    fn move_on(
+        &mut self,
+        definition: &CeremonyDefinition,
+        trigger: &TransitionTrigger,
+        applied_by: Option<RoleId>,
         now: OffsetDateTime,
     ) -> Result<StateId, DomainError> {
         self.require_definition(definition)?;
@@ -698,7 +916,15 @@ impl CeremonyInstance {
             });
         }
 
+        let from_state = self.current_state.clone();
         self.current_state = transition.to().clone();
+        self.transitions.push(CeremonyTransitionRecord::record(
+            trigger.clone(),
+            from_state,
+            self.current_state.clone(),
+            applied_by,
+            now,
+        ));
         self.updated_at = now;
         if definition.is_terminal_state(&self.current_state) {
             self.completed_at = Some(now);
@@ -1491,5 +1717,223 @@ mod tests {
         ));
         assert!(instance.guard_approvals().is_empty());
         assert!(!instance.context().is_guard_approved(approval.name()));
+    }
+    /// A session with one agenda item and one contribution to it —
+    /// the smallest thing that has something to explain.
+    fn session_with_a_contribution(
+        definition: &CeremonyDefinition,
+    ) -> (CeremonyInstance, CeremonyInterventionId) {
+        let mut instance = instance(definition);
+        let agenda_item = CeremonyInterventionId::new("queue-check").unwrap();
+        instance
+            .request_intervention_as(
+                definition,
+                agenda_item.clone(),
+                role_id("facilitator"),
+                CeremonyInterventionKind::Investigation,
+                CeremonyInterventionTarget::roles([role_id("observer")]).unwrap(),
+                CeremonyInterventionContent::new("Inspect the queue.", Attributes::empty())
+                    .unwrap(),
+                now(),
+            )
+            .unwrap();
+        instance
+            .respond_to_intervention_as(
+                definition,
+                &agenda_item,
+                role_id("observer"),
+                CeremonyInterventionContent::new("Queue depth is stable.", Attributes::empty())
+                    .unwrap(),
+                now(),
+            )
+            .unwrap();
+        (instance, agenda_item)
+    }
+
+    /// The one reason the engine sees on its own, and it records it
+    /// without being asked.
+    #[test]
+    fn a_contribution_is_recorded_as_answering_its_agenda_item() {
+        let definition = definition();
+        let (instance, agenda_item) = session_with_a_contribution(&definition);
+
+        let [answered] = instance.reasons() else {
+            panic!("expected exactly one reason, got {:?}", instance.reasons());
+        };
+        assert_eq!(answered.kind(), CeremonyReasonKind::Answers);
+        assert_eq!(
+            answered.from(),
+            &CeremonyRecordRef::contribution(agenda_item.clone(), 0)
+        );
+        assert_eq!(answered.to(), &CeremonyRecordRef::agenda_item(agenda_item));
+        assert_eq!(
+            answered.asserted_by(),
+            None,
+            "the engine observed it; naming a seat would be inventing one"
+        );
+    }
+
+    /// Structure is not a judgement. A seat able to assert it could
+    /// rewrite the shape of the session by relabelling it.
+    #[test]
+    fn a_seat_cannot_assert_what_only_the_engine_observes() {
+        let definition = definition();
+        let (mut instance, agenda_item) = session_with_a_contribution(&definition);
+
+        let outcome = instance.assert_reason_as(
+            &definition,
+            role_id("observer"),
+            CeremonyRecordRef::contribution(agenda_item.clone(), 0),
+            CeremonyRecordRef::agenda_item(agenda_item),
+            CeremonyReasonKind::Answers,
+            "because I say it does",
+            MemoryConfidence::High,
+            now(),
+        );
+
+        assert!(matches!(
+            outcome,
+            Err(DomainError::InvariantViolated { .. })
+        ));
+    }
+
+    /// Testimony about one's own reasoning. Nobody else has access to
+    /// it, so nobody else may claim it.
+    #[test]
+    fn only_whoever_contributed_may_say_why_they_did() {
+        let definition = definition();
+        let (mut instance, agenda_item) = session_with_a_contribution(&definition);
+        let contribution = CeremonyRecordRef::contribution(agenda_item.clone(), 0);
+        let item = CeremonyRecordRef::agenda_item(agenda_item);
+
+        let by_someone_else = instance.assert_reason_as(
+            &definition,
+            role_id("facilitator"),
+            contribution.clone(),
+            item.clone(),
+            CeremonyReasonKind::ChosenBecause,
+            "they must have thought the queue mattered",
+            MemoryConfidence::Low,
+            now(),
+        );
+        assert!(matches!(
+            by_someone_else,
+            Err(DomainError::InvariantViolated { .. })
+        ));
+
+        instance
+            .assert_reason_as(
+                &definition,
+                role_id("observer"),
+                contribution,
+                item,
+                CeremonyReasonKind::ChosenBecause,
+                "the depth graph had been flat for an hour",
+                MemoryConfidence::High,
+                now(),
+            )
+            .expect("its author may say why");
+        assert_eq!(instance.reasons().len(), 2);
+    }
+
+    /// A claim about the world, not about a mind. Anyone may make one
+    /// and everyone may weigh it.
+    #[test]
+    fn any_seat_may_claim_that_one_thing_came_from_another() {
+        let definition = definition();
+        let (mut instance, agenda_item) = session_with_a_contribution(&definition);
+
+        instance
+            .assert_reason_as(
+                &definition,
+                role_id("facilitator"),
+                CeremonyRecordRef::agenda_item(agenda_item.clone()),
+                CeremonyRecordRef::contribution(agenda_item, 0),
+                CeremonyReasonKind::FollowsFrom,
+                "the item stayed open because the answer raised a new question",
+                MemoryConfidence::Medium,
+                now(),
+            )
+            .expect("a claim about the world is open to any seat");
+
+        let asserted = instance.reasons().last().unwrap();
+        assert_eq!(asserted.confidence(), MemoryConfidence::Medium);
+        assert_eq!(asserted.asserted_by(), Some(&role_id("facilitator")));
+    }
+
+    /// A session knows everything it has done, so a reason may not
+    /// cite something it never produced.
+    #[test]
+    fn a_reason_cannot_cite_something_that_never_happened() {
+        let definition = definition();
+        let (mut instance, agenda_item) = session_with_a_contribution(&definition);
+
+        let outcome = instance.assert_reason_as(
+            &definition,
+            role_id("observer"),
+            CeremonyRecordRef::contribution(agenda_item.clone(), 7),
+            CeremonyRecordRef::agenda_item(agenda_item),
+            CeremonyReasonKind::FollowsFrom,
+            "a contribution nobody made",
+            MemoryConfidence::Low,
+            now(),
+        );
+
+        assert!(matches!(
+            outcome,
+            Err(DomainError::NotFound {
+                what: "ceremony_record"
+            })
+        ));
+    }
+
+    /// A move is recorded with the seat that fired it, so "the session
+    /// resolved because…" has something to point at.
+    #[test]
+    fn a_move_is_recorded_with_whoever_made_it() {
+        let approval =
+            CeremonyGuard::new(guard_name("human_approved"), GuardCondition::HumanApproval);
+        let definition = definition_with_human_guard(&approval);
+        let mut instance = instance(&definition);
+        instance
+            .approve_guard(&definition, approval.name(), role_id("facilitator"), now())
+            .unwrap();
+
+        instance
+            .apply_transition_as(
+                &definition,
+                &role_id("facilitator"),
+                &trigger("approve"),
+                datetime!(2026-06-06 12:05:00 UTC),
+            )
+            .unwrap();
+
+        let [moved] = instance.transitions() else {
+            panic!("expected one move, got {:?}", instance.transitions());
+        };
+        assert_eq!(moved.trigger(), &trigger("approve"));
+        assert_eq!(moved.from_state(), &state_id("drafting"));
+        assert_eq!(moved.to_state(), &state_id("done"));
+        assert_eq!(moved.applied_by(), Some(&role_id("facilitator")));
+    }
+
+    /// And without one when the engine took the move itself. An
+    /// absence, not a gap — and it is what stops testimony being
+    /// claimed about something nobody can testify to.
+    #[test]
+    fn a_move_the_engine_took_names_nobody() {
+        let approval =
+            CeremonyGuard::new(guard_name("human_approved"), GuardCondition::HumanApproval);
+        let definition = definition_with_human_guard(&approval);
+        let mut instance = instance(&definition);
+        instance
+            .approve_guard(&definition, approval.name(), role_id("facilitator"), now())
+            .unwrap();
+
+        instance
+            .apply_transition(&definition, &trigger("approve"), now())
+            .unwrap();
+
+        assert_eq!(instance.transitions()[0].applied_by(), None);
     }
 }
