@@ -651,6 +651,7 @@ fn build_run_ceremony_step_request(args: &Value) -> Result<pb::RunCeremonyStepRe
     let obj = j2p::require_object(args, "tools/call.arguments")?;
     Ok(pb::RunCeremonyStepRequest {
         ceremony_id: j2p::require_str(obj, "ceremony_id")?.to_owned(),
+        actor_kind: j2p::require_str(obj, "actor_kind")?.to_owned(),
         step_id: j2p::require_str(obj, "step_id")?.to_owned(),
         lease_owner_id: j2p::optional_str(obj, "lease_owner_id")
             .unwrap_or_default()

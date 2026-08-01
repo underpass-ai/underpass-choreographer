@@ -557,10 +557,15 @@ fn run_ceremony_step_schema() -> Value {
     json!({
         "type": "object",
         "additionalProperties": false,
-        "required": ["ceremony_id", "step_id"],
+        "required": ["ceremony_id", "step_id", "actor_kind"],
         "properties": {
             "ceremony_id": string_schema("Started ceremony instance id."),
             "step_id": string_schema("Step declared in the instance's current state."),
+            "actor_kind": {
+                "type": "string",
+                "enum": ["human", "agent", "service", "engine"],
+                "description": "What kind of party is running it. Declared by you, because only you know: which seat runs this step comes from the definition, and that says which seat was required, not what turned up. This records who ran the step, not what produced its output — the handler is named by a host-defined string the engine will not classify."
+            },
             "lease_owner_id": string_schema("Optional logical runner acquiring the step lease."),
             "idempotency_key": string_schema("Optional unique execution key. The server mints one when omitted."),
             "lease_ttl_ms": {

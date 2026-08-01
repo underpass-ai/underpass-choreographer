@@ -850,6 +850,21 @@ message StartPublishedCeremonyResponse {
 message RunCeremonyStepRequest {
   string ceremony_id = 1;
   string step_id = 2;
+  // What kind of party is running it: "human", "agent", "service" or
+  // "engine".
+  //
+  // Declared by you, because only you know. Which seat runs this step
+  // comes from the definition, and that says which seat was required —
+  // not what turned up to fill it.
+  //
+  // This records who ran the step, not what produced its output. The
+  // handler that did the work is named by the definition as a
+  // host-defined string, and the engine will not classify a value it
+  // does not define.
+  //
+  // Refused when missing or unrecognised. A default would put a kind
+  // in the journal that nobody chose.
+  string actor_kind = 6;
   // Who holds the step lease. Empty takes the server default.
   string lease_owner_id = 3;
   // Repeating a call with the same key must not run the step twice.

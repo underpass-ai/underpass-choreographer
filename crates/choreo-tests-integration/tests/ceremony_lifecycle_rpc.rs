@@ -92,6 +92,7 @@ async fn a_ceremony_can_be_walked_to_its_close_one_call_at_a_time() {
         let after_step = client
             .run_ceremony_step(RunCeremonyStepRequest {
                 ceremony_id: ceremony_id.to_owned(),
+                actor_kind: "agent".to_owned(),
                 step_id: (*step_id).to_owned(),
                 lease_owner_id: "integration-test".to_owned(),
                 idempotency_key: format!("integration-lifecycle-{step_id}"),
@@ -199,6 +200,7 @@ async fn a_step_that_belongs_to_another_state_is_refused() {
     let status = client
         .run_ceremony_step(RunCeremonyStepRequest {
             ceremony_id: ceremony_id.to_owned(),
+            actor_kind: "agent".to_owned(),
             // Belongs to SYNTHESIZING; the session is in OPENING.
             step_id: "decision_summary".to_owned(),
             lease_owner_id: "integration-test".to_owned(),
@@ -259,6 +261,7 @@ async fn a_published_ceremony_is_bound_to_its_digest_and_can_be_advanced() {
     let after_step = client
         .run_ceremony_step(RunCeremonyStepRequest {
             ceremony_id: ceremony_id.to_owned(),
+            actor_kind: "agent".to_owned(),
             step_id: "open_room".to_owned(),
             lease_owner_id: "integration-test".to_owned(),
             idempotency_key: "integration-published-open-room".to_owned(),

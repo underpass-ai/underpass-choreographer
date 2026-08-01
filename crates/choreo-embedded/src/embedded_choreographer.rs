@@ -381,7 +381,7 @@ impl EmbeddedChoreographer {
     ) -> Result<StepAttempt, DomainError> {
         StartCeremonyStepUseCase::new(
             self.resolve_definition(),
-            self.instances.clone(),
+            self.journal.clone(),
             self.clock.clone(),
         )
         .execute(input)
@@ -394,7 +394,7 @@ impl EmbeddedChoreographer {
     ) -> Result<RunCeremonyStepOutput, DomainError> {
         RunCeremonyStepUseCase::new(
             self.resolve_definition(),
-            self.instances.clone(),
+            self.journal.clone(),
             self.step_handler.clone(),
             self.clock.clone(),
         )

@@ -1,11 +1,13 @@
 use choreo_app::usecases::RunCeremonyStepInput;
-use choreo_core::value_objects::{CeremonyId, DurationMs, IdempotencyKey, LeaseOwnerId, StepId};
+use choreo_core::value_objects::{
+    AuditActorKind, CeremonyId, DurationMs, IdempotencyKey, LeaseOwnerId, StepId,
+};
 use choreo_embedded::EmbeddedChoreographer;
 use serde_json::Value;
 use uuid::Uuid;
 
 use super::embedded_request_fields::{
-    load_instance_definition, optional_string, optional_u64, required_string,
+    load_instance_definition, optional_string, optional_u64, required_actor_kind, required_string,
 };
 
 const DEFAULT_LEASE_OWNER_ID: &str = "choreo-mcp-embedded";
@@ -16,6 +18,7 @@ const DEFAULT_LEASE_TTL_MS: u64 = 30_000;
 pub(super) struct EmbeddedRunCeremonyStepRequest {
     ceremony_id: CeremonyId,
     step_id: StepId,
+    actor_kind: AuditActorKind,
     lease_owner_id: LeaseOwnerId,
     idempotency_key: IdempotencyKey,
     lease_ttl: DurationMs,
@@ -36,6 +39,7 @@ impl EmbeddedRunCeremonyStepRequest {
             .run_step(RunCeremonyStepInput::new(
                 self.ceremony_id.clone(),
                 role_id,
+                self.actor_kind,
                 self.step_id,
                 self.lease_owner_id,
                 self.idempotency_key,
@@ -65,6 +69,7 @@ impl TryFrom<&Value> for EmbeddedRunCeremonyStepRequest {
                 .map_err(|error| error.to_string())?,
             step_id: StepId::new(required_string(object, "step_id")?)
                 .map_err(|error| error.to_string())?,
+            actor_kind: required_actor_kind(object, "actor_kind")?,
             lease_owner_id: LeaseOwnerId::new(lease_owner_id).map_err(|error| error.to_string())?,
             idempotency_key: IdempotencyKey::new(idempotency_key)
                 .map_err(|error| error.to_string())?,

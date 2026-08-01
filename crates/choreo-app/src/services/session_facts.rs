@@ -17,7 +17,7 @@ use choreo_core::entities::{AuditFact, CeremonyDefinition, CeremonyInstance};
 use choreo_core::error::DomainError;
 use choreo_core::value_objects::{
     AuditActor, AuditActorKind, AuditEventType, CeremonyEvidenceSourceId, CeremonyInterventionId,
-    EventId, GuardName, RoleId,
+    EventId, GuardName, RoleId, StepAttempt, StepId, StepResult,
 };
 use time::OffsetDateTime;
 
@@ -261,6 +261,89 @@ pub(crate) fn reason_asserted(
         AuditEventType::ReasonAsserted,
         &format!("reason:{ordinal}"),
         actor(asserted_by, asserted_by_kind)?,
+        occurred_at,
+    )
+}
+
+/// The fact that a seat took a step to run.
+///
+/// # Who this names, and who it does not
+///
+/// The party that ran the step, as they declared themselves — not the
+/// handler that did the work. A step names its handler by a kind the
+/// host defines, an open string this engine does not interpret, and
+/// classifying somebody else's vocabulary into `human` or `agent` is
+/// the same guess the whole field exists to refuse.
+pub(crate) fn step_started(
+    instance: &CeremonyInstance,
+    step_id: &StepId,
+    attempt: StepAttempt,
+    started_by: &RoleId,
+    started_by_kind: AuditActorKind,
+    occurred_at: OffsetDateTime,
+) -> Result<AuditFact, DomainError> {
+    step_fact(
+        instance,
+        AuditEventType::StepStarted,
+        step_id,
+        attempt,
+        started_by,
+        started_by_kind,
+        occurred_at,
+    )
+}
+
+/// The fact that a step ended, and how.
+///
+/// Sealed as two different events rather than one carrying an outcome,
+/// because "did anything fail here" is the first question asked of a
+/// session that went wrong, and answering it should not require
+/// reading into every entry.
+pub(crate) fn step_finished(
+    instance: &CeremonyInstance,
+    step_id: &StepId,
+    attempt: StepAttempt,
+    result: &StepResult,
+    finished_by: &RoleId,
+    finished_by_kind: AuditActorKind,
+    occurred_at: OffsetDateTime,
+) -> Result<AuditFact, DomainError> {
+    let event_type = if result.is_success() {
+        AuditEventType::StepCompleted
+    } else {
+        AuditEventType::StepFailed
+    };
+    step_fact(
+        instance,
+        event_type,
+        step_id,
+        attempt,
+        finished_by,
+        finished_by_kind,
+        occurred_at,
+    )
+}
+
+/// Keyed on the attempt as well as the step.
+///
+/// A step that failed and was run again is two starts and two endings,
+/// and a scheme that only knew which step it was would fold the retry
+/// into the first attempt — losing exactly the history somebody
+/// investigating a flaky step came for.
+fn step_fact(
+    instance: &CeremonyInstance,
+    event_type: AuditEventType,
+    step_id: &StepId,
+    attempt: StepAttempt,
+    actor_role: &RoleId,
+    actor_kind: AuditActorKind,
+    occurred_at: OffsetDateTime,
+) -> Result<AuditFact, DomainError> {
+    fact(
+        instance,
+        event_type,
+        &format!("step:{step_id}:attempt:{}", attempt.get()),
+        actor(actor_role, actor_kind)?,
         occurred_at,
     )
 }

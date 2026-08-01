@@ -130,7 +130,7 @@ async fn yaml_definition_can_drive_the_application_ceremony_flow() {
     ));
     let run_step = RunCeremonyStepUseCase::new(
         resolve_definition.clone(),
-        instances.clone(),
+        journal.clone(),
         handler,
         clock.clone(),
     )
@@ -139,6 +139,7 @@ async fn yaml_definition_can_drive_the_application_ceremony_flow() {
         .execute(RunCeremonyStepInput::new(
             CeremonyId::new("meeting-1").unwrap(),
             RoleId::new("FACILITATOR").unwrap(),
+            AuditActorKind::Agent,
             StepId::new("roundtable").unwrap(),
             LeaseOwnerId::new("runner-1").unwrap(),
             IdempotencyKey::new("meeting-1-roundtable-1").unwrap(),

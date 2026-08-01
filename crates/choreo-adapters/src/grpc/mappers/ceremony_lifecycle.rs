@@ -71,7 +71,11 @@ pub fn run_ceremony_step_input_from_proto(
     instance: &CeremonyInstance,
 ) -> Result<RunCeremonyStepInput, DomainError> {
     let step_id = StepId::new(request.step_id)?;
+    // The seat is the definition's to say; what filled it is the
+    // caller's. Taking both from the definition would record a kind
+    // nobody declared.
     let role_id = definition.role_id_for_step(&step_id)?;
+    let role_kind = actor_kind_from_proto(&request.actor_kind, "actor_kind")?;
     let lease_owner_id = if request.lease_owner_id.trim().is_empty() {
         LeaseOwnerId::new(DEFAULT_LEASE_OWNER_ID)?
     } else {
@@ -91,6 +95,7 @@ pub fn run_ceremony_step_input_from_proto(
     Ok(RunCeremonyStepInput::new(
         instance.id().clone(),
         role_id,
+        role_kind,
         step_id,
         lease_owner_id,
         idempotency_key,
@@ -141,6 +146,7 @@ mod tests {
     fn step_request(step_id: &str) -> pb::RunCeremonyStepRequest {
         pb::RunCeremonyStepRequest {
             ceremony_id: "ceremony-lifecycle-1".to_owned(),
+            actor_kind: "agent".to_owned(),
             step_id: step_id.to_owned(),
             lease_owner_id: String::new(),
             idempotency_key: String::new(),
@@ -185,6 +191,7 @@ mod tests {
         let input = run_ceremony_step_input_from_proto(
             pb::RunCeremonyStepRequest {
                 ceremony_id: "ceremony-lifecycle-1".to_owned(),
+                actor_kind: "agent".to_owned(),
                 step_id: "open_room".to_owned(),
                 lease_owner_id: "operator-7".to_owned(),
                 idempotency_key: "retry-42".to_owned(),

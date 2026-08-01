@@ -148,6 +148,7 @@ async fn build_remote_session(fixture: &GrpcFixture) {
     client
         .run_ceremony_step(RunCeremonyStepRequest {
             ceremony_id: CEREMONY_ID.to_owned(),
+            actor_kind: "agent".to_owned(),
             step_id: "work".to_owned(),
             lease_owner_id: "parity".to_owned(),
             idempotency_key: "parity-work".to_owned(),
@@ -219,7 +220,7 @@ async fn build_embedded_session(backend: &EmbeddedChoreoMcpBackend) {
     .await;
     call(
         "choreo_run_ceremony_step",
-        json!({ "ceremony_id": CEREMONY_ID, "step_id": "work" }),
+        json!({ "ceremony_id": CEREMONY_ID, "step_id": "work", "actor_kind": "agent" }),
     )
     .await;
     call(
@@ -393,7 +394,7 @@ async fn the_same_tool_calls_drive_both_backends_to_the_same_shape() {
             ),
             (
                 "choreo_run_ceremony_step",
-                json!({ "ceremony_id": "tools-parity", "step_id": "work" }),
+                json!({ "ceremony_id": "tools-parity", "step_id": "work", "actor_kind": "agent" }),
             ),
             (
                 "choreo_apply_ceremony_transition",

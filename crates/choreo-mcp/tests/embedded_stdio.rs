@@ -1003,7 +1003,7 @@ fn run_step_call(id: u64, ceremony_id: &str, step_id: &str) -> Value {
     tool_call(
         id,
         "choreo_run_ceremony_step",
-        &json!({ "ceremony_id": ceremony_id, "step_id": step_id }),
+        &json!({ "ceremony_id": ceremony_id, "step_id": step_id, "actor_kind": "agent" }),
     )
 }
 
@@ -1184,7 +1184,7 @@ async fn a_published_instance_can_actually_be_advanced() {
         tool_call(
             3,
             "choreo_run_ceremony_step",
-            &json!({ "ceremony_id": "advanced-bound", "step_id": "work" }),
+            &json!({ "ceremony_id": "advanced-bound", "step_id": "work", "actor_kind": "agent" }),
         ),
     )
     .await;

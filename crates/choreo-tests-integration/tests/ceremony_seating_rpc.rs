@@ -107,6 +107,7 @@ async fn a_seated_role_sends_its_work_to_the_panel_the_session_chose() {
     let after_step = client
         .run_ceremony_step(RunCeremonyStepRequest {
             ceremony_id: ceremony_id.to_owned(),
+            actor_kind: "agent".to_owned(),
             step_id: "review".to_owned(),
             lease_owner_id: "integration-test".to_owned(),
             idempotency_key: "integration-seating-review".to_owned(),
@@ -157,6 +158,7 @@ async fn a_session_left_unseated_is_played_the_way_the_definition_says() {
     let after_step = client
         .run_ceremony_step(RunCeremonyStepRequest {
             ceremony_id: ceremony_id.to_owned(),
+            actor_kind: "agent".to_owned(),
             step_id: "review".to_owned(),
             lease_owner_id: "integration-test".to_owned(),
             idempotency_key: "integration-unseated-review".to_owned(),

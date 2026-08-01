@@ -313,7 +313,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
     let run_ceremony_step = Arc::new(
         RunCeremonyStepUseCase::new(
             resolve_ceremony_definition.clone(),
-            ceremony_instances.clone(),
+            ceremony_journal.clone(),
             ceremony_step_handler,
             clock.clone(),
         )
