@@ -157,6 +157,7 @@ async fn build_remote_session(fixture: &GrpcFixture) {
         .expect("RunCeremonyStep should succeed");
     client
         .apply_ceremony_transition(ApplyCeremonyTransitionRequest {
+            actor_kind: "agent".to_owned(),
             ceremony_id: CEREMONY_ID.to_owned(),
             trigger: "opened".to_owned(),
         })
@@ -221,7 +222,7 @@ async fn build_embedded_session(backend: &EmbeddedChoreoMcpBackend) {
     .await;
     call(
         "choreo_apply_ceremony_transition",
-        json!({ "ceremony_id": CEREMONY_ID, "trigger": "opened" }),
+        json!({ "ceremony_id": CEREMONY_ID, "trigger": "opened", "actor_kind": "agent" }),
     )
     .await;
     call(
@@ -390,7 +391,7 @@ async fn the_same_tool_calls_drive_both_backends_to_the_same_shape() {
             ),
             (
                 "choreo_apply_ceremony_transition",
-                json!({ "ceremony_id": "tools-parity", "trigger": "opened" }),
+                json!({ "ceremony_id": "tools-parity", "trigger": "opened", "actor_kind": "agent" }),
             ),
             (
                 "choreo_request_ceremony_intervention",

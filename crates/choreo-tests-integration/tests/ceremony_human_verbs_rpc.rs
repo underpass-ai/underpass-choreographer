@@ -114,6 +114,7 @@ async fn a_session_waiting_on_a_person_says_so_and_moves_once_they_approve() {
 
     let closed = client
         .apply_ceremony_transition(ApplyCeremonyTransitionRequest {
+            actor_kind: "agent".to_owned(),
             ceremony_id: ceremony_id.to_owned(),
             trigger: "approve".to_owned(),
         })

@@ -679,10 +679,15 @@ fn ceremony_transition_schema() -> Value {
     json!({
         "type": "object",
         "additionalProperties": false,
-        "required": ["ceremony_id", "trigger"],
+        "required": ["ceremony_id", "trigger", "actor_kind"],
         "properties": {
             "ceremony_id": string_schema("Started ceremony instance id."),
-            "trigger": string_schema("Transition trigger declared from the instance's current state.")
+            "trigger": string_schema("Transition trigger declared from the instance's current state."),
+            "actor_kind": {
+                "type": "string",
+                "enum": ["human", "agent", "service", "engine"],
+                "description": "What kind of party is firing it. Declared by you, because only you know: which seat may fire this trigger comes from the definition, and that says which seat was required, not what turned up to fill it."
+            }
         }
     })
 }

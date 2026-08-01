@@ -12,7 +12,7 @@ use choreo_app::usecases::{
 };
 use choreo_core::error::DomainError;
 use choreo_core::value_objects::{
-    AuditActorKind, CeremonyEvidenceSourceId, CeremonyGuardDeferralContent, CeremonyId,
+    CeremonyEvidenceSourceId, CeremonyGuardDeferralContent, CeremonyId,
     CeremonyInterventionContent, CeremonyInterventionId, CeremonyInterventionKind,
     CeremonyInterventionProvenance, CeremonyInterventionTarget, CeremonyReasonKind,
     CeremonyRecordRef, GuardName, MemoryConfidence, RoleId, Specialty, StepId,
@@ -20,6 +20,7 @@ use choreo_core::value_objects::{
 use choreo_proto::v1 as pb;
 use uuid::Uuid;
 
+use super::actor_kind::actor_kind_from_proto;
 use super::attributes::attributes_from_struct;
 
 pub fn approve_ceremony_guard_input_from_proto(
@@ -29,7 +30,7 @@ pub fn approve_ceremony_guard_input_from_proto(
         CeremonyId::new(request.ceremony_id)?,
         GuardName::new(request.guard_name)?,
         RoleId::new(request.role_id)?,
-        actor_kind_from_proto(&request.role_kind)?,
+        actor_kind_from_proto(&request.role_kind, "role_kind")?,
     ))
 }
 
@@ -60,22 +61,6 @@ pub fn ceremony_record_ref_from_proto(
                 field: "ceremony_record_ref.kind",
             })
         }
-    })
-}
-
-/// What kind of party the caller says filled the seat.
-///
-/// Refused rather than defaulted when it is missing or unknown. A
-/// default would put a kind in the record that nobody chose, and the
-/// whole reason this field exists is that the engine must not choose
-/// one.
-fn actor_kind_from_proto(raw: &str) -> Result<AuditActorKind, DomainError> {
-    Ok(match raw {
-        "human" => AuditActorKind::Human,
-        "agent" => AuditActorKind::Agent,
-        "service" => AuditActorKind::Service,
-        "engine" => AuditActorKind::Engine,
-        _ => return Err(DomainError::InvalidCharacters { field: "role_kind" }),
     })
 }
 
@@ -142,7 +127,7 @@ pub fn defer_ceremony_guard_input_from_proto(
             request.reconsider_when,
         )?,
         RoleId::new(request.role_id)?,
-        actor_kind_from_proto(&request.role_kind)?,
+        actor_kind_from_proto(&request.role_kind, "role_kind")?,
     ))
 }
 

@@ -326,7 +326,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
     let session_memory = Arc::new(SessionMemoryRecorder::new(Arc::new(ForgetfulMemory::new())));
     let apply_ceremony_transition = Arc::new(ApplyCeremonyTransitionUseCase::new(
         resolve_ceremony_definition.clone(),
-        ceremony_instances.clone(),
+        ceremony_journal.clone(),
         clock.clone(),
         session_memory.clone(),
     ));

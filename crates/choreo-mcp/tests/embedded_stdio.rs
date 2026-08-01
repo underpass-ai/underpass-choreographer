@@ -1035,7 +1035,7 @@ fn transition_call(id: u64, ceremony_id: &str, trigger: &str) -> Value {
     tool_call(
         id,
         "choreo_apply_ceremony_transition",
-        &json!({ "ceremony_id": ceremony_id, "trigger": trigger }),
+        &json!({ "ceremony_id": ceremony_id, "trigger": trigger, "actor_kind": "agent" }),
     )
 }
 

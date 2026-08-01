@@ -1,4 +1,4 @@
-use choreo_core::value_objects::{Attributes, CeremonyContext, CeremonyId, RoleId};
+use choreo_core::value_objects::{Attributes, AuditActorKind, CeremonyContext, CeremonyId, RoleId};
 use choreo_embedded::EmbeddedChoreographer;
 use serde_json::{Map, Value};
 
@@ -120,4 +120,30 @@ pub(super) async fn load_instance_definition(
         .await
         .map_err(|error| format!("failed to load ceremony definition: {error}"))?;
     Ok((definition, instance))
+}
+
+/// What kind of party the caller says acted.
+///
+/// Refused rather than defaulted: a default would put a kind in the
+/// journal that nobody chose, and the reason the field exists at all is
+/// that the engine must not choose one.
+///
+/// One parser for every verb that asks, in the module the verbs already
+/// share. Kept per-file, it is how one tool quietly starts accepting a
+/// spelling another refuses.
+pub(super) fn required_actor_kind(
+    object: &Map<String, Value>,
+    field: &str,
+) -> Result<AuditActorKind, String> {
+    Ok(match required_string(object, field)?.as_str() {
+        "human" => AuditActorKind::Human,
+        "agent" => AuditActorKind::Agent,
+        "service" => AuditActorKind::Service,
+        "engine" => AuditActorKind::Engine,
+        other => {
+            return Err(format!(
+                "`{field}` must be human, agent, service or engine, not {other}"
+            ))
+        }
+    })
 }

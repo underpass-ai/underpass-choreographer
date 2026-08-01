@@ -669,6 +669,7 @@ fn build_apply_ceremony_transition_request(
     Ok(pb::ApplyCeremonyTransitionRequest {
         ceremony_id: j2p::require_str(obj, "ceremony_id")?.to_owned(),
         trigger: j2p::require_str(obj, "trigger")?.to_owned(),
+        actor_kind: j2p::require_str(obj, "actor_kind")?.to_owned(),
     })
 }
 

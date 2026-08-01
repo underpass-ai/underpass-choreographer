@@ -20,6 +20,7 @@ use uuid::Uuid;
 
 use crate::yaml::CeremonyDefinitionYaml;
 
+use super::actor_kind::actor_kind_from_proto;
 use super::attributes::attributes_from_struct;
 
 const DEFAULT_LEASE_OWNER_ID: &str = "grpc-run-ceremony-step";
@@ -103,10 +104,15 @@ pub fn apply_ceremony_transition_input_from_proto(
     instance: &CeremonyInstance,
 ) -> Result<ApplyCeremonyTransitionInput, DomainError> {
     let trigger = TransitionTrigger::new(request.trigger)?;
+    // The seat is the definition's to say; what filled it is the
+    // caller's. Taking both from the definition would record a kind
+    // nobody declared.
     let role_id = definition.role_id_for_transition(&trigger)?;
+    let role_kind = actor_kind_from_proto(&request.actor_kind, "actor_kind")?;
     Ok(ApplyCeremonyTransitionInput::new(
         instance.id().clone(),
         role_id,
+        role_kind,
         trigger,
     ))
 }
@@ -201,6 +207,7 @@ mod tests {
 
         let input = apply_ceremony_transition_input_from_proto(
             pb::ApplyCeremonyTransitionRequest {
+                actor_kind: "agent".to_owned(),
                 // Naming another ceremony here must not move this
                 // session onto it.
                 ceremony_id: "some-other-ceremony".to_owned(),

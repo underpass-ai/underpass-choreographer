@@ -8,6 +8,7 @@
 //!
 //! [`DomainError`]: choreo_core::error::DomainError
 
+mod actor_kind;
 mod agent;
 mod attributes;
 mod ceremony_authoring;

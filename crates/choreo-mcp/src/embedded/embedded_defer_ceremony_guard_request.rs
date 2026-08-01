@@ -5,7 +5,7 @@ use choreo_core::value_objects::{
 use choreo_embedded::EmbeddedChoreographer;
 use serde_json::Value;
 
-use super::embedded_request_fields::{required_string, required_strings};
+use super::embedded_request_fields::{required_actor_kind, required_string, required_strings};
 
 /// Validated MCP request for one explicit human guard deferral.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -56,26 +56,7 @@ impl TryFrom<&Value> for EmbeddedDeferCeremonyGuardRequest {
             .map_err(|error| error.to_string())?,
             role_id: RoleId::new(required_string(object, "role_id")?)
                 .map_err(|error| error.to_string())?,
-            role_kind: actor_kind(&required_string(object, "role_kind")?)?,
+            role_kind: required_actor_kind(object, "role_kind")?,
         })
     }
-}
-
-/// What kind of party the caller says filled the seat.
-///
-/// Refused rather than defaulted: a default would put a kind in the
-/// record that nobody chose, and the reason this exists at all is that
-/// the engine must not choose one.
-fn actor_kind(raw: &str) -> Result<AuditActorKind, String> {
-    Ok(match raw {
-        "human" => AuditActorKind::Human,
-        "agent" => AuditActorKind::Agent,
-        "service" => AuditActorKind::Service,
-        "engine" => AuditActorKind::Engine,
-        other => {
-            return Err(format!(
-                "`role_kind` must be human, agent, service or engine, not {other}"
-            ))
-        }
-    })
 }

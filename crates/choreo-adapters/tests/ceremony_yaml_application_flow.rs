@@ -8,11 +8,11 @@ use choreo_adapters::clock::SystemClock;
 use choreo_adapters::memory::ForgetfulMemory;
 use choreo_adapters::memory::{
     InMemoryCeremonyDefinitionPublications, InMemoryCeremonyDefinitionRepository,
-    InMemoryCeremonyInstanceRepository, InMemoryCeremonyTranscriptStore,
+    InMemoryCeremonyStore, InMemoryCeremonyTranscriptStore,
 };
 use choreo_adapters::noop::NoopCeremonyStepHandler;
 use choreo_adapters::yaml::FileSystemCeremonyDefinitionSource;
-use choreo_app::services::SessionMemoryRecorder;
+use choreo_app::services::{SessionJournal, SessionMemoryRecorder};
 use choreo_app::usecases::{
     ApplyCeremonyTransitionInput, ApplyCeremonyTransitionUseCase, MountCeremonyDefinitionsUseCase,
     ResolveCeremonyDefinitionUseCase, RunCeremonyStepInput, RunCeremonyStepUseCase,
@@ -20,8 +20,9 @@ use choreo_app::usecases::{
 };
 use choreo_core::ports::CeremonyDefinitionRepositoryPort;
 use choreo_core::value_objects::{
-    CeremonyContext, CeremonyId, CeremonyName, CeremonyVersion, DurationMs, IdempotencyKey,
-    LeaseOwnerId, RoleId, StateId, StepAttempt, StepId, StepStatus, TransitionTrigger,
+    AuditActorKind, CeremonyContext, CeremonyId, CeremonyName, CeremonyVersion, DurationMs,
+    IdempotencyKey, LeaseOwnerId, RoleId, StateId, StepAttempt, StepId, StepStatus,
+    TransitionTrigger,
 };
 
 const FOUR_PERSON_CEREMONY: &str = r#"
@@ -86,7 +87,11 @@ async fn yaml_definition_can_drive_the_application_ceremony_flow() {
     let source =
         Arc::new(FileSystemCeremonyDefinitionSource::from_directory(&fixture_dir).unwrap());
     let definitions = Arc::new(InMemoryCeremonyDefinitionRepository::new());
-    let instances = Arc::new(InMemoryCeremonyInstanceRepository::new());
+    // One store behind both ports, as every composition root builds
+    // it: a session committed through the journal has to be readable
+    // by the next step of this very flow.
+    let instances = Arc::new(InMemoryCeremonyStore::new());
+    let journal = Arc::new(SessionJournal::new(instances.clone(), instances.clone()));
     let transcript_store = Arc::new(InMemoryCeremonyTranscriptStore::new());
     let handler = Arc::new(NoopCeremonyStepHandler::new());
     let clock = Arc::new(SystemClock::new());
@@ -146,7 +151,7 @@ async fn yaml_definition_can_drive_the_application_ceremony_flow() {
 
     let transition = ApplyCeremonyTransitionUseCase::new(
         resolve_definition,
-        instances,
+        journal,
         clock,
         Arc::new(SessionMemoryRecorder::new(Arc::new(ForgetfulMemory::new()))),
     );
@@ -154,6 +159,7 @@ async fn yaml_definition_can_drive_the_application_ceremony_flow() {
         .execute(ApplyCeremonyTransitionInput::new(
             CeremonyId::new("meeting-1").unwrap(),
             RoleId::new("FACILITATOR").unwrap(),
+            AuditActorKind::Agent,
             TransitionTrigger::new("meeting_done").unwrap(),
         ))
         .await

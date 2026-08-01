@@ -154,6 +154,7 @@ async fn host_can_drive_a_human_guard_incrementally() {
         .apply_transition(ApplyCeremonyTransitionInput::new(
             ceremony_id.clone(),
             RoleId::new("APPROVER").unwrap(),
+            AuditActorKind::Agent,
             TransitionTrigger::new("approve").unwrap(),
         ))
         .await

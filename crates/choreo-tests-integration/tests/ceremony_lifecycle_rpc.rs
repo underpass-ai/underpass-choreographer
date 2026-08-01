@@ -130,6 +130,7 @@ async fn a_ceremony_can_be_walked_to_its_close_one_call_at_a_time() {
 
         let after_transition = client
             .apply_ceremony_transition(ApplyCeremonyTransitionRequest {
+                actor_kind: "agent".to_owned(),
                 ceremony_id: ceremony_id.to_owned(),
                 trigger: (*trigger).to_owned(),
             })
@@ -173,6 +174,7 @@ async fn a_transition_whose_guard_is_unmet_does_not_fire() {
 
     let status = client
         .apply_ceremony_transition(ApplyCeremonyTransitionRequest {
+            actor_kind: "agent".to_owned(),
             ceremony_id: ceremony_id.to_owned(),
             trigger: "context_shared".to_owned(),
         })

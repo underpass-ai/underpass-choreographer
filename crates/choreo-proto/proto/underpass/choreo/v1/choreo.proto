@@ -869,6 +869,18 @@ message ApplyCeremonyTransitionRequest {
   // The named trigger to fire. Which transitions are available right
   // now is in CeremonyInstanceState.transitions.
   string trigger = 2;
+  // What kind of party is firing it: "human", "agent", "service" or
+  // "engine".
+  //
+  // Declared by you, because only you know. Which seat may fire this
+  // trigger comes from the definition, and that says which seat was
+  // required — not what turned up to fill it. The engine writes down
+  // what you declare here and infers nothing, so a transition fired by
+  // an agent is recorded as an agent even where a human was expected.
+  //
+  // Refused when missing or unrecognised. A default would put a kind
+  // in the journal that nobody chose.
+  string actor_kind = 3;
 }
 
 message ApplyCeremonyTransitionResponse {
