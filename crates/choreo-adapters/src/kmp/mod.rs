@@ -21,14 +21,19 @@
 //! back to the session that produced it. Transcripts do not: the port
 //! gives them no kind, and this adapter has nowhere to put one.
 //!
-//! Two things a caller hands over do **not** survive the round trip,
-//! because the kernel's read surface does not return them: an entry's
-//! `detail` bag and an evidence item's `source_id`. Both are sent —
-//! the kernel keeps an append-only log of what it was given — but
-//! neither comes back, so a recalled entry carries an empty detail and
-//! evidence without a source. That loss is pinned by a test rather
-//! than described only here, because a paragraph nobody runs is how a
-//! known limitation becomes a surprise.
+//! Everything a caller hands over survives the round trip, including
+//! an entry's `detail` and an evidence item's source. That was not
+//! true when this adapter was written: the kernel took both and gave
+//! neither back, and the loss was pinned by a test that said the day
+//! they came back it would fail and the paragraph describing the
+//! limitation would be deleted rather than left to age.
+//!
+//! Worth keeping the second half of that story. The kernel started
+//! returning them and **the test did not fail**, because this adapter
+//! was still discarding both before the assertion could see them — it
+//! had pinned its own workaround rather than the limitation. A test
+//! written to notice somebody else's change has to read past the code
+//! that works around it.
 
 mod error;
 mod mapping;

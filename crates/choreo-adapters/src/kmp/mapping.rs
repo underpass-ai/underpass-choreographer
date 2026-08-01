@@ -304,20 +304,36 @@ fn read_entry(
     );
     let dimension = strand.and_then(|strand| MemoryDimension::new(strand).ok());
 
-    let entry = MemoryEntry::new(
-        id,
-        kind,
-        summary,
-        dimension,
-        provenance,
-        Attributes::empty(),
-    )
-    .ok()?;
+    let entry = MemoryEntry::new(id, kind, summary, dimension, provenance, detail(value)).ok()?;
     let entry = match attached.get(reference) {
         Some(evidence) => entry.with_evidence(evidence.iter().cloned()),
         None => entry,
     };
     Some((reference.to_owned(), entry))
+}
+
+/// What a caller hung on an entry, coming back.
+///
+/// The kernel returns metadata as strings because that is what it was
+/// given; a value that went in as a document comes back as the text of
+/// one. Parsing it back is not guesswork — a string that parses as
+/// JSON was JSON — and a caller that stored `12` gets `12` rather than
+/// `"12"`.
+fn detail(value: &Value) -> Attributes {
+    let entries = value
+        .get("metadata")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flatten()
+        .map(|(key, value)| {
+            let restored = value
+                .as_str()
+                .and_then(|raw| serde_json::from_str(raw).ok())
+                .unwrap_or_else(|| value.clone());
+            (key.clone(), restored)
+        })
+        .collect();
+    Attributes::new(entries).unwrap_or_else(|_| Attributes::empty())
 }
 
 /// Which evidence backs which entry.
@@ -337,6 +353,27 @@ fn evidence_by_entry(document: &Value) -> BTreeMap<String, Vec<MemoryEvidence>> 
                 item.get("source").and_then(Value::as_str)?,
                 item.get("text").and_then(Value::as_str)?,
             ))
+        })
+        .collect();
+
+    // What the kernel knows about each evidence item beyond its text:
+    // where it came from, and whatever the caller hung on it.
+    //
+    // Keyed by the reference inside the item's id rather than by its
+    // `source` — `source` now carries what the caller said the
+    // evidence came from, which is the point of having asked for it,
+    // and is therefore no longer anything to match on.
+    let described: BTreeMap<&str, &Value> = proof
+        .and_then(|proof| proof.get("evidence"))
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|item| {
+            let reference = item
+                .get("id")
+                .and_then(Value::as_str)?
+                .strip_prefix("detail:")?;
+            Some((reference, item))
         })
         .collect();
 
@@ -363,7 +400,19 @@ fn evidence_by_entry(document: &Value) -> BTreeMap<String, Vec<MemoryEvidence>> 
                     .and_then(|from| texts.get(from).copied())
             });
         let Some(label) = label else { continue };
-        let Ok(evidence) = MemoryEvidence::new(label, None, Attributes::empty()) else {
+        let described = relation
+            .get("from")
+            .and_then(Value::as_str)
+            .and_then(|from| described.get(from).copied());
+        let source = described
+            .and_then(|item| item.get("source"))
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned);
+        let Ok(evidence) = MemoryEvidence::new(
+            label,
+            source,
+            described.map_or_else(Attributes::empty, detail),
+        ) else {
             continue;
         };
         attached

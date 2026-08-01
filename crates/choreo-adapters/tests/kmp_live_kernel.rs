@@ -302,15 +302,23 @@ async fn a_session_scoped_to_its_own_ceremony_round_trips() {
     assert_eq!(entry.provenance().ceremony_id(), &ceremony);
 }
 
-/// Evidence crosses the boundary; its source does not.
+/// Evidence crosses whole: its label, where it came from, and what
+/// was hung on it.
 ///
-/// The module says so in prose, and this is the prose made falsifiable.
-/// If a later kernel starts returning what it was given, this fails and
-/// the limitation gets removed from the documentation on purpose rather
-/// than lingering as a stale warning.
+/// This test used to say the opposite. It pinned a loss — the kernel
+/// took a source and an entry's detail and gave neither back — and
+/// said in as many words that the day they came back it would fail
+/// and the limitation would be deleted on purpose rather than linger
+/// as a stale warning.
+///
+/// That is what happened, and it is worth recording that the tripwire
+/// did not go off on its own: the adapter was still dropping both on
+/// the way in, so the assertion never saw them. A test that pins a
+/// limitation has to read past the code that implements it, or it
+/// pins the workaround instead.
 #[tokio::test]
 #[ignore = "needs a memory kernel: run with --include-ignored"]
-async fn evidence_crosses_but_its_source_and_detail_do_not() {
+async fn evidence_crosses_whole_with_its_source_and_detail() {
     let (memory, _data_dir) = live_memory().await;
     let scope = MemoryScope::new("ceremony:evidence").expect("a valid scope");
 
@@ -350,6 +358,15 @@ async fn evidence_crosses_but_its_source_and_detail_do_not() {
         panic!("expected exactly one entry, got {:?}", recalled.entries());
     };
 
+    assert_eq!(
+        entry
+            .detail()
+            .get("window")
+            .and_then(serde_json::Value::as_str),
+        Some("03:00-03:20"),
+        "what was hung on the claim came back with it"
+    );
+
     let [evidence] = entry.evidence() else {
         panic!(
             "expected exactly one evidence item, got {:?}",
@@ -359,12 +376,8 @@ async fn evidence_crosses_but_its_source_and_detail_do_not() {
     assert_eq!(evidence.label(), "dead-letter count was zero");
     assert_eq!(
         evidence.source_id(),
-        None,
-        "the kernel's read surface does not return an evidence source"
-    );
-    assert!(
-        entry.detail().is_empty(),
-        "the kernel's read surface does not return an entry's detail"
+        Some("dead-letter-queue"),
+        "a citation without its reference is what this was waiting for"
     );
 }
 
