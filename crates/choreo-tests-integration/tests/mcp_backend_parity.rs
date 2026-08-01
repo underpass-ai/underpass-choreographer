@@ -192,6 +192,7 @@ async fn build_remote_session(fixture: &GrpcFixture) {
     client
         .respond_to_ceremony_intervention(RespondToCeremonyInterventionRequest {
             ceremony_id: CEREMONY_ID.to_owned(),
+            role_kind: "human".to_owned(),
             intervention_id: "item-1".to_owned(),
             role_id: "FACILITATOR".to_owned(),
             message: "No objection.".to_owned(),
@@ -257,6 +258,7 @@ async fn build_embedded_session(backend: &EmbeddedChoreoMcpBackend) {
             "ceremony_id": CEREMONY_ID,
             "intervention_id": "item-1",
             "role_id": "FACILITATOR",
+            "role_kind": "human",
             "message": "No objection.",
         }),
     )

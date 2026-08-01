@@ -160,3 +160,23 @@ pub(crate) fn intervention_requested(
         occurred_at,
     )
 }
+
+/// The fact that a seat answered something the session had asked.
+pub(crate) fn intervention_responded(
+    instance: &CeremonyInstance,
+    intervention_id: &CeremonyInterventionId,
+    responded_by: &RoleId,
+    responded_by_kind: AuditActorKind,
+    occurred_at: OffsetDateTime,
+) -> Result<AuditFact, DomainError> {
+    // Keyed on the seat as well as the item, because an agenda item
+    // put to the whole table is answered by more than one of them and
+    // those are separate facts.
+    fact(
+        instance,
+        AuditEventType::InterventionResponded,
+        &format!("intervention:{intervention_id}:{responded_by}"),
+        actor(responded_by, responded_by_kind)?,
+        occurred_at,
+    )
+}

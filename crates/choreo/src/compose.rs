@@ -355,7 +355,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
     ));
     let respond_to_ceremony_intervention = Arc::new(RespondToCeremonyInterventionUseCase::new(
         resolve_ceremony_definition.clone(),
-        ceremony_instances.clone(),
+        ceremony_journal.clone(),
         clock.clone(),
         session_memory.clone(),
     ));

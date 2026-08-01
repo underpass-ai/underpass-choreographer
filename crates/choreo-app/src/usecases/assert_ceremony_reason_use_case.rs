@@ -80,13 +80,14 @@ impl AssertCeremonyReasonUseCase {
 mod tests {
     use choreo_core::ports::CeremonyInstanceRepositoryPort;
     use choreo_core::value_objects::{
-        Attributes, CeremonyInterventionContent, CeremonyInterventionId, CeremonyInterventionKind,
-        CeremonyInterventionTarget, CeremonyReasonKind, CeremonyRecordRef, MemoryConfidence,
+        Attributes, AuditActorKind, CeremonyInterventionContent, CeremonyInterventionId,
+        CeremonyInterventionKind, CeremonyInterventionTarget, CeremonyReasonKind,
+        CeremonyRecordRef, MemoryConfidence,
     };
 
     use super::*;
     use crate::usecases::ceremony_test_support::{
-        ceremony_id, definition, definition_resolver, now, recorder, recording_memory,
+        ceremony_id, definition, definition_resolver, journal, now, recorder, recording_memory,
         respondent_role_id, role_id, started_instance, DefinitionRepositoryFake, FixedClock,
         InstanceRepositoryFake,
     };
@@ -129,7 +130,7 @@ mod tests {
 
         let respond = RespondToCeremonyInterventionUseCase::new(
             definition_resolver(definitions.clone()),
-            instances.clone(),
+            journal(instances.clone()),
             Arc::new(FixedClock::new(now())),
             recorder(memory.clone()),
         );
@@ -143,6 +144,7 @@ mod tests {
                     ceremony_id(),
                     id.clone(),
                     respondent_role_id(),
+                    AuditActorKind::Agent,
                     CeremonyInterventionContent::new(said, Attributes::empty()).unwrap(),
                 ))
                 .await
@@ -212,7 +214,7 @@ mod tests {
 
         RespondToCeremonyInterventionUseCase::new(
             definition_resolver(definitions.clone()),
-            instances.clone(),
+            journal(instances.clone()),
             Arc::new(FixedClock::new(now())),
             recorder(memory.clone()),
         )
@@ -220,6 +222,7 @@ mod tests {
             ceremony_id(),
             agenda_item.clone(),
             respondent_role_id(),
+            AuditActorKind::Agent,
             CeremonyInterventionContent::new("the queue was backing up", Attributes::empty())
                 .unwrap(),
         ))

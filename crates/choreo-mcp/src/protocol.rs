@@ -754,11 +754,16 @@ fn respond_to_ceremony_intervention_schema() -> Value {
     json!({
         "type": "object",
         "additionalProperties": false,
-        "required": ["ceremony_id", "intervention_id", "role_id", "message"],
+        "required": ["ceremony_id", "intervention_id", "role_id", "role_kind", "message"],
         "properties": {
             "ceremony_id": string_schema("Started ceremony instance id."),
             "intervention_id": string_schema("Open intervention id."),
             "role_id": string_schema("Targeted role contributing this response."),
+            "role_kind": {
+                "type": "string",
+                "enum": ["human", "agent", "service", "engine"],
+                "description": "What kind of party fills that seat. Declared by you, because only you know: a contribution weighed later as precedent reads differently depending on whether a person or an agent gave it."
+            },
             "message": string_schema("Role response, opinion, or result."),
             "details": attributes_schema("Structured response context or evidence references.")
         }
