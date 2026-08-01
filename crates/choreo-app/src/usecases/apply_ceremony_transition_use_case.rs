@@ -95,8 +95,9 @@ mod tests {
     use super::*;
     use crate::usecases::ceremony_test_support::{
         a_recorder, ceremony_id, definition, definition_resolver, journal,
-        journal_losing_every_race, journal_over, now, role_id, started_instance, step_id, trigger,
-        DefinitionRepositoryFake, FixedClock, InstanceRepositoryFake,
+        journal_losing_every_race, journal_over, now, recorder, recording_memory, role_id,
+        started_instance, step_id, trigger, DefinitionRepositoryFake, FixedClock,
+        InstanceRepositoryFake,
     };
 
     #[tokio::test]
@@ -366,6 +367,52 @@ mod tests {
         assert!(
             ended.is_completed(&definition),
             "a terminal session that is not completed now exists, and the audit cannot say so"
+        );
+    }
+
+    /// What a later session is told about how this one ended.
+    ///
+    /// Nothing asserted this before, which is how a branch describing
+    /// an ending that cannot happen sat here unnoticed: memory only
+    /// ever writes one kind of ending, and now something says so.
+    #[tokio::test]
+    async fn remembers_the_ending_as_the_only_kind_there_is() {
+        let (definitions, instances) = ready_to_finish().await;
+        let memory = recording_memory();
+        let usecase = ApplyCeremonyTransitionUseCase::new(
+            definition_resolver(definitions),
+            journal(instances),
+            Arc::new(FixedClock::new(now())),
+            recorder(memory.clone()),
+        );
+
+        usecase
+            .execute(ApplyCeremonyTransitionInput::new(
+                ceremony_id(),
+                role_id(),
+                AuditActorKind::Agent,
+                trigger(),
+            ))
+            .await
+            .unwrap();
+
+        let summaries = memory
+            .entries()
+            .await
+            .iter()
+            .map(|entry| entry.summary().to_owned())
+            .collect::<Vec<_>>();
+        assert!(
+            summaries
+                .iter()
+                .any(|summary| summary == "the session finished in `COMPLETED`"),
+            "the ending did not reach memory: {summaries:?}"
+        );
+        assert!(
+            !summaries
+                .iter()
+                .any(|summary| summary.contains("without finishing")),
+            "memory claimed an ending the engine cannot tell apart: {summaries:?}"
         );
     }
 }

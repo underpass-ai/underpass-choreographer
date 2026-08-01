@@ -214,16 +214,17 @@ pub(super) fn ending_entry(
     };
 
     // Reaching an end is not the same as arriving at the intended one,
-    // and a later session weighing this as a precedent needs to know
-    // which happened.
-    let summary = if instance.is_completed(definition) {
-        format!("the session finished in `{}`", ending.to_state())
-    } else {
-        format!(
-            "the session stopped in `{}` without finishing",
-            ending.to_state()
-        )
-    };
+    // and a later session weighing this as a precedent would need to
+    // know which happened — but there is only one kind of ending to
+    // tell it about. A session reaches a terminal state only by moving
+    // into one, and moving into one always stamps it completed, so the
+    // branch that used to say "stopped without finishing" could never
+    // run. It read as though memory distinguished an abandoned session
+    // from a finished one; it does not, and saying so was the lie.
+    //
+    // `a_terminal_session_is_always_a_finished_one` is where this stops
+    // being true. Whoever makes a session abandonable comes back here.
+    let summary = format!("the session finished in `{}`", ending.to_state());
 
     let record = CeremonyRecordRef::transition(ordinal);
     let entry = MemoryEntry::new(
