@@ -5,12 +5,14 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use choreo_adapters::clock::SystemClock;
+use choreo_adapters::memory::ForgetfulMemory;
 use choreo_adapters::memory::{
     InMemoryCeremonyDefinitionPublications, InMemoryCeremonyDefinitionRepository,
     InMemoryCeremonyInstanceRepository, InMemoryCeremonyTranscriptStore,
 };
 use choreo_adapters::noop::NoopCeremonyStepHandler;
 use choreo_adapters::yaml::FileSystemCeremonyDefinitionSource;
+use choreo_app::services::SessionMemoryRecorder;
 use choreo_app::usecases::{
     ApplyCeremonyTransitionInput, ApplyCeremonyTransitionUseCase, MountCeremonyDefinitionsUseCase,
     ResolveCeremonyDefinitionUseCase, RunCeremonyStepInput, RunCeremonyStepUseCase,
@@ -142,7 +144,12 @@ async fn yaml_definition_can_drive_the_application_ceremony_flow() {
     assert_eq!(step_output.attempt(), StepAttempt::FIRST);
     assert_eq!(step_output.result().status(), StepStatus::Completed);
 
-    let transition = ApplyCeremonyTransitionUseCase::new(resolve_definition, instances, clock);
+    let transition = ApplyCeremonyTransitionUseCase::new(
+        resolve_definition,
+        instances,
+        clock,
+        Arc::new(SessionMemoryRecorder::new(Arc::new(ForgetfulMemory::new()))),
+    );
     let completed = transition
         .execute(ApplyCeremonyTransitionInput::new(
             CeremonyId::new("meeting-1").unwrap(),

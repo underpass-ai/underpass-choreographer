@@ -8,11 +8,13 @@ use choreo_core::ports::{CeremonyInstanceRepositoryPort, ClockPort};
 
 use super::apply_ceremony_transition_input::ApplyCeremonyTransitionInput;
 use super::resolve_ceremony_definition_use_case::ResolveCeremonyDefinitionUseCase;
+use crate::services::SessionMemoryRecorder;
 
 pub struct ApplyCeremonyTransitionUseCase {
     definitions: Arc<ResolveCeremonyDefinitionUseCase>,
     instances: Arc<dyn CeremonyInstanceRepositoryPort>,
     clock: Arc<dyn ClockPort>,
+    memory: Arc<SessionMemoryRecorder>,
 }
 
 impl std::fmt::Debug for ApplyCeremonyTransitionUseCase {
@@ -27,11 +29,13 @@ impl ApplyCeremonyTransitionUseCase {
         definitions: Arc<ResolveCeremonyDefinitionUseCase>,
         instances: Arc<dyn CeremonyInstanceRepositoryPort>,
         clock: Arc<dyn ClockPort>,
+        memory: Arc<SessionMemoryRecorder>,
     ) -> Self {
         Self {
             definitions,
             instances,
             clock,
+            memory,
         }
     }
 
@@ -59,6 +63,10 @@ impl ApplyCeremonyTransitionUseCase {
             self.clock.now(),
         )?;
         self.instances.save(&instance).await?;
+        // A transition is how a session reaches its end, so this is
+        // where an ending becomes something a later session can weigh.
+        // Nothing is written while it is still running.
+        self.memory.remember_ending(&instance, &definition).await;
         Ok(instance)
     }
 }
@@ -73,8 +81,8 @@ mod tests {
 
     use super::*;
     use crate::usecases::ceremony_test_support::{
-        ceremony_id, definition, definition_resolver, now, role_id, started_instance, step_id,
-        trigger, DefinitionRepositoryFake, FixedClock, InstanceRepositoryFake,
+        a_recorder, ceremony_id, definition, definition_resolver, now, role_id, started_instance,
+        step_id, trigger, DefinitionRepositoryFake, FixedClock, InstanceRepositoryFake,
     };
 
     #[tokio::test]
@@ -110,6 +118,7 @@ mod tests {
             definition_resolver(definitions),
             instances.clone(),
             Arc::new(FixedClock::new(now())),
+            a_recorder(),
         );
 
         let transitioned = usecase
@@ -144,6 +153,7 @@ mod tests {
             definition_resolver(definitions),
             instances,
             Arc::new(FixedClock::new(now())),
+            a_recorder(),
         );
 
         let err = usecase

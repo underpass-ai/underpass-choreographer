@@ -1,21 +1,23 @@
 use std::fmt;
 use std::sync::Arc;
 
+use choreo_app::services::SessionMemoryRecorder;
 use choreo_app::usecases::{
     ApplyCeremonyTransitionInput, ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardInput,
-    ApproveCeremonyGuardUseCase, BindCeremonyParticipantsInput, BindCeremonyParticipantsUseCase,
-    CeremonyDefinitionSource, CloseCeremonyInterventionInput, CloseCeremonyInterventionUseCase,
-    CollectCeremonyEvidenceInput, CollectCeremonyEvidenceUseCase, CompleteCeremonyStepInput,
-    CompleteCeremonyStepUseCase, DeferCeremonyGuardInput, DeferCeremonyGuardUseCase,
-    DiffCeremonyDefinitionsUseCase, GetCeremonyDefinitionUseCase, GetCeremonyInstanceUseCase,
-    GetCeremonyTranscriptUseCase, ListCeremonyDefinitionsUseCase, ListCeremonyInstancesUseCase,
-    MountCeremonyDefinitionsOutput, MountCeremonyDefinitionsUseCase,
-    PublishCeremonyDefinitionUseCase, RequestCeremonyInterventionInput,
-    RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
-    RespondToCeremonyInterventionInput, RespondToCeremonyInterventionUseCase, RunCeremonyInput,
-    RunCeremonyOutput, RunCeremonyStepInput, RunCeremonyStepOutput, RunCeremonyStepUseCase,
-    RunCeremonyUseCase, StartCeremonyInput, StartCeremonyStepInput, StartCeremonyStepUseCase,
-    StartCeremonyUseCase, StartPublishedCeremonyUseCase,
+    ApproveCeremonyGuardUseCase, AssertCeremonyReasonInput, AssertCeremonyReasonUseCase,
+    BindCeremonyParticipantsInput, BindCeremonyParticipantsUseCase, CeremonyDefinitionSource,
+    CloseCeremonyInterventionInput, CloseCeremonyInterventionUseCase, CollectCeremonyEvidenceInput,
+    CollectCeremonyEvidenceUseCase, CompleteCeremonyStepInput, CompleteCeremonyStepUseCase,
+    DeferCeremonyGuardInput, DeferCeremonyGuardUseCase, DiffCeremonyDefinitionsUseCase,
+    GetCeremonyDefinitionUseCase, GetCeremonyInstanceUseCase, GetCeremonyTranscriptUseCase,
+    ListCeremonyDefinitionsUseCase, ListCeremonyInstancesUseCase, MountCeremonyDefinitionsOutput,
+    MountCeremonyDefinitionsUseCase, PublishCeremonyDefinitionUseCase,
+    RequestCeremonyInterventionInput, RequestCeremonyInterventionUseCase,
+    ResolveCeremonyDefinitionUseCase, RespondToCeremonyInterventionInput,
+    RespondToCeremonyInterventionUseCase, RunCeremonyInput, RunCeremonyOutput,
+    RunCeremonyStepInput, RunCeremonyStepOutput, RunCeremonyStepUseCase, RunCeremonyUseCase,
+    StartCeremonyInput, StartCeremonyStepInput, StartCeremonyStepUseCase, StartCeremonyUseCase,
+    StartPublishedCeremonyUseCase,
 };
 use choreo_core::entities::{
     CeremonyDefinition, CeremonyInstance, PublicationOutcome, PublishedCeremonyDefinition,
@@ -24,7 +26,7 @@ use choreo_core::error::DomainError;
 use choreo_core::ports::{
     CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort,
     CeremonyEvidenceSourcePort, CeremonyInstanceRepositoryPort, CeremonyStepHandlerPort,
-    CeremonyTranscriptStorePort, ClockPort, MetricsRecorderPort,
+    CeremonyTranscriptStorePort, ClockPort, MemoryWriterPort, MetricsRecorderPort,
 };
 use choreo_core::value_objects::{
     CeremonyDefinitionDiff, CeremonyId, CeremonyName, CeremonyTranscript, CeremonyVersion,
@@ -44,6 +46,12 @@ pub struct EmbeddedChoreographer {
     evidence_source: Arc<dyn CeremonyEvidenceSourcePort>,
     clock: Arc<dyn ClockPort>,
     metrics: Arc<dyn MetricsRecorderPort>,
+    /// What a session leaves behind.
+    ///
+    /// A host that configures no memory gets one that forgets and says
+    /// so, which is the honest shape of "not turned on". Handing it a
+    /// kernel-backed writer instead is the whole of turning it on.
+    session_memory: Arc<SessionMemoryRecorder>,
 }
 
 impl EmbeddedChoreographer {
@@ -56,6 +64,7 @@ impl EmbeddedChoreographer {
         evidence_source: Arc<dyn CeremonyEvidenceSourcePort>,
         clock: Arc<dyn ClockPort>,
         metrics: Arc<dyn MetricsRecorderPort>,
+        memory: Arc<dyn MemoryWriterPort>,
     ) -> Self {
         Self {
             definitions,
@@ -66,6 +75,7 @@ impl EmbeddedChoreographer {
             evidence_source,
             clock,
             metrics,
+            session_memory: Arc::new(SessionMemoryRecorder::new(memory)),
         }
     }
 
@@ -252,6 +262,25 @@ impl EmbeddedChoreographer {
         .await
     }
 
+    /// Say why one thing this session produced led to another.
+    ///
+    /// In-process only for now, and deliberately: a host embedding the
+    /// engine can record its reasoning today without a wire format
+    /// being settled for it.
+    pub async fn assert_reason(
+        &self,
+        input: AssertCeremonyReasonInput,
+    ) -> Result<CeremonyInstance, DomainError> {
+        AssertCeremonyReasonUseCase::new(
+            self.resolve_definition(),
+            self.instances.clone(),
+            self.clock.clone(),
+            self.session_memory.clone(),
+        )
+        .execute(input)
+        .await
+    }
+
     pub async fn approve_guard(
         &self,
         input: ApproveCeremonyGuardInput,
@@ -260,6 +289,7 @@ impl EmbeddedChoreographer {
             self.resolve_definition(),
             self.instances.clone(),
             self.clock.clone(),
+            self.session_memory.clone(),
         )
         .execute(input)
         .await
@@ -273,6 +303,7 @@ impl EmbeddedChoreographer {
             self.resolve_definition(),
             self.instances.clone(),
             self.clock.clone(),
+            self.session_memory.clone(),
         )
         .execute(input)
         .await
@@ -299,6 +330,7 @@ impl EmbeddedChoreographer {
             self.resolve_definition(),
             self.instances.clone(),
             self.clock.clone(),
+            self.session_memory.clone(),
         )
         .execute(input)
         .await
@@ -313,6 +345,7 @@ impl EmbeddedChoreographer {
             self.instances.clone(),
             self.evidence_source.clone(),
             self.clock.clone(),
+            self.session_memory.clone(),
         )
         .execute(input)
         .await
@@ -380,6 +413,7 @@ impl EmbeddedChoreographer {
             self.resolve_definition(),
             self.instances.clone(),
             self.clock.clone(),
+            self.session_memory.clone(),
         )
         .execute(input)
         .await

@@ -3,6 +3,7 @@ use std::future::Future;
 use std::sync::Arc;
 
 use choreo_adapters::clock::SystemClock;
+use choreo_adapters::memory::ForgetfulMemory;
 use choreo_adapters::memory::{
     InMemoryCeremonyDefinitionPublications, InMemoryCeremonyDefinitionRepository,
     InMemoryCeremonyInstanceRepository, InMemoryCeremonyTranscriptStore,
@@ -13,8 +14,8 @@ use choreo_core::error::DomainError;
 use choreo_core::ports::{
     CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort, CeremonyEvidenceRequest,
     CeremonyEvidenceSourcePort, CeremonyInstanceRepositoryPort, CeremonyStepHandlerPort,
-    CeremonyStepHandlerRequest, CeremonyTranscriptStorePort, ClockPort, MetricsRecorderPort,
-    NoopMetricsRecorder,
+    CeremonyStepHandlerRequest, CeremonyTranscriptStorePort, ClockPort, MemoryWriterPort,
+    MetricsRecorderPort, NoopMetricsRecorder,
 };
 use choreo_core::value_objects::StepResult;
 
@@ -23,6 +24,12 @@ use crate::{CallbackCeremonyEvidenceSource, CallbackCeremonyStepHandler, Embedde
 /// Builder for an in-process Choreographer with replaceable adapters.
 #[derive(Default)]
 pub struct EmbeddedChoreographerBuilder {
+    /// Where a session's memory goes, if anywhere.
+    ///
+    /// Absent means a backend that forgets and says so — the honest
+    /// shape of "not configured". A host that wants sessions to be
+    /// remembered hands one in here and changes nothing else.
+    memory: Option<Arc<dyn MemoryWriterPort>>,
     definitions: Option<Arc<dyn CeremonyDefinitionRepositoryPort>>,
     publications: Option<Arc<dyn CeremonyDefinitionPublicationPort>>,
     instances: Option<Arc<dyn CeremonyInstanceRepositoryPort>>,
@@ -119,6 +126,16 @@ impl EmbeddedChoreographerBuilder {
         self
     }
 
+    /// Keep what sessions decide, and why, in this memory.
+    ///
+    /// Left out, a session records nothing and says so. This is the
+    /// whole of turning it on.
+    #[must_use]
+    pub fn with_memory(mut self, memory: Arc<dyn MemoryWriterPort>) -> Self {
+        self.memory = Some(memory);
+        self
+    }
+
     /// Build with in-memory, side-effect-free defaults for every adapter not
     /// supplied by the host.
     #[must_use]
@@ -160,6 +177,8 @@ impl EmbeddedChoreographerBuilder {
             evidence_source,
             clock,
             metrics,
+            self.memory
+                .unwrap_or_else(|| Arc::new(ForgetfulMemory::new())),
         )
     }
 }

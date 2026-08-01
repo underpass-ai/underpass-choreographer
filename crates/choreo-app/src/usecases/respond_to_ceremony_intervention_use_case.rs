@@ -8,11 +8,13 @@ use choreo_core::ports::{CeremonyInstanceRepositoryPort, ClockPort};
 
 use super::resolve_ceremony_definition_use_case::ResolveCeremonyDefinitionUseCase;
 use super::RespondToCeremonyInterventionInput;
+use crate::services::SessionMemoryRecorder;
 
 pub struct RespondToCeremonyInterventionUseCase {
     definitions: Arc<ResolveCeremonyDefinitionUseCase>,
     instances: Arc<dyn CeremonyInstanceRepositoryPort>,
     clock: Arc<dyn ClockPort>,
+    memory: Arc<SessionMemoryRecorder>,
 }
 
 impl std::fmt::Debug for RespondToCeremonyInterventionUseCase {
@@ -29,11 +31,13 @@ impl RespondToCeremonyInterventionUseCase {
         definitions: Arc<ResolveCeremonyDefinitionUseCase>,
         instances: Arc<dyn CeremonyInstanceRepositoryPort>,
         clock: Arc<dyn ClockPort>,
+        memory: Arc<SessionMemoryRecorder>,
     ) -> Self {
         Self {
             definitions,
             instances,
             clock,
+            memory,
         }
     }
 
@@ -66,6 +70,12 @@ impl RespondToCeremonyInterventionUseCase {
             self.clock.now(),
         )?;
         self.instances.save(&instance).await?;
+        // After the session is safely stored, never before: a memory
+        // of something that failed to persist would outlive the thing
+        // it describes.
+        self.memory
+            .remember_contribution(&instance, &input.intervention_id)
+            .await;
         Ok(instance)
     }
 }
@@ -80,7 +90,7 @@ mod tests {
 
     use super::*;
     use crate::usecases::ceremony_test_support::{
-        ceremony_id, definition, definition_resolver, now, respondent_role_id, role_id,
+        a_recorder, ceremony_id, definition, definition_resolver, now, respondent_role_id, role_id,
         started_instance, DefinitionRepositoryFake, FixedClock, InstanceRepositoryFake,
     };
 
@@ -108,6 +118,7 @@ mod tests {
             definition_resolver(definitions),
             instances,
             Arc::new(FixedClock::new(now())),
+            a_recorder(),
         );
 
         let instance = usecase

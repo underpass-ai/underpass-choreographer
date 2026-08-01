@@ -521,6 +521,7 @@ const fn kernel_relation(kind: MemoryRelationKind) -> (&'static str, &'static st
     match kind {
         MemoryRelationKind::Answers => ("answers", "procedural"),
         MemoryRelationKind::ChosenBecause => ("chosen_because", "motivational"),
+        MemoryRelationKind::AchievedBy => ("achieved_by", "procedural"),
         MemoryRelationKind::FollowsFrom => ("derived_from", "causal"),
         MemoryRelationKind::SatisfiesConstraint => ("satisfies_constraint", "constraint"),
         MemoryRelationKind::ViolatesConstraint => ("violates_constraint", "constraint"),
@@ -533,6 +534,7 @@ fn relation_kind_of(rel: &str) -> Option<MemoryRelationKind> {
     match rel {
         "answers" => Some(MemoryRelationKind::Answers),
         "chosen_because" => Some(MemoryRelationKind::ChosenBecause),
+        "achieved_by" => Some(MemoryRelationKind::AchievedBy),
         "derived_from" => Some(MemoryRelationKind::FollowsFrom),
         "satisfies_constraint" => Some(MemoryRelationKind::SatisfiesConstraint),
         "violates_constraint" => Some(MemoryRelationKind::ViolatesConstraint),

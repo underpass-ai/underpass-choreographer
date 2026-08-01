@@ -8,12 +8,14 @@ use choreo_core::ports::{CeremonyEvidenceSourcePort, CeremonyInstanceRepositoryP
 
 use super::resolve_ceremony_definition_use_case::ResolveCeremonyDefinitionUseCase;
 use super::CollectCeremonyEvidenceInput;
+use crate::services::SessionMemoryRecorder;
 
 pub struct CollectCeremonyEvidenceUseCase {
     definitions: Arc<ResolveCeremonyDefinitionUseCase>,
     instances: Arc<dyn CeremonyInstanceRepositoryPort>,
     evidence_source: Arc<dyn CeremonyEvidenceSourcePort>,
     clock: Arc<dyn ClockPort>,
+    memory: Arc<SessionMemoryRecorder>,
 }
 
 impl std::fmt::Debug for CollectCeremonyEvidenceUseCase {
@@ -31,12 +33,14 @@ impl CollectCeremonyEvidenceUseCase {
         instances: Arc<dyn CeremonyInstanceRepositoryPort>,
         evidence_source: Arc<dyn CeremonyEvidenceSourcePort>,
         clock: Arc<dyn ClockPort>,
+        memory: Arc<SessionMemoryRecorder>,
     ) -> Self {
         Self {
             definitions,
             instances,
             evidence_source,
             clock,
+            memory,
         }
     }
 
@@ -79,6 +83,12 @@ impl CollectCeremonyEvidenceUseCase {
             self.clock.now(),
         )?;
         self.instances.save(&instance).await?;
+        // The contribution and what backs it are remembered together,
+        // because an observation whose evidence arrived separately
+        // would read as a claim nobody checked.
+        self.memory
+            .remember_contribution(&instance, request.intervention_id())
+            .await;
         Ok(instance)
     }
 }
@@ -99,7 +109,7 @@ mod tests {
 
     use super::*;
     use crate::usecases::ceremony_test_support::{
-        ceremony_id, definition, definition_resolver, now, respondent_role_id, role_id,
+        a_recorder, ceremony_id, definition, definition_resolver, now, respondent_role_id, role_id,
         started_instance, DefinitionRepositoryFake, FixedClock, InstanceRepositoryFake,
     };
 
@@ -172,6 +182,7 @@ mod tests {
                 pack: evidence_pack(),
             }),
             Arc::new(FixedClock::new(now())),
+            a_recorder(),
         );
 
         let instance = usecase

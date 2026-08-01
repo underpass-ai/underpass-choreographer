@@ -9,12 +9,13 @@ use choreo_core::error::DomainError;
 use choreo_core::ports::{
     CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort,
     CeremonyInstanceRepositoryPort, CeremonyStepHandlerPort, CeremonyStepHandlerRequest,
-    CeremonyTranscriptStorePort, ClockPort,
+    CeremonyTranscriptStorePort, ClockPort, MemoryWriteOutcome, MemoryWriterPort,
 };
 use choreo_core::value_objects::{
     CeremonyContext, CeremonyGuard, CeremonyId, CeremonyName, CeremonyRole, CeremonyState,
     CeremonyStep, CeremonyStepContribution, CeremonyTranscript, CeremonyTransition,
     CeremonyVersion, DurationMs, GuardCondition, GuardName, IdempotencyKey, LeaseOwnerId,
+    MemoryCapabilities, MemoryCapability, MemoryEntry, MemoryRelation, MemoryScope, MemoryWrite,
     RetryPolicy, RoleAction, RoleId, StateId, StepAttempt, StepHandlerConfig, StepHandlerKind,
     StepId, StepResult, StepStatus, TransitionTrigger,
 };
@@ -23,6 +24,7 @@ use time::OffsetDateTime;
 use tokio::sync::RwLock;
 
 use super::resolve_ceremony_definition_use_case::ResolveCeremonyDefinitionUseCase;
+use crate::services::SessionMemoryRecorder;
 
 #[derive(Debug, Clone, Copy)]
 pub(super) struct FixedClock {
@@ -500,4 +502,71 @@ pub(super) fn resolver_with(
         definitions,
         publications,
     ))
+}
+
+/// Memory that keeps what it was handed, so a test can see what the
+/// engine chose to remember — and why it said one thing led to
+/// another.
+///
+/// Not a stand-in for a kernel. What is worth checking here is the
+/// engine's judgement, and that is the same whatever backend receives
+/// it.
+#[derive(Debug, Default)]
+pub(super) struct RecordingMemory {
+    written: RwLock<Vec<(MemoryScope, MemoryWrite, String)>>,
+}
+
+impl RecordingMemory {
+    pub(super) async fn entries(&self) -> Vec<MemoryEntry> {
+        self.written
+            .read()
+            .await
+            .iter()
+            .flat_map(|(_, write, _)| write.entries().to_vec())
+            .collect()
+    }
+
+    pub(super) async fn relations(&self) -> Vec<MemoryRelation> {
+        self.written
+            .read()
+            .await
+            .iter()
+            .flat_map(|(_, write, _)| write.relations().to_vec())
+            .collect()
+    }
+}
+
+#[async_trait]
+impl MemoryWriterPort for RecordingMemory {
+    async fn remember(
+        &self,
+        scope: &MemoryScope,
+        write: MemoryWrite,
+        idempotency_key: &str,
+    ) -> Result<MemoryWriteOutcome, DomainError> {
+        self.written
+            .write()
+            .await
+            .push((scope.clone(), write, idempotency_key.to_owned()));
+        Ok(MemoryWriteOutcome::Remembered)
+    }
+
+    fn capabilities(&self) -> MemoryCapabilities {
+        MemoryCapabilities::none()
+            .with(MemoryCapability::Remembering)
+            .with(MemoryCapability::KeepingReasons)
+    }
+}
+
+pub(super) fn recording_memory() -> Arc<RecordingMemory> {
+    Arc::new(RecordingMemory::default())
+}
+
+pub(super) fn recorder(memory: Arc<RecordingMemory>) -> Arc<SessionMemoryRecorder> {
+    Arc::new(SessionMemoryRecorder::new(memory))
+}
+
+/// The recorder for the many tests that do not care about memory.
+pub(super) fn a_recorder() -> Arc<SessionMemoryRecorder> {
+    recorder(recording_memory())
 }

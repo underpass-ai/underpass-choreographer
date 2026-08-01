@@ -5,14 +5,17 @@ use std::sync::Arc;
 use choreo_core::entities::CeremonyInstance;
 use choreo_core::error::DomainError;
 use choreo_core::ports::{CeremonyInstanceRepositoryPort, ClockPort};
+use choreo_core::value_objects::CeremonyRecordRef;
 
 use super::approve_ceremony_guard_input::ApproveCeremonyGuardInput;
 use super::resolve_ceremony_definition_use_case::ResolveCeremonyDefinitionUseCase;
+use crate::services::SessionMemoryRecorder;
 
 pub struct ApproveCeremonyGuardUseCase {
     definitions: Arc<ResolveCeremonyDefinitionUseCase>,
     instances: Arc<dyn CeremonyInstanceRepositoryPort>,
     clock: Arc<dyn ClockPort>,
+    memory: Arc<SessionMemoryRecorder>,
 }
 
 impl std::fmt::Debug for ApproveCeremonyGuardUseCase {
@@ -27,11 +30,13 @@ impl ApproveCeremonyGuardUseCase {
         definitions: Arc<ResolveCeremonyDefinitionUseCase>,
         instances: Arc<dyn CeremonyInstanceRepositoryPort>,
         clock: Arc<dyn ClockPort>,
+        memory: Arc<SessionMemoryRecorder>,
     ) -> Self {
         Self {
             definitions,
             instances,
             clock,
+            memory,
         }
     }
 
@@ -57,6 +62,14 @@ impl ApproveCeremonyGuardUseCase {
             self.clock.now(),
         )?;
         self.instances.save(&instance).await?;
+        // A human decision is the kind a later session weighs hardest,
+        // and now it can say who made it.
+        self.memory
+            .remember_guard_decision(
+                &instance,
+                &CeremonyRecordRef::guard_decision(input.guard_name.clone()),
+            )
+            .await;
         Ok(instance)
     }
 }
@@ -70,8 +83,8 @@ mod tests {
 
     use super::*;
     use crate::usecases::ceremony_test_support::{
-        approval_definition, ceremony_id, definition_resolver, now, role_id, started_instance,
-        DefinitionRepositoryFake, FixedClock, InstanceRepositoryFake,
+        a_recorder, approval_definition, ceremony_id, definition_resolver, now, role_id,
+        started_instance, DefinitionRepositoryFake, FixedClock, InstanceRepositoryFake,
     };
 
     #[tokio::test]
@@ -87,6 +100,7 @@ mod tests {
             definition_resolver(definitions),
             instances.clone(),
             Arc::new(FixedClock::new(now())),
+            a_recorder(),
         );
         let guard_name = GuardName::new("human_approved").unwrap();
 

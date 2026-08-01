@@ -20,6 +20,10 @@ tracing = { workspace = true }
 time = { workspace = true }
 uuid = { workspace = true }
 serde = { workspace = true }
+# Required, not decorative: `Attributes` is choreo-core's public shape
+# for opaque payloads and it is a map of JSON values, so any crate that
+# builds one needs this.
+serde_json = { workspace = true }
 
 [dev-dependencies]
 mockall = { workspace = true }

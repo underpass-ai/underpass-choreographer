@@ -23,6 +23,7 @@ use choreo_adapters::agents::DispatchingAgentFactory;
 use choreo_adapters::ceremony::DeliberatingCeremonyStepHandler;
 use choreo_adapters::clock::SystemClock;
 use choreo_adapters::grpc::ChoreographerGrpcService;
+use choreo_adapters::memory::ForgetfulMemory;
 use choreo_adapters::memory::{
     InMemoryAgentRegistry, InMemoryCeremonyDefinitionPublications,
     InMemoryCeremonyDefinitionRepository, InMemoryCeremonyInstanceRepository,
@@ -36,6 +37,7 @@ use choreo_adapters::validators::{
     JsonSchemaValidator, RequiredFieldsValidator,
 };
 use choreo_app::services::AutoDispatchService;
+use choreo_app::services::SessionMemoryRecorder;
 use choreo_app::usecases::{
     ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase, BindCeremonyParticipantsUseCase,
     CloseCeremonyInterventionUseCase, CollectCeremonyEvidenceUseCase, CreateCouncilUseCase,
@@ -188,20 +190,25 @@ impl GrpcFixture {
             )
             .with_transcript_store(ceremony_transcript_store),
         );
+        // No memory configured, and said so rather than pretended.
+        let session_memory = Arc::new(SessionMemoryRecorder::new(Arc::new(ForgetfulMemory::new())));
         let apply_ceremony_transition = Arc::new(ApplyCeremonyTransitionUseCase::new(
             resolve_ceremony_definition.clone(),
             ceremony_instances.clone(),
             clock.clone(),
+            session_memory.clone(),
         ));
         let approve_ceremony_guard = Arc::new(ApproveCeremonyGuardUseCase::new(
             resolve_ceremony_definition.clone(),
             ceremony_instances.clone(),
             clock.clone(),
+            session_memory.clone(),
         ));
         let defer_ceremony_guard = Arc::new(DeferCeremonyGuardUseCase::new(
             resolve_ceremony_definition.clone(),
             ceremony_instances.clone(),
             clock.clone(),
+            session_memory.clone(),
         ));
         let request_ceremony_intervention = Arc::new(RequestCeremonyInterventionUseCase::new(
             resolve_ceremony_definition.clone(),
@@ -212,6 +219,7 @@ impl GrpcFixture {
             resolve_ceremony_definition.clone(),
             ceremony_instances.clone(),
             clock.clone(),
+            session_memory.clone(),
         ));
         let close_ceremony_intervention = Arc::new(CloseCeremonyInterventionUseCase::new(
             resolve_ceremony_definition.clone(),
@@ -226,6 +234,7 @@ impl GrpcFixture {
             ceremony_instances.clone(),
             Arc::new(NoopCeremonyEvidenceSource::new()),
             clock.clone(),
+            session_memory.clone(),
         ));
         let publish_ceremony_definition = Arc::new(PublishCeremonyDefinitionUseCase::new(
             ceremony_publications.clone(),
@@ -446,20 +455,25 @@ impl GrpcFixture {
             )
             .with_transcript_store(ceremony_transcript_store),
         );
+        // No memory configured, and said so rather than pretended.
+        let session_memory = Arc::new(SessionMemoryRecorder::new(Arc::new(ForgetfulMemory::new())));
         let apply_ceremony_transition = Arc::new(ApplyCeremonyTransitionUseCase::new(
             resolve_ceremony_definition.clone(),
             ceremony_instances.clone(),
             clock.clone(),
+            session_memory.clone(),
         ));
         let approve_ceremony_guard = Arc::new(ApproveCeremonyGuardUseCase::new(
             resolve_ceremony_definition.clone(),
             ceremony_instances.clone(),
             clock.clone(),
+            session_memory.clone(),
         ));
         let defer_ceremony_guard = Arc::new(DeferCeremonyGuardUseCase::new(
             resolve_ceremony_definition.clone(),
             ceremony_instances.clone(),
             clock.clone(),
+            session_memory.clone(),
         ));
         let request_ceremony_intervention = Arc::new(RequestCeremonyInterventionUseCase::new(
             resolve_ceremony_definition.clone(),
@@ -470,6 +484,7 @@ impl GrpcFixture {
             resolve_ceremony_definition.clone(),
             ceremony_instances.clone(),
             clock.clone(),
+            session_memory.clone(),
         ));
         let close_ceremony_intervention = Arc::new(CloseCeremonyInterventionUseCase::new(
             resolve_ceremony_definition.clone(),
@@ -484,6 +499,7 @@ impl GrpcFixture {
             ceremony_instances.clone(),
             Arc::new(NoopCeremonyEvidenceSource::new()),
             clock.clone(),
+            session_memory.clone(),
         ));
         let publish_ceremony_definition = Arc::new(PublishCeremonyDefinitionUseCase::new(
             ceremony_publications.clone(),

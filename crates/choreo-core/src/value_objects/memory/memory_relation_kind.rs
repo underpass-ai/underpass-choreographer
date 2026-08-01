@@ -29,6 +29,15 @@ pub enum MemoryRelationKind {
     /// coincidence becomes a precedent.
     ChosenBecause,
 
+    /// This was brought about by doing that — **the how**.
+    ///
+    /// Not a weaker form of cause. A reason says what made something
+    /// necessary; this says what was actually done, and it is what
+    /// makes a memory repeatable rather than only understandable. A
+    /// session that recorded why it resolved and not how leaves a
+    /// precedent nobody can turn into a procedure.
+    AchievedBy,
+
     /// This came about because of that.
     ///
     /// Asserted by whoever can vouch for it. The strongest claim
@@ -64,6 +73,7 @@ impl MemoryRelationKind {
         match self {
             Self::Answers => "answers",
             Self::ChosenBecause => "chosen_because",
+            Self::AchievedBy => "achieved_by",
             Self::FollowsFrom => "follows_from",
             Self::SatisfiesConstraint => "satisfies_constraint",
             Self::ViolatesConstraint => "violates_constraint",
@@ -81,5 +91,18 @@ impl MemoryRelationKind {
     #[must_use]
     pub const fn is_observable_by_the_engine(self) -> bool {
         matches!(self, Self::Answers | Self::Supersedes)
+    }
+
+    /// Whether this says **how** something was done rather than why.
+    ///
+    /// Worth telling apart: a memory kernel measuring how explanatory
+    /// a memory is counts causes, motives and evidence, and does not
+    /// count method. A session with method and no cause scores zero on
+    /// that measure and is not thereby worthless — it is repeatable
+    /// and unexplained, which is a different thing from explained and
+    /// unrepeatable.
+    #[must_use]
+    pub const fn is_method(self) -> bool {
+        matches!(self, Self::AchievedBy)
     }
 }

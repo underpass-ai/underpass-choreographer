@@ -17,7 +17,7 @@ pub struct MemoryWrite {
 impl MemoryWrite {
     /// Entries, and the reasons connecting them.
     ///
-    /// A write with no entries is refused here rather than by each
+    /// A write carrying neither is refused here rather than by each
     /// backend in turn: it is a call that would change nothing, and a
     /// backend answering "remembered" to it would be lying quietly.
     /// Refusing at construction means no backend is ever handed one.
@@ -30,12 +30,22 @@ impl MemoryWrite {
         entries: Vec<MemoryEntry>,
         relations: Vec<MemoryRelation>,
     ) -> Result<Self, DomainError> {
-        if entries.is_empty() {
+        if entries.is_empty() && relations.is_empty() {
             return Err(DomainError::EmptyCollection {
-                field: "memory.entries",
+                field: "memory.write",
             });
         }
         Ok(Self { entries, relations })
+    }
+
+    /// Reasons about things already remembered.
+    ///
+    /// The shape a caller needs when the understanding arrives after
+    /// the events: both ends were written earlier, and what is new is
+    /// the edge between them. Whether those ends are still there is
+    /// the backend's to judge, not this type's.
+    pub fn reasons_only(relations: Vec<MemoryRelation>) -> Result<Self, DomainError> {
+        Self::new(Vec::new(), relations)
     }
 
     /// Entries with nothing yet connecting them.
@@ -92,15 +102,34 @@ mod tests {
     /// A call that would change nothing must not be answerable with
     /// "remembered". Refused here so no backend is ever handed one.
     #[test]
-    fn a_write_with_no_entries_is_refused() {
+    fn a_write_carrying_nothing_at_all_is_refused() {
         let outcome = MemoryWrite::new(Vec::new(), Vec::new());
 
         assert!(matches!(
             outcome,
             Err(DomainError::EmptyCollection {
-                field: "memory.entries"
+                field: "memory.write"
             })
         ));
+    }
+
+    /// Understanding often arrives after the events it explains: both
+    /// ends were written earlier and the edge is what is new.
+    #[test]
+    fn a_write_may_carry_only_reasons() {
+        let relation = MemoryRelation::new(
+            MemoryEntryId::new("outcome").expect("a valid id"),
+            MemoryEntryId::new("decision").expect("a valid id"),
+            MemoryRelationKind::FollowsFrom,
+            "the queue drained because the rollback removed the bad revision",
+            MemoryConfidence::Medium,
+        )
+        .expect("a valid relation");
+
+        let write = MemoryWrite::reasons_only(vec![relation]).expect("a valid write");
+
+        assert!(write.entries().is_empty());
+        assert_eq!(write.relations().len(), 1);
     }
 
     #[test]
