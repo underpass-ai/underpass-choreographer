@@ -66,6 +66,7 @@ pub fn ceremony_record_ref_from_proto(
 
 fn reason_kind_from_proto(raw: &str) -> Result<CeremonyReasonKind, DomainError> {
     Ok(match raw {
+        "authorizes" => CeremonyReasonKind::Authorizes,
         "chosen_because" => CeremonyReasonKind::ChosenBecause,
         "achieved_by" => CeremonyReasonKind::AchievedBy,
         "follows_from" => CeremonyReasonKind::FollowsFrom,

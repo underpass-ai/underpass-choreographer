@@ -36,6 +36,18 @@ pub enum CeremonyReasonKind {
     Answers,
     /// This was decided because of that.
     ChosenBecause,
+    /// That decision is what permitted this action.
+    ///
+    /// The edge anyone reviewing a session afterwards looks for first:
+    /// not what happened, but what made it allowed to happen. A session
+    /// that records an action and cannot point at the decision behind
+    /// it is a record of events rather than of authority.
+    ///
+    /// Only whoever made the decision may say what it authorised. That
+    /// a third party can see the connection does not make it theirs to
+    /// assert: attributing authorising force to somebody else's
+    /// decision is the receipt this engine refuses to write.
+    Authorizes,
     /// This was brought about by doing that — **the how**.
     ///
     /// The one that turns a resolved session from a precedent into a
@@ -59,6 +71,7 @@ impl CeremonyReasonKind {
     pub const fn as_label(self) -> &'static str {
         match self {
             Self::Answers => "answers",
+            Self::Authorizes => "authorizes",
             Self::ChosenBecause => "chosen_because",
             Self::AchievedBy => "achieved_by",
             Self::FollowsFrom => "follows_from",
@@ -78,7 +91,7 @@ impl CeremonyReasonKind {
             Self::Answers => ReasonAsserter::TheEngine,
             // Testimony. Only whoever decided knows what decided them,
             // and only whoever acted knows how they did it.
-            Self::ChosenBecause | Self::AchievedBy => ReasonAsserter::ItsAuthor,
+            Self::Authorizes | Self::ChosenBecause | Self::AchievedBy => ReasonAsserter::ItsAuthor,
             // Claims about the world, open to anyone and weighable by
             // everyone. The engine is excluded from these on purpose:
             // a session ending well after an action is not the action

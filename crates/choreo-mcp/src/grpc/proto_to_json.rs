@@ -393,7 +393,45 @@ pub(crate) fn ceremony_instance_state_to_json(state: pb::CeremonyInstanceState) 
                 "bound_at": binding.bound_at,
             }))
             .collect::<Vec<_>>(),
+        // Both backends answer the same shape or neither does: the
+        // parity gate is what says so, and it is the reason this had to
+        // be added here the moment the embedded side grew it.
+        "reasons": state
+            .reasons
+            .into_iter()
+            .map(|reason| json!({
+                "from": record_ref_to_json(reason.from),
+                "to": record_ref_to_json(reason.to),
+                "kind": reason.kind,
+                "why": reason.why,
+                "confidence": reason.confidence,
+                "asserted_by_role_id": empty_as_null(reason.asserted_by_role_id),
+                "asserted_at": reason.asserted_at,
+            }))
+            .collect::<Vec<_>>(),
     })
+}
+
+/// What a reason points at, with only the fields its kind uses.
+///
+/// Proto fills every field of a flat message; carrying the unset ones
+/// out to a caller would offer a step id on an agenda item.
+fn record_ref_to_json(record: Option<pb::CeremonyRecordRefState>) -> Value {
+    let Some(record) = record else {
+        return Value::Null;
+    };
+    match record.kind.as_str() {
+        "step" => json!({ "kind": "step", "step_id": record.step_id }),
+        "agenda_item" => json!({ "kind": "agenda_item", "agenda_item": record.agenda_item }),
+        "contribution" => json!({
+            "kind": "contribution",
+            "agenda_item": record.agenda_item,
+            "ordinal": record.ordinal,
+        }),
+        "guard_decision" => json!({ "kind": "guard_decision", "guard_name": record.guard_name }),
+        "transition" => json!({ "kind": "transition", "ordinal": record.ordinal }),
+        other => json!({ "kind": other }),
+    }
 }
 
 fn step_state_to_json(step: pb::CeremonyStepState) -> Value {

@@ -569,6 +569,7 @@ fn reason(scope: &MemoryScope, relation: &MemoryRelation) -> Value {
 const fn kernel_relation(kind: MemoryRelationKind) -> (&'static str, &'static str) {
     match kind {
         MemoryRelationKind::Answers => ("answers", "procedural"),
+        MemoryRelationKind::Authorizes => ("authorizes", "causal"),
         MemoryRelationKind::ChosenBecause => ("chosen_because", "motivational"),
         MemoryRelationKind::AchievedBy => ("achieved_by", "procedural"),
         MemoryRelationKind::FollowsFrom => ("derived_from", "causal"),
@@ -582,6 +583,7 @@ const fn kernel_relation(kind: MemoryRelationKind) -> (&'static str, &'static st
 fn relation_kind_of(rel: &str) -> Option<MemoryRelationKind> {
     match rel {
         "answers" => Some(MemoryRelationKind::Answers),
+        "authorizes" => Some(MemoryRelationKind::Authorizes),
         "chosen_because" => Some(MemoryRelationKind::ChosenBecause),
         "achieved_by" => Some(MemoryRelationKind::AchievedBy),
         "derived_from" => Some(MemoryRelationKind::FollowsFrom),

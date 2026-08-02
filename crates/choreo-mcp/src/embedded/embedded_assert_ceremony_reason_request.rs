@@ -73,6 +73,7 @@ fn record_ref(value: Option<&Value>, field: &str) -> Result<CeremonyRecordRef, S
 
 fn reason_kind(raw: &str) -> Result<CeremonyReasonKind, String> {
     Ok(match raw {
+        "authorizes" => CeremonyReasonKind::Authorizes,
         "chosen_because" => CeremonyReasonKind::ChosenBecause,
         "achieved_by" => CeremonyReasonKind::AchievedBy,
         "follows_from" => CeremonyReasonKind::FollowsFrom,

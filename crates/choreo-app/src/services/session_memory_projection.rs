@@ -59,6 +59,7 @@ pub(super) fn entry_id(record: &CeremonyRecordRef) -> Result<MemoryEntryId, Doma
 pub(super) const fn relation_kind(kind: CeremonyReasonKind) -> MemoryRelationKind {
     match kind {
         CeremonyReasonKind::Answers => MemoryRelationKind::Answers,
+        CeremonyReasonKind::Authorizes => MemoryRelationKind::Authorizes,
         CeremonyReasonKind::ChosenBecause => MemoryRelationKind::ChosenBecause,
         CeremonyReasonKind::AchievedBy => MemoryRelationKind::AchievedBy,
         CeremonyReasonKind::FollowsFrom => MemoryRelationKind::FollowsFrom,

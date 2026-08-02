@@ -27,6 +27,13 @@ pub enum MemoryRelationKind {
     /// something being written down before a decision is not what made
     /// the decision, and recording it as though it were is how a
     /// coincidence becomes a precedent.
+    /// That decision is what permitted this action.
+    ///
+    /// The kernel's `authorizes`, which its parser learned in #146.
+    /// Causal rather than motivational: a decision that permits an
+    /// action is part of why the action was possible, not part of why
+    /// anybody wanted it.
+    Authorizes,
     ChosenBecause,
 
     /// This was brought about by doing that — **the how**.
@@ -72,6 +79,7 @@ impl MemoryRelationKind {
     pub const fn as_label(self) -> &'static str {
         match self {
             Self::Answers => "answers",
+            Self::Authorizes => "authorizes",
             Self::ChosenBecause => "chosen_because",
             Self::AchievedBy => "achieved_by",
             Self::FollowsFrom => "follows_from",

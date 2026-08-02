@@ -1,6 +1,8 @@
 use choreo_app::usecases::CeremonyInstanceView;
 use choreo_core::entities::CeremonyInstance;
-use choreo_core::value_objects::{CeremonyDefinitionDigest, CeremonyId, RoleId, StepId};
+use choreo_core::value_objects::{
+    CeremonyDefinitionDigest, CeremonyId, CeremonyRecordRef, RoleId, StepId,
+};
 use choreo_embedded::EmbeddedChoreographer;
 use serde_json::{json, Value};
 
@@ -97,7 +99,47 @@ impl EmbeddedCeremonyInstancePresenter {
                     "bound_at": binding.bound_at(),
                 }))
                 .collect::<Vec<_>>(),
+            // Read back, not only written: a seat that explained this
+            // session can find its own explanation again. Until now the
+            // edges crossed the wire in one direction only.
+            "reasons": view
+                .reasons()
+                .iter()
+                .map(|reason| json!({
+                    "from": record_ref_value(reason.from()),
+                    "to": record_ref_value(reason.to()),
+                    "kind": reason.kind().as_label(),
+                    "why": reason.why(),
+                    "confidence": reason.confidence().as_label(),
+                    "asserted_by_role_id": reason.asserted_by().map(RoleId::as_str),
+                    "asserted_at": reason.asserted_at(),
+                }))
+                .collect::<Vec<_>>(),
         }))
+    }
+}
+
+/// What a reason points at, flat with a discriminator.
+fn record_ref_value(record: &CeremonyRecordRef) -> Value {
+    match record {
+        CeremonyRecordRef::Step { step_id } => json!({
+            "kind": "step", "step_id": step_id.as_str()
+        }),
+        CeremonyRecordRef::AgendaItem { agenda_item } => json!({
+            "kind": "agenda_item", "agenda_item": agenda_item.as_str()
+        }),
+        CeremonyRecordRef::Contribution {
+            agenda_item,
+            ordinal,
+        } => json!({
+            "kind": "contribution", "agenda_item": agenda_item.as_str(), "ordinal": ordinal
+        }),
+        CeremonyRecordRef::GuardDecision { guard_name } => json!({
+            "kind": "guard_decision", "guard_name": guard_name.as_str()
+        }),
+        CeremonyRecordRef::Transition { ordinal } => json!({
+            "kind": "transition", "ordinal": ordinal
+        }),
     }
 }
 

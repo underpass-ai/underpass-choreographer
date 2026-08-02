@@ -9,7 +9,7 @@ use choreo_app::usecases::{CeremonyInstanceView, CeremonyStepView, CeremonyTrans
 use choreo_core::entities::{CeremonyInstance, CeremonyIntervention};
 use choreo_core::value_objects::{
     CeremonyDefinitionDigest, CeremonyGuardDeferral, CeremonyInterventionResponse,
-    CeremonyParticipantBinding, RoleId, StepId,
+    CeremonyParticipantBinding, CeremonyReason, CeremonyRecordRef, RoleId, StepId,
 };
 use choreo_proto::v1 as pb;
 
@@ -64,6 +64,30 @@ pub fn ceremony_instance_state_from(view: &CeremonyInstanceView<'_>) -> pb::Cere
             .values()
             .map(participant_binding_state_from)
             .collect(),
+        reasons: view.reasons().iter().map(reason_state_from).collect(),
+    }
+}
+
+/// A reason, on its way back out.
+///
+/// The edges were write-only over the wire until now: a seat could
+/// explain a session and nobody holding that session could find the
+/// explanation again.
+fn reason_state_from(reason: &CeremonyReason) -> pb::CeremonyReasonState {
+    pb::CeremonyReasonState {
+        from: Some(record_ref_state_from(reason.from())),
+        to: Some(record_ref_state_from(reason.to())),
+        kind: reason.kind().as_label().to_owned(),
+        why: reason.why().to_owned(),
+        confidence: reason.confidence().as_label().to_owned(),
+        asserted_by_role_id: reason
+            .asserted_by()
+            .map(|role_id| role_id.as_str().to_owned())
+            .unwrap_or_default(),
+        asserted_at: reason
+            .asserted_at()
+            .format(&time::format_description::well_known::Rfc3339)
+            .unwrap_or_default(),
     }
 }
 
@@ -198,4 +222,43 @@ fn open_intervention_ids(instance: &CeremonyInstance) -> Vec<String> {
         .filter(|intervention| intervention.status().is_open())
         .map(|intervention| intervention.id().as_str().to_owned())
         .collect()
+}
+
+/// A record reference, on its way back out.
+///
+/// Flat with a discriminator, mirroring the shape the request side
+/// already accepts: one message that says which kind of thing it points
+/// at and fills only the fields that kind uses.
+fn record_ref_state_from(record: &CeremonyRecordRef) -> pb::CeremonyRecordRefState {
+    match record {
+        CeremonyRecordRef::Step { step_id } => pb::CeremonyRecordRefState {
+            kind: "step".to_owned(),
+            step_id: step_id.as_str().to_owned(),
+            ..pb::CeremonyRecordRefState::default()
+        },
+        CeremonyRecordRef::AgendaItem { agenda_item } => pb::CeremonyRecordRefState {
+            kind: "agenda_item".to_owned(),
+            agenda_item: agenda_item.as_str().to_owned(),
+            ..pb::CeremonyRecordRefState::default()
+        },
+        CeremonyRecordRef::Contribution {
+            agenda_item,
+            ordinal,
+        } => pb::CeremonyRecordRefState {
+            kind: "contribution".to_owned(),
+            agenda_item: agenda_item.as_str().to_owned(),
+            ordinal: *ordinal,
+            ..pb::CeremonyRecordRefState::default()
+        },
+        CeremonyRecordRef::GuardDecision { guard_name } => pb::CeremonyRecordRefState {
+            kind: "guard_decision".to_owned(),
+            guard_name: guard_name.as_str().to_owned(),
+            ..pb::CeremonyRecordRefState::default()
+        },
+        CeremonyRecordRef::Transition { ordinal } => pb::CeremonyRecordRefState {
+            kind: "transition".to_owned(),
+            ordinal: *ordinal,
+            ..pb::CeremonyRecordRefState::default()
+        },
+    }
 }

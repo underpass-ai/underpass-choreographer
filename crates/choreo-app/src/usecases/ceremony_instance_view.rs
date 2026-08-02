@@ -235,6 +235,17 @@ impl<'a> CeremonyInstanceView<'a> {
         self.instance.participant_bindings()
     }
 
+    /// Every reason asserted about this session, in the order they
+    /// were asserted.
+    ///
+    /// Read straight off the instance rather than derived: a reason is
+    /// something a seat said, and a projection has nothing to add to it
+    /// beyond letting it out.
+    #[must_use]
+    pub fn reasons(&self) -> &[choreo_core::value_objects::CeremonyReason] {
+        self.instance.reasons()
+    }
+
     #[must_use]
     pub fn next_step_id(&self) -> Option<&'a StepId> {
         self.next_step_id

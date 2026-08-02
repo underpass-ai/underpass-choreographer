@@ -952,6 +952,35 @@ async fn a_seat_says_why_over_stdio_and_is_refused_what_is_not_its_to_say() {
         "a seat could not say why its own contribution was made: {said_why}"
     );
 
+    // The point of asserting one: it can be found again. The edges
+    // crossed the wire in one direction only until now, so a seat
+    // could explain a session and nobody holding that session could
+    // read the explanation back.
+    let read_back = send(&server, instance_call(60, ceremony_id)).await;
+    let reasons = structured(&read_back)["reasons"]
+        .as_array()
+        .expect("a session carries its reasons")
+        .clone();
+    // The engine's own `answers` edges are in here too, one per
+    // contribution, with nobody named — they state the shape of the
+    // session rather than anyone's judgement.
+    let said = reasons
+        .iter()
+        .find(|reason| reason["kind"] == "chosen_because")
+        .unwrap_or_else(|| panic!("the seat's reason did not come back: {reasons:?}"));
+    assert_eq!(
+        said["why"],
+        "the queue growth is what made a rollback necessary"
+    );
+    assert_eq!(said["asserted_by_role_id"], "OBSERVER");
+    assert_eq!(said["from"]["kind"], "contribution");
+    assert!(
+        reasons
+            .iter()
+            .any(|reason| reason["kind"] == "answers" && reason["asserted_by_role_id"].is_null()),
+        "the engine's own edges are missing, or claim a seat: {reasons:?}"
+    );
+
     let structural = send(
         &server,
         reason_call(7, ceremony_id, "OBSERVER", "answers", "because it does"),

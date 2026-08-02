@@ -778,6 +778,29 @@ message CeremonyInterventionState {
 
 // Everything a caller needs to decide what to do next with a working
 // session: where it is, what blocks it, and what it has recorded.
+// Why one thing this session produced led to another.
+//
+// Asserted by a seat and read back here, so a caller that explained a
+// session can see its own explanation. Without this the edges were
+// write-only over the wire: a reason could be stated and never found
+// again by anyone holding only the session.
+message CeremonyReasonState {
+  CeremonyRecordRefState from = 1;
+  CeremonyRecordRefState to = 2;
+  // "answers", "authorizes", "chosen_because", "achieved_by",
+  // "follows_from", "satisfies_constraint", "violates_constraint",
+  // "supersedes" or "contradicts".
+  string kind = 3;
+  // The reason itself, in the words of whoever asserted it.
+  string why = 4;
+  // "high", "medium" or "low".
+  string confidence = 5;
+  // The seat that said so. Empty when the engine asserted it on its
+  // own behalf, which is the only case with nobody to name.
+  string asserted_by_role_id = 6;
+  string asserted_at = 7;
+}
+
 message CeremonyInstanceState {
   string ceremony_id = 1;
   string definition_name = 2;
@@ -803,6 +826,9 @@ message CeremonyInstanceState {
   // A role absent here is played the way the definition says, which is
   // the usual case and not a lesser one.
   repeated CeremonyParticipantBindingState participant_bindings = 15;
+  // Every reason asserted about this session, in the order they were
+  // asserted.
+  repeated CeremonyReasonState reasons = 16;
 }
 
 message CeremonyParticipantBindingState {
@@ -1002,7 +1028,7 @@ message AssertCeremonyReasonRequest {
   string role_kind = 8;
   CeremonyRecordRefState from = 3;
   CeremonyRecordRefState to = 4;
-  // "chosen_because", "achieved_by", "follows_from",
+  // "authorizes", "chosen_because", "achieved_by", "follows_from",
   // "satisfies_constraint", "violates_constraint", "supersedes" or
   // "contradicts".
   //

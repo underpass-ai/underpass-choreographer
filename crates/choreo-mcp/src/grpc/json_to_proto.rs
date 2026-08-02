@@ -262,8 +262,8 @@ pub(crate) fn run_ceremony_request_from_json(
 ) -> Result<pb::RunCeremonyRequest, String> {
     let obj = require_object(value, "tools/call.arguments")?;
     Ok(pb::RunCeremonyRequest {
-        actor_id: "operator-1".to_owned(),
-        actor_kind: "service".to_owned(),
+        actor_id: require_str(obj, "actor_id")?.to_string(),
+        actor_kind: require_str(obj, "actor_kind")?.to_string(),
         ceremony_id: optional_str(obj, "ceremony_id").unwrap_or("").to_string(),
         definition_yaml: require_str(obj, "definition_yaml")?.to_string(),
         context: optional_pb_struct(obj, "context")?,
