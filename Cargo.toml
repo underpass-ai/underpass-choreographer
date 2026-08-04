@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/choreo-core",
+    "crates/choreo-api",
     "crates/choreo-app",
     "crates/choreo-adapters",
     "crates/choreo-embedded",
@@ -120,6 +121,7 @@ jsonschema = { version = "0.17", default-features = false }
 
 # internal
 choreo-core = { path = "crates/choreo-core", version = "0.1.0" }
+choreo-api = { path = "crates/choreo-api", version = "0.1.0" }
 choreo-app = { path = "crates/choreo-app", version = "0.1.0" }
 choreo-adapters = { path = "crates/choreo-adapters", version = "0.1.0", default-features = false }
 choreo-embedded = { path = "crates/choreo-embedded", version = "0.1.0" }

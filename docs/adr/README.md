@@ -13,3 +13,5 @@ much as the decision itself.
   construction still fails fast
 - [ADR-003](003-audit-journal-and-durability.md): the engine owns the audit
   contract; the host owns durability
+- [ADR-004](004-published-embedded-api-contract.md): `choreo-api` is the
+  contract a consumer compiles against

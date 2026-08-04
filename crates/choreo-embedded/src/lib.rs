@@ -11,6 +11,7 @@ mod callback_ceremony_evidence_source;
 mod callback_ceremony_step_handler;
 mod embedded_choreographer;
 mod embedded_choreographer_builder;
+mod engine_api;
 mod in_process_ceremony_definition_source;
 
 pub use callback_ceremony_evidence_source::CallbackCeremonyEvidenceSource;

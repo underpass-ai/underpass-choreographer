@@ -505,6 +505,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "choreo-api"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "choreo-app"
 version = "0.1.0"
 dependencies = [
@@ -595,8 +605,11 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "choreo-adapters",
+ "choreo-api",
  "choreo-app",
  "choreo-core",
+ "serde_json",
+ "time",
  "tokio",
 ]
 

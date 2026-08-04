@@ -20,6 +20,7 @@ VERTICAL_TERMS='incident|outage|postmortem|on-call|oncall|pagerduty|sev[0-9]|run
 
 GUARDED_PATHS=(
   'crates/choreo-core/src'
+  'crates/choreo-api/src'
   'crates/choreo-app/src'
   'crates/choreo-mcp/src'
 )
