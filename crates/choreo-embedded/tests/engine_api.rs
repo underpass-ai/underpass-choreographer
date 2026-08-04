@@ -8,7 +8,10 @@
 use choreo_adapters::yaml::CeremonyDefinitionYaml;
 use std::collections::BTreeMap;
 
-use choreo_api::{ApiError, CeremonyEngineApi, StartCeremonyRequest, CONTRACT_VERSION};
+use choreo_api::{
+    ApiError, CeremonyEngineApi, RaiseInterventionRequest, RespondToInterventionRequest,
+    StartCeremonyRequest, CONTRACT_VERSION,
+};
 use choreo_app::usecases::RunCeremonyInput;
 use choreo_core::entities::CeremonyDefinition;
 use choreo_core::value_objects::{
@@ -242,4 +245,151 @@ async fn an_unknown_actor_kind_is_refused_rather_than_guessed_at() {
 
     let error = embedded.start_ceremony(request).await.unwrap_err();
     assert!(matches!(error, ApiError::Refused { .. }), "{error}");
+}
+
+const TABLE_CEREMONY: &str = r#"
+version: "1.0"
+name: "api_table"
+states:
+  - id: OPEN
+    initial: true
+roles:
+  - id: FACILITATOR
+    allowed_actions:
+      - request_intervention
+  - id: REVIEWER
+    allowed_actions:
+      - respond_to_intervention
+"#;
+
+async fn engine_with_a_table() -> EmbeddedChoreographer {
+    let embedded = EmbeddedChoreographer::default();
+    let definition = CeremonyDefinitionYaml::parse_str(TABLE_CEREMONY).unwrap();
+    embedded
+        .publish_definition(definition)
+        .await
+        .expect("the definition publishes");
+    embedded
+        .start_ceremony(StartCeremonyRequest {
+            ceremony_id: "api-table".to_owned(),
+            definition_name: "api_table".to_owned(),
+            definition_version: "1.0".to_owned(),
+            context: BTreeMap::new(),
+            actor_id: "operator-1".to_owned(),
+            actor_kind: "service".to_owned(),
+        })
+        .await
+        .expect("the table starts");
+    embedded
+}
+
+fn raise(intervention_id: &str) -> RaiseInterventionRequest {
+    RaiseInterventionRequest {
+        ceremony_id: "api-table".to_owned(),
+        intervention_id: intervention_id.to_owned(),
+        role_id: "FACILITATOR".to_owned(),
+        role_kind: "human".to_owned(),
+        kind: "opinion".to_owned(),
+        target_role_ids: vec!["REVIEWER".to_owned()],
+        request: "Recommend the safest cleanup.".to_owned(),
+    }
+}
+
+#[tokio::test]
+async fn the_capability_report_names_the_intervention_methods() {
+    let embedded = EmbeddedChoreographer::default();
+    let report = embedded.capabilities();
+    assert!(report.supports("raise_intervention"));
+    assert!(report.supports("respond_to_intervention"));
+}
+
+#[tokio::test]
+async fn a_question_raised_through_the_contract_reads_back_open() {
+    let embedded = engine_with_a_table().await;
+
+    let summary = embedded
+        .raise_intervention(raise("iv-1"))
+        .await
+        .expect("the question lands on the table");
+
+    assert_eq!(summary.interventions.len(), 1);
+    let intervention = &summary.interventions[0];
+    assert_eq!(intervention.intervention_id, "iv-1");
+    assert_eq!(intervention.kind, "opinion");
+    assert_eq!(intervention.requested_by, "FACILITATOR");
+    assert_eq!(intervention.target_role_ids, vec!["REVIEWER".to_owned()]);
+    assert!(intervention.open, "an unanswered question reads as open");
+    assert!(intervention.responses.is_empty());
+}
+
+#[tokio::test]
+async fn an_answer_arrives_with_its_seat_and_its_moment() {
+    let embedded = engine_with_a_table().await;
+    embedded
+        .raise_intervention(raise("iv-2"))
+        .await
+        .expect("raised");
+
+    // Qualified: the engine's own inherent method shares the name, and a
+    // concrete receiver resolves to it first. Consumers reach this through a
+    // generic bound and never see the collision.
+    let summary = CeremonyEngineApi::respond_to_intervention(
+        &embedded,
+        RespondToInterventionRequest {
+            ceremony_id: "api-table".to_owned(),
+            intervention_id: "iv-2".to_owned(),
+            role_id: "REVIEWER".to_owned(),
+            role_kind: "human".to_owned(),
+            content: "Rotate the certificate first.".to_owned(),
+        },
+    )
+    .await
+    .expect("the answer lands");
+
+    let intervention = &summary.interventions[0];
+    assert_eq!(intervention.responses.len(), 1);
+    assert_eq!(intervention.responses[0].role_id, "REVIEWER");
+    assert_eq!(
+        intervention.responses[0].content,
+        "Rotate the certificate first."
+    );
+    assert!(
+        intervention.responses[0].responded_at_millis > 0,
+        "an answer without its moment cannot be placed in the conversation"
+    );
+}
+
+#[tokio::test]
+async fn an_unknown_intervention_kind_is_refused_rather_than_guessed_at() {
+    let embedded = engine_with_a_table().await;
+    let mut request = raise("iv-3");
+    request.kind = "decree".to_owned();
+
+    let error = embedded.raise_intervention(request).await.unwrap_err();
+    assert!(matches!(error, ApiError::Refused { .. }), "{error}");
+}
+
+#[tokio::test]
+async fn answering_a_question_nobody_asked_is_refused() {
+    let embedded = engine_with_a_table().await;
+
+    let error = CeremonyEngineApi::respond_to_intervention(
+        &embedded,
+        RespondToInterventionRequest {
+            ceremony_id: "api-table".to_owned(),
+            intervention_id: "iv-never-raised".to_owned(),
+            role_id: "REVIEWER".to_owned(),
+            role_kind: "human".to_owned(),
+            content: "An answer in search of a question.".to_owned(),
+        },
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        matches!(
+            error,
+            ApiError::Refused { .. } | ApiError::CeremonyNotFound { .. }
+        ),
+        "{error}"
+    );
 }

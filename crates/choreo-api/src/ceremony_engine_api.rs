@@ -1,4 +1,7 @@
-use crate::{ApiCapabilities, ApiError, CeremonySummary, StartCeremonyRequest};
+use crate::{
+    ApiCapabilities, ApiError, CeremonySummary, RaiseInterventionRequest,
+    RespondToInterventionRequest, StartCeremonyRequest,
+};
 
 /// What a consuming product may ask of the embedded engine.
 ///
@@ -33,5 +36,22 @@ pub trait CeremonyEngineApi: Send + Sync {
     async fn start_ceremony(
         &self,
         request: StartCeremonyRequest,
+    ) -> Result<CeremonySummary, ApiError>;
+
+    /// Put a question, investigation or proposed action to the table.
+    /// Capability `raise_intervention`.
+    async fn raise_intervention(
+        &self,
+        request: RaiseInterventionRequest,
+    ) -> Result<CeremonySummary, ApiError>;
+
+    /// Answer an open intervention. Capability `respond_to_intervention`.
+    ///
+    /// A closed intervention refuses: the answer arrived after the table moved
+    /// on, and recording it as if it had been heard would misstate the
+    /// conversation the audit trail exists to keep.
+    async fn respond_to_intervention(
+        &self,
+        request: RespondToInterventionRequest,
     ) -> Result<CeremonySummary, ApiError>;
 }

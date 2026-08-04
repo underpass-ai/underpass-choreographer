@@ -8,13 +8,19 @@ use std::collections::BTreeMap;
 
 use choreo_api::{
     ApiCapabilities, ApiError, CeremonyEngineApi, CeremonyParticipant, CeremonySummary,
-    StartCeremonyRequest, CONTRACT_VERSION,
+    InterventionResponseView, InterventionView, RaiseInterventionRequest,
+    RespondToInterventionRequest, StartCeremonyRequest, CONTRACT_VERSION,
 };
-use choreo_app::usecases::StartCeremonyInput;
+use choreo_app::usecases::{
+    RequestCeremonyInterventionInput, RespondToCeremonyInterventionInput, StartCeremonyInput,
+};
 use choreo_core::entities::CeremonyInstance;
+use choreo_core::entities::CeremonyIntervention;
 use choreo_core::error::DomainError;
 use choreo_core::value_objects::{
-    Attributes, AuditActorKind, CeremonyContext, CeremonyId, CeremonyName, CeremonyVersion,
+    Attributes, AuditActorKind, CeremonyContext, CeremonyId, CeremonyInterventionContent,
+    CeremonyInterventionId, CeremonyInterventionKind, CeremonyInterventionTarget, CeremonyName,
+    CeremonyVersion, RoleId,
 };
 use time::OffsetDateTime;
 
@@ -24,7 +30,13 @@ use crate::{EmbeddedChoreographer, VERSION};
 ///
 /// Listed here, next to the implementation, so that adding a method to the
 /// trait without adding its name is a diff a reviewer sees in one place.
-const CAPABILITIES: [&str; 3] = ["list_ceremonies", "get_ceremony", "start_ceremony"];
+const CAPABILITIES: [&str; 5] = [
+    "list_ceremonies",
+    "get_ceremony",
+    "start_ceremony",
+    "raise_intervention",
+    "respond_to_intervention",
+];
 
 #[async_trait::async_trait]
 impl CeremonyEngineApi for EmbeddedChoreographer {
@@ -50,6 +62,42 @@ impl CeremonyEngineApi for EmbeddedChoreographer {
                 ceremony_id: ceremony_id.to_owned(),
             }),
             Err(error) => Err(unavailable(&error)),
+        }
+    }
+
+    async fn raise_intervention(
+        &self,
+        request: RaiseInterventionRequest,
+    ) -> Result<CeremonySummary, ApiError> {
+        let input = raise_input(request).map_err(|error| ApiError::Refused {
+            reason: error.to_string(),
+        })?;
+        match self.request_intervention(input).await {
+            Ok(instance) => Ok(summarize(&instance)),
+            Err(DomainError::NotFound { .. }) => Err(ApiError::CeremonyNotFound {
+                ceremony_id: "the ceremony the intervention names".to_owned(),
+            }),
+            Err(error) => Err(ApiError::Refused {
+                reason: error.to_string(),
+            }),
+        }
+    }
+
+    async fn respond_to_intervention(
+        &self,
+        request: RespondToInterventionRequest,
+    ) -> Result<CeremonySummary, ApiError> {
+        let input = respond_input(request).map_err(|error| ApiError::Refused {
+            reason: error.to_string(),
+        })?;
+        match self.respond_to_intervention(input).await {
+            Ok(instance) => Ok(summarize(&instance)),
+            Err(DomainError::NotFound { .. }) => Err(ApiError::CeremonyNotFound {
+                ceremony_id: "the ceremony the intervention names".to_owned(),
+            }),
+            Err(error) => Err(ApiError::Refused {
+                reason: error.to_string(),
+            }),
         }
     }
 
@@ -81,17 +129,7 @@ impl CeremonyEngineApi for EmbeddedChoreographer {
 /// Parse the plain request into the domain's terms — the one place a consumer's
 /// strings meet the engine's validation.
 fn start_input(request: StartCeremonyRequest) -> Result<StartCeremonyInput, DomainError> {
-    let actor_kind = match request.actor_kind.as_str() {
-        "human" => AuditActorKind::Human,
-        "agent" => AuditActorKind::Agent,
-        "service" => AuditActorKind::Service,
-        "engine" => AuditActorKind::Engine,
-        _ => {
-            return Err(DomainError::InvalidCharacters {
-                field: "actor_kind",
-            })
-        }
-    };
+    let actor_kind = parse_actor_kind(&request.actor_kind)?;
     Ok(StartCeremonyInput::new(
         CeremonyId::new(request.ceremony_id)?,
         CeremonyName::new(request.definition_name)?,
@@ -111,6 +149,11 @@ fn summarize(instance: &CeremonyInstance) -> CeremonySummary {
             .bound_definition()
             .map(choreo_core::value_objects::CeremonyDefinitionDigest::to_hex),
         current_state: instance.current_state().as_str().to_owned(),
+        interventions: instance
+            .interventions()
+            .iter()
+            .map(intervention_view)
+            .collect(),
         participants: instance
             .participant_bindings()
             .values()
@@ -124,6 +167,93 @@ fn summarize(instance: &CeremonyInstance) -> CeremonySummary {
         created_at_millis: millis(instance.created_at()),
         updated_at_millis: millis(instance.updated_at()),
         completed_at_millis: instance.completed_at().map(millis),
+    }
+}
+
+fn parse_actor_kind(raw: &str) -> Result<AuditActorKind, DomainError> {
+    match raw {
+        "human" => Ok(AuditActorKind::Human),
+        "agent" => Ok(AuditActorKind::Agent),
+        "service" => Ok(AuditActorKind::Service),
+        "engine" => Ok(AuditActorKind::Engine),
+        _ => Err(DomainError::InvalidCharacters {
+            field: "actor_kind",
+        }),
+    }
+}
+
+fn parse_intervention_kind(raw: &str) -> Result<CeremonyInterventionKind, DomainError> {
+    match raw {
+        "opinion" => Ok(CeremonyInterventionKind::Opinion),
+        "investigation" => Ok(CeremonyInterventionKind::Investigation),
+        "action" => Ok(CeremonyInterventionKind::Action),
+        _ => Err(DomainError::InvalidCharacters {
+            field: "intervention_kind",
+        }),
+    }
+}
+
+fn parse_target(role_ids: Vec<String>) -> Result<CeremonyInterventionTarget, DomainError> {
+    if role_ids.is_empty() {
+        return Ok(CeremonyInterventionTarget::Table);
+    }
+    let roles = role_ids
+        .into_iter()
+        .map(RoleId::new)
+        .collect::<Result<Vec<_>, _>>()?;
+    CeremonyInterventionTarget::roles(roles)
+}
+
+fn raise_input(
+    request: RaiseInterventionRequest,
+) -> Result<RequestCeremonyInterventionInput, DomainError> {
+    Ok(RequestCeremonyInterventionInput::new(
+        CeremonyId::new(request.ceremony_id)?,
+        CeremonyInterventionId::new(request.intervention_id)?,
+        RoleId::new(request.role_id)?,
+        parse_actor_kind(&request.role_kind)?,
+        parse_intervention_kind(&request.kind)?,
+        parse_target(request.target_role_ids)?,
+        CeremonyInterventionContent::new(request.request, Attributes::empty())?,
+    ))
+}
+
+fn respond_input(
+    request: RespondToInterventionRequest,
+) -> Result<RespondToCeremonyInterventionInput, DomainError> {
+    Ok(RespondToCeremonyInterventionInput::new(
+        CeremonyId::new(request.ceremony_id)?,
+        CeremonyInterventionId::new(request.intervention_id)?,
+        RoleId::new(request.role_id)?,
+        parse_actor_kind(&request.role_kind)?,
+        CeremonyInterventionContent::new(request.content, Attributes::empty())?,
+    ))
+}
+
+fn intervention_view(intervention: &CeremonyIntervention) -> InterventionView {
+    InterventionView {
+        intervention_id: intervention.id().as_str().to_owned(),
+        kind: intervention.kind().as_label().to_owned(),
+        requested_by: intervention.requested_by().as_str().to_owned(),
+        target_role_ids: match intervention.target() {
+            CeremonyInterventionTarget::Table => Vec::new(),
+            CeremonyInterventionTarget::Roles(roles) => {
+                roles.iter().map(|role| role.as_str().to_owned()).collect()
+            }
+        },
+        request: intervention.request().message().to_owned(),
+        open: intervention.status().is_open(),
+        responses: intervention
+            .responses()
+            .iter()
+            .map(|response| InterventionResponseView {
+                role_id: response.role_id().as_str().to_owned(),
+                content: response.content().message().to_owned(),
+                responded_at_millis: millis(response.responded_at()),
+            })
+            .collect(),
+        created_at_millis: millis(intervention.created_at()),
+        closed_at_millis: intervention.closed_at().map(millis),
     }
 }
 

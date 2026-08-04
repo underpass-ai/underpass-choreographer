@@ -2,6 +2,8 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+use crate::InterventionView;
+
 /// One seat at a ceremony, as a consumer sees it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CeremonyParticipant {
@@ -28,6 +30,8 @@ pub struct CeremonySummary {
     pub definition_digest: Option<String>,
     pub current_state: String,
     pub participants: Vec<CeremonyParticipant>,
+    /// The table's conversation: every intervention raised, with its answers.
+    pub interventions: Vec<InterventionView>,
     /// The context the instance was started with. This is where a consuming
     /// product keeps its own reference to its own aggregate — the engine
     /// carries the keys without knowing what they mean.
@@ -54,6 +58,7 @@ mod tests {
                 specialty: "coordination".to_owned(),
                 bound_at_millis: 1_700_000_000_000,
             }],
+            interventions: Vec::new(),
             context: BTreeMap::from([(
                 "requested_by".to_owned(),
                 serde_json::Value::String("consumer-1".to_owned()),
@@ -78,6 +83,7 @@ mod tests {
             definition_digest: None,
             current_state: "STARTED".to_owned(),
             participants: Vec::new(),
+            interventions: Vec::new(),
             context: BTreeMap::new(),
             created_at_millis: 1,
             updated_at_millis: 1,

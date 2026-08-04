@@ -20,12 +20,17 @@ mod api_capabilities;
 mod api_error;
 mod ceremony_engine_api;
 mod ceremony_summary;
+mod intervention_views;
 mod start_ceremony_request;
 
 pub use api_capabilities::ApiCapabilities;
 pub use api_error::ApiError;
 pub use ceremony_engine_api::CeremonyEngineApi;
 pub use ceremony_summary::{CeremonyParticipant, CeremonySummary};
+pub use intervention_views::{
+    InterventionResponseView, InterventionView, RaiseInterventionRequest,
+    RespondToInterventionRequest,
+};
 pub use start_ceremony_request::StartCeremonyRequest;
 
 /// The revision of this contract.
