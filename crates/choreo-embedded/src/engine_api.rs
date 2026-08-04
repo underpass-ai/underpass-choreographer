@@ -4,13 +4,18 @@
 //! allowed: domain aggregate in, plain view out. Nothing of `choreo-core`
 //! crosses the trait.
 
+use std::collections::BTreeMap;
+
 use choreo_api::{
     ApiCapabilities, ApiError, CeremonyEngineApi, CeremonyParticipant, CeremonySummary,
-    CONTRACT_VERSION,
+    StartCeremonyRequest, CONTRACT_VERSION,
 };
+use choreo_app::usecases::StartCeremonyInput;
 use choreo_core::entities::CeremonyInstance;
 use choreo_core::error::DomainError;
-use choreo_core::value_objects::CeremonyId;
+use choreo_core::value_objects::{
+    Attributes, AuditActorKind, CeremonyContext, CeremonyId, CeremonyName, CeremonyVersion,
+};
 use time::OffsetDateTime;
 
 use crate::{EmbeddedChoreographer, VERSION};
@@ -19,7 +24,7 @@ use crate::{EmbeddedChoreographer, VERSION};
 ///
 /// Listed here, next to the implementation, so that adding a method to the
 /// trait without adding its name is a diff a reviewer sees in one place.
-const CAPABILITIES: [&str; 2] = ["list_ceremonies", "get_ceremony"];
+const CAPABILITIES: [&str; 3] = ["list_ceremonies", "get_ceremony", "start_ceremony"];
 
 #[async_trait::async_trait]
 impl CeremonyEngineApi for EmbeddedChoreographer {
@@ -47,6 +52,54 @@ impl CeremonyEngineApi for EmbeddedChoreographer {
             Err(error) => Err(unavailable(&error)),
         }
     }
+
+    async fn start_ceremony(
+        &self,
+        request: StartCeremonyRequest,
+    ) -> Result<CeremonySummary, ApiError> {
+        let ceremony_id = request.ceremony_id.clone();
+        let input = start_input(request).map_err(|error| ApiError::Refused {
+            reason: error.to_string(),
+        })?;
+        match self.start_published(input).await {
+            Ok(instance) => Ok(summarize(&instance)),
+            // Nothing published under that name and version. Publishing is the
+            // remedy, not retrying.
+            Err(DomainError::NotFound { .. }) => Err(ApiError::CeremonyNotFound {
+                ceremony_id: format!("no published definition for `{ceremony_id}`"),
+            }),
+            // Everything else the domain says here is about the request — a
+            // taken identity, a defective field. Refused, so nobody retries an
+            // answer that will not change.
+            Err(error) => Err(ApiError::Refused {
+                reason: error.to_string(),
+            }),
+        }
+    }
+}
+
+/// Parse the plain request into the domain's terms — the one place a consumer's
+/// strings meet the engine's validation.
+fn start_input(request: StartCeremonyRequest) -> Result<StartCeremonyInput, DomainError> {
+    let actor_kind = match request.actor_kind.as_str() {
+        "human" => AuditActorKind::Human,
+        "agent" => AuditActorKind::Agent,
+        "service" => AuditActorKind::Service,
+        "engine" => AuditActorKind::Engine,
+        _ => {
+            return Err(DomainError::InvalidCharacters {
+                field: "actor_kind",
+            })
+        }
+    };
+    Ok(StartCeremonyInput::new(
+        CeremonyId::new(request.ceremony_id)?,
+        CeremonyName::new(request.definition_name)?,
+        CeremonyVersion::new(request.definition_version)?,
+        CeremonyContext::new(Attributes::new(BTreeMap::from_iter(request.context))?),
+        request.actor_id,
+        actor_kind,
+    ))
 }
 
 fn summarize(instance: &CeremonyInstance) -> CeremonySummary {

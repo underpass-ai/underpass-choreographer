@@ -6,7 +6,9 @@
 //! leaking; core types appear only to arrange the scene.
 
 use choreo_adapters::yaml::CeremonyDefinitionYaml;
-use choreo_api::{ApiError, CeremonyEngineApi, CONTRACT_VERSION};
+use std::collections::BTreeMap;
+
+use choreo_api::{ApiError, CeremonyEngineApi, StartCeremonyRequest, CONTRACT_VERSION};
 use choreo_app::usecases::RunCeremonyInput;
 use choreo_core::entities::CeremonyDefinition;
 use choreo_core::value_objects::{
@@ -70,8 +72,9 @@ async fn the_report_names_the_contract_the_release_and_every_method() {
     assert_eq!(report.contract_version(), CONTRACT_VERSION);
     assert_eq!(report.library_version(), VERSION);
     assert!(report.supports("list_ceremonies"));
+    assert!(report.supports("get_ceremony"));
     assert!(
-        report.supports("get_ceremony"),
+        report.supports("start_ceremony"),
         "a method that exists but is not declared cannot be checked at startup"
     );
 }
@@ -148,4 +151,95 @@ async fn an_instance_from_an_unpublished_draft_carries_no_digest() {
         "a digest is a claim that a published, immutable definition ran; a \
          draft run must not make it"
     );
+}
+
+fn start_request(ceremony_id: &str) -> StartCeremonyRequest {
+    StartCeremonyRequest {
+        ceremony_id: ceremony_id.to_owned(),
+        definition_name: "api_linear".to_owned(),
+        definition_version: "1.0".to_owned(),
+        context: BTreeMap::from([(
+            "requested_by".to_owned(),
+            serde_json::Value::String("consumer-1".to_owned()),
+        )]),
+        actor_id: "operator-1".to_owned(),
+        actor_kind: "service".to_owned(),
+    }
+}
+
+async fn engine_with_published_definition() -> EmbeddedChoreographer {
+    let embedded = EmbeddedChoreographer::default();
+    let definition = CeremonyDefinitionYaml::parse_str(LINEAR_CEREMONY).unwrap();
+    embedded
+        .publish_definition(definition)
+        .await
+        .expect("the definition publishes");
+    embedded
+}
+
+#[tokio::test]
+async fn a_contract_started_ceremony_is_always_digest_bound() {
+    let embedded = engine_with_published_definition().await;
+
+    let started = embedded
+        .start_ceremony(start_request("api-started"))
+        .await
+        .expect("the published definition starts");
+
+    assert_eq!(started.ceremony_id, "api-started");
+    assert!(
+        started.definition_digest.is_some(),
+        "every instance started through the contract comes from a published \
+         definition, so every one of them is provable — no draft-shaped \
+         exception to remember"
+    );
+    assert_eq!(
+        started.context.get("requested_by"),
+        Some(&serde_json::Value::String("consumer-1".to_owned())),
+        "the consumer's keys come back unchanged"
+    );
+    assert!(started.completed_at_millis.is_none());
+}
+
+#[tokio::test]
+async fn starting_an_unpublished_definition_says_publishing_is_the_remedy() {
+    let embedded = EmbeddedChoreographer::default();
+
+    let error = embedded
+        .start_ceremony(start_request("api-unpublished"))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(error, ApiError::CeremonyNotFound { .. }),
+        "nothing is published; retrying will not publish it: {error}"
+    );
+}
+
+#[tokio::test]
+async fn a_taken_identity_is_refused_not_restarted() {
+    let embedded = engine_with_published_definition().await;
+    embedded
+        .start_ceremony(start_request("api-taken"))
+        .await
+        .expect("the first start lands");
+
+    let error = embedded
+        .start_ceremony(start_request("api-taken"))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(error, ApiError::Refused { .. }),
+        "an identity is one instance forever; the answer is a new identity, \
+         never a restart of someone else's: {error}"
+    );
+}
+
+#[tokio::test]
+async fn an_unknown_actor_kind_is_refused_rather_than_guessed_at() {
+    let embedded = engine_with_published_definition().await;
+    let mut request = start_request("api-actor");
+    request.actor_kind = "robot".to_owned();
+
+    let error = embedded.start_ceremony(request).await.unwrap_err();
+    assert!(matches!(error, ApiError::Refused { .. }), "{error}");
 }
