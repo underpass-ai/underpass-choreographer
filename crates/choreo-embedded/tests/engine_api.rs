@@ -393,3 +393,120 @@ async fn answering_a_question_nobody_asked_is_refused() {
         "{error}"
     );
 }
+
+/// Parses as a draft, but is not publishable: both transitions point at
+/// states nobody declared — two independent defects at two loci.
+const BROKEN_DRAFT: &str = r#"
+version: "1.0"
+name: "api_broken"
+states:
+  - id: STARTED
+    initial: true
+transitions:
+  - from: STARTED
+    to: NOWHERE
+    trigger: finish
+  - from: STARTED
+    to: ELSEWHERE
+    trigger: escalate
+roles:
+  - id: SYSTEM
+    allowed_actions:
+      - finish
+      - escalate
+"#;
+
+#[tokio::test]
+async fn analysis_reports_every_defect_at_once() {
+    let embedded = EmbeddedChoreographer::default();
+
+    let analysis = embedded
+        .analyze_definition(BROKEN_DRAFT)
+        .await
+        .expect("a parseable draft is analyzed, defective or not");
+
+    assert!(
+        !analysis.publishable,
+        "a draft with blocking defects must not read as publishable: {analysis:?}"
+    );
+    assert!(
+        analysis
+            .defects
+            .iter()
+            .filter(|defect| defect.blocking)
+            .count()
+            >= 2,
+        "two transitions into nowhere are two defects, and fixing them one \
+         round trip at a time spends the author's attention: {analysis:?}"
+    );
+    for defect in &analysis.defects {
+        assert!(
+            !defect.locus.is_empty() && !defect.defect.is_empty(),
+            "a defect without a place and a sentence cannot be acted on: {defect:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn garbage_is_refused_as_not_a_definition_at_all() {
+    let embedded = EmbeddedChoreographer::default();
+    let error = embedded
+        .analyze_definition("{{{{ this is not yaml")
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(error, ApiError::Refused { .. }),
+        "garbage is not a defective definition; it is not a definition: {error}"
+    );
+}
+
+#[tokio::test]
+async fn publication_is_idempotent_on_identical_content_and_immutable_otherwise() {
+    let embedded = EmbeddedChoreographer::default();
+
+    // Qualified: the engine's own inherent method shares the name and takes
+    // the domain type; consumers reach the contract through a generic bound.
+    let first = CeremonyEngineApi::publish_definition(&embedded, LINEAR_CEREMONY)
+        .await
+        .expect("a valid definition publishes");
+    assert_eq!(first.name, "api_linear");
+    assert!(!first.digest.is_empty());
+    assert!(!first.already_published);
+
+    let again = CeremonyEngineApi::publish_definition(&embedded, LINEAR_CEREMONY)
+        .await
+        .expect("republishing identical content is a safe retry");
+    assert!(again.already_published);
+    assert_eq!(
+        again.digest, first.digest,
+        "the same bytes publish the same digest, or the digest proves nothing"
+    );
+
+    // Same name and version, different content: immutable means refused.
+    let different = LINEAR_CEREMONY.replace("embedded_noop", "host_callback");
+    let error = CeremonyEngineApi::publish_definition(&embedded, &different)
+        .await
+        .unwrap_err();
+    match &error {
+        ApiError::Refused { reason } => assert!(
+            reason.contains("publish a new version"),
+            "a refusal without a next step invites someone to look for an \
+             overwrite: {reason}"
+        ),
+        other => panic!("an occupied version must refuse: {other}"),
+    }
+}
+
+#[tokio::test]
+async fn a_contract_published_definition_is_startable_through_the_contract() {
+    let embedded = EmbeddedChoreographer::default();
+    CeremonyEngineApi::publish_definition(&embedded, LINEAR_CEREMONY)
+        .await
+        .expect("publishes");
+
+    let started = embedded
+        .start_ceremony(start_request("api-authoring-loop"))
+        .await
+        .expect("the full authoring loop closes: publish, then start");
+    assert!(started.definition_digest.is_some());
+}

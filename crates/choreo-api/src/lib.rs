@@ -18,6 +18,7 @@
 
 mod api_capabilities;
 mod api_error;
+mod authoring_views;
 mod ceremony_engine_api;
 mod ceremony_summary;
 mod intervention_views;
@@ -25,6 +26,7 @@ mod start_ceremony_request;
 
 pub use api_capabilities::ApiCapabilities;
 pub use api_error::ApiError;
+pub use authoring_views::{DefinitionAnalysisView, DefinitionDefectView, PublishedDefinitionView};
 pub use ceremony_engine_api::CeremonyEngineApi;
 pub use ceremony_summary::{CeremonyParticipant, CeremonySummary};
 pub use intervention_views::{

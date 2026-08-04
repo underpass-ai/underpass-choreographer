@@ -1,6 +1,6 @@
 use crate::{
-    ApiCapabilities, ApiError, CeremonySummary, RaiseInterventionRequest,
-    RespondToInterventionRequest, StartCeremonyRequest,
+    ApiCapabilities, ApiError, CeremonySummary, DefinitionAnalysisView, PublishedDefinitionView,
+    RaiseInterventionRequest, RespondToInterventionRequest, StartCeremonyRequest,
 };
 
 /// What a consuming product may ask of the embedded engine.
@@ -54,4 +54,27 @@ pub trait CeremonyEngineApi: Send + Sync {
         &self,
         request: RespondToInterventionRequest,
     ) -> Result<CeremonySummary, ApiError>;
+
+    /// Analyze a definition draft, reporting every defect at once.
+    /// Capability `analyze_definition`.
+    ///
+    /// A draft that does not even parse is `Refused` — it is not a defective
+    /// definition, it is not a definition. Anything that parses gets the full
+    /// report, publishable or not.
+    async fn analyze_definition(
+        &self,
+        definition_yaml: &str,
+    ) -> Result<DefinitionAnalysisView, ApiError>;
+
+    /// Publish a definition, immutably. Capability `publish_definition`.
+    ///
+    /// Idempotent on identical content: republishing the same bytes under the
+    /// same name and version answers `already_published` rather than refusing,
+    /// which is what makes a retry safe. A version taken by *different*
+    /// content is `Refused` — a published version is immutable, and the
+    /// answer is a new version, never an overwrite.
+    async fn publish_definition(
+        &self,
+        definition_yaml: &str,
+    ) -> Result<PublishedDefinitionView, ApiError>;
 }

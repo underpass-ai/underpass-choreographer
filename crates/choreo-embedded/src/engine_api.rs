@@ -6,10 +6,12 @@
 
 use std::collections::BTreeMap;
 
+use choreo_adapters::yaml::CeremonyDefinitionYaml;
 use choreo_api::{
     ApiCapabilities, ApiError, CeremonyEngineApi, CeremonyParticipant, CeremonySummary,
-    InterventionResponseView, InterventionView, RaiseInterventionRequest,
-    RespondToInterventionRequest, StartCeremonyRequest, CONTRACT_VERSION,
+    DefinitionAnalysisView, DefinitionDefectView, InterventionResponseView, InterventionView,
+    PublishedDefinitionView, RaiseInterventionRequest, RespondToInterventionRequest,
+    StartCeremonyRequest, CONTRACT_VERSION,
 };
 use choreo_app::usecases::{
     RequestCeremonyInterventionInput, RespondToCeremonyInterventionInput, StartCeremonyInput,
@@ -30,12 +32,14 @@ use crate::{EmbeddedChoreographer, VERSION};
 ///
 /// Listed here, next to the implementation, so that adding a method to the
 /// trait without adding its name is a diff a reviewer sees in one place.
-const CAPABILITIES: [&str; 5] = [
+const CAPABILITIES: [&str; 7] = [
     "list_ceremonies",
     "get_ceremony",
     "start_ceremony",
     "raise_intervention",
     "respond_to_intervention",
+    "analyze_definition",
+    "publish_definition",
 ];
 
 #[async_trait::async_trait]
@@ -94,6 +98,71 @@ impl CeremonyEngineApi for EmbeddedChoreographer {
             Ok(instance) => Ok(summarize(&instance)),
             Err(DomainError::NotFound { .. }) => Err(ApiError::CeremonyNotFound {
                 ceremony_id: "the ceremony the intervention names".to_owned(),
+            }),
+            Err(error) => Err(ApiError::Refused {
+                reason: error.to_string(),
+            }),
+        }
+    }
+
+    async fn analyze_definition(
+        &self,
+        definition_yaml: &str,
+    ) -> Result<DefinitionAnalysisView, ApiError> {
+        let draft = CeremonyDefinitionYaml::parse_draft_str(definition_yaml).map_err(|error| {
+            ApiError::Refused {
+                reason: format!("that is not a definition at all: {error}"),
+            }
+        })?;
+        let report = draft.analyze();
+        Ok(DefinitionAnalysisView {
+            publishable: report.is_valid(),
+            defects: report
+                .findings()
+                .iter()
+                .map(|finding| DefinitionDefectView {
+                    severity: match finding.severity() {
+                        choreo_core::value_objects::CeremonyValidationSeverity::Error => {
+                            "error".to_owned()
+                        }
+                        choreo_core::value_objects::CeremonyValidationSeverity::Warning => {
+                            "warning".to_owned()
+                        }
+                    },
+                    locus: finding.locus().to_string(),
+                    defect: finding.defect().to_string(),
+                    blocking: finding.is_blocking(),
+                })
+                .collect(),
+        })
+    }
+
+    async fn publish_definition(
+        &self,
+        definition_yaml: &str,
+    ) -> Result<PublishedDefinitionView, ApiError> {
+        let definition = CeremonyDefinitionYaml::parse_str(definition_yaml).map_err(|error| {
+            ApiError::Refused {
+                reason: format!("the definition does not construct: {error}"),
+            }
+        })?;
+        match self.publish_definition(definition).await {
+            Ok(choreo_core::entities::PublicationOutcome::Published(published)) => {
+                Ok(published_view(&published, false))
+            }
+            Ok(choreo_core::entities::PublicationOutcome::AlreadyPublished(published)) => {
+                Ok(published_view(&published, true))
+            }
+            Ok(choreo_core::entities::PublicationOutcome::VersionOccupied {
+                published,
+                offered,
+            }) => Err(ApiError::Refused {
+                reason: format!(
+                    "that name and version already publish {}, not {}; a \
+                     published version is immutable — publish a new version",
+                    published.to_hex(),
+                    offered.to_hex()
+                ),
             }),
             Err(error) => Err(ApiError::Refused {
                 reason: error.to_string(),
@@ -167,6 +236,18 @@ fn summarize(instance: &CeremonyInstance) -> CeremonySummary {
         created_at_millis: millis(instance.created_at()),
         updated_at_millis: millis(instance.updated_at()),
         completed_at_millis: instance.completed_at().map(millis),
+    }
+}
+
+fn published_view(
+    published: &choreo_core::entities::PublishedCeremonyDefinition,
+    already_published: bool,
+) -> PublishedDefinitionView {
+    PublishedDefinitionView {
+        name: published.name().as_str().to_owned(),
+        version: published.version().as_str().to_owned(),
+        digest: published.digest().to_hex(),
+        already_published,
     }
 }
 
