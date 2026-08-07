@@ -112,6 +112,7 @@ jobs:
         # runtime.
         run: |
           cargo clippy --workspace --all-targets --locked \
+            --features choreo-embedded/redb \
             --features choreo-adapters/agent-anthropic \
             --features choreo-adapters/agent-openai \
             --features choreo-adapters/agent-vllm \
@@ -151,6 +152,7 @@ jobs:
         # success without it.
         run: |
           cargo test --workspace --locked \
+            --features choreo-embedded/redb \
             --features choreo-adapters/agent-anthropic \
             --features choreo-adapters/agent-openai \
             --features choreo-adapters/agent-vllm \

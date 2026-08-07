@@ -19,6 +19,9 @@ pub struct DefinitionDefectView {
 /// defects one at a time spends the author's attention on round trips.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DefinitionAnalysisView {
+    /// Identity declared by the parsed draft.
+    pub definition_name: String,
+    pub definition_version: String,
     /// Whether the draft, as analyzed, could be published.
     pub publishable: bool,
     pub defects: Vec<DefinitionDefectView>,
@@ -45,6 +48,8 @@ mod tests {
     #[test]
     fn an_analysis_survives_the_wire() {
         let analysis = DefinitionAnalysisView {
+            definition_name: "incident_response".to_owned(),
+            definition_version: "1.0".to_owned(),
             publishable: false,
             defects: vec![DefinitionDefectView {
                 severity: "error".to_owned(),

@@ -425,6 +425,9 @@ async fn analysis_reports_every_defect_at_once() {
         .await
         .expect("a parseable draft is analyzed, defective or not");
 
+    assert_eq!(analysis.definition_name, "api_broken");
+    assert_eq!(analysis.definition_version, "1.0");
+
     assert!(
         !analysis.publishable,
         "a draft with blocking defects must not read as publishable: {analysis:?}"

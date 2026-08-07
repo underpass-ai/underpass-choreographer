@@ -39,4 +39,4 @@ pub use start_ceremony_request::StartCeremonyRequest;
 ///
 /// Moves on meaning, not on release: adding a capability keeps the version,
 /// changing what an existing field or method means raises it.
-pub const CONTRACT_VERSION: u32 = 1;
+pub const CONTRACT_VERSION: u32 = 2;

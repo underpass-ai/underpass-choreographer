@@ -1,6 +1,10 @@
 use std::fmt;
 use std::sync::Arc;
 
+#[cfg(feature = "redb")]
+use choreo_adapters::redb::RedbCeremonyStore;
+#[cfg(feature = "redb")]
+use choreo_api::ApiError;
 use choreo_app::services::{SessionJournal, SessionMemoryRecorder};
 use choreo_app::usecases::{
     ApplyCeremonyTransitionInput, ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardInput,
@@ -64,6 +68,25 @@ pub struct EmbeddedChoreographer {
 }
 
 impl EmbeddedChoreographer {
+    /// Open the durable embedded distribution through its public boundary.
+    ///
+    /// The provider owns the concrete store and its internal ports. A host
+    /// receives only the embedded facade, so a storage refactor cannot leak
+    /// provider implementation types into the consumer's dependency graph.
+    #[cfg(feature = "redb")]
+    pub fn open_redb(path: impl AsRef<std::path::Path>) -> Result<Self, ApiError> {
+        let store =
+            Arc::new(
+                RedbCeremonyStore::open(path).map_err(|error| ApiError::Unavailable {
+                    reason: format!("the durable ceremony store did not open: {error}"),
+                })?,
+            );
+        Ok(Self::builder()
+            .with_ceremony_store(store.clone())
+            .with_definition_publications(store)
+            .build())
+    }
+
     pub(crate) fn new(
         definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
         publications: Arc<dyn CeremonyDefinitionPublicationPort>,

@@ -8,6 +8,10 @@ authors.workspace = true
 repository.workspace = true
 description = "In-process composition and host adapters for Underpass Choreographer."
 
+[features]
+default = []
+redb = ["choreo-adapters/redb"]
+
 [lints]
 workspace = true
 
@@ -21,4 +25,5 @@ time = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
+tempfile = "3"
 tokio = { workspace = true }

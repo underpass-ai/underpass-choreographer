@@ -116,6 +116,8 @@ impl CeremonyEngineApi for EmbeddedChoreographer {
         })?;
         let report = draft.analyze();
         Ok(DefinitionAnalysisView {
+            definition_name: draft.name().as_str().to_owned(),
+            definition_version: draft.version().as_str().to_owned(),
             publishable: report.is_valid(),
             defects: report
                 .findings()
