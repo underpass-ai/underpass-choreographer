@@ -48,7 +48,7 @@ mod tests {
     #[test]
     fn an_analysis_survives_the_wire() {
         let analysis = DefinitionAnalysisView {
-            definition_name: "incident_response".to_owned(),
+            definition_name: "scope_discovery".to_owned(),
             definition_version: "1.0".to_owned(),
             publishable: false,
             defects: vec![DefinitionDefectView {
