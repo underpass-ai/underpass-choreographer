@@ -36,9 +36,14 @@ async fn published_definition_and_instance_survive_reopening_via_the_public_surf
     assert_eq!(analysis.definition_name, "durable_public_contract");
     assert_eq!(analysis.definition_version, "1.0");
     assert!(analysis.publishable);
-    CeremonyEngineApi::publish_definition(&engine, DEFINITION)
+    let analyzed_digest = analysis
+        .definition_digest
+        .clone()
+        .expect("a publishable analysis names the publication identity");
+    let published = CeremonyEngineApi::publish_definition(&engine, DEFINITION)
         .await
         .expect("definition publishes");
+    assert_eq!(published.digest, analyzed_digest);
     engine
         .start_ceremony(StartCeremonyRequest {
             ceremony_id: "ceremony-1".to_owned(),
@@ -59,5 +64,8 @@ async fn published_definition_and_instance_survive_reopening_via_the_public_surf
         .expect("instance survives restart");
     assert_eq!(ceremony.definition_name, "durable_public_contract");
     assert_eq!(ceremony.definition_version, "1.0");
-    assert!(ceremony.definition_digest.is_some());
+    assert_eq!(
+        ceremony.definition_digest.as_deref(),
+        Some(analyzed_digest.as_str())
+    );
 }

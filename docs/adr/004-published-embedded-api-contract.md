@@ -31,6 +31,12 @@ engine, and nothing else:
 `CONTRACT_VERSION` moves on meaning, not on release: adding a capability keeps
 the version, changing what an existing field or method means raises it.
 
+Contract v3 makes the canonical publication identity available during
+definition analysis. A publishable `DefinitionAnalysisView` carries the same
+digest that `PublishedDefinitionView` will return and a started ceremony will
+bind to. A defective draft carries no digest. This identity is derived from the
+validated executable definition, not from its YAML source bytes.
+
 Mutations are deliberately absent from v1. Starting, advancing and publishing
 have their own use cases, transactionality and audit inside the engine; a
 consumer that needs them coordinates through the engine's own surfaces. The
@@ -51,6 +57,8 @@ landing there would be the defect ADR-001 names, published.
   testable against a stub of the trait alone.
 - Instants travel as unix milliseconds and digests as hex strings: the contract
   does not export our choice of time or hash types as a dependency.
+- A consumer can bind an approval or publication intent to the canonical digest
+  before asking the engine to publish, then verify the returned receipt exactly.
 - An instance started from an unpublished draft has **no** digest rather than a
   placeholder — a digest is a claim that a published, immutable definition ran,
   and a draft run must not make it.

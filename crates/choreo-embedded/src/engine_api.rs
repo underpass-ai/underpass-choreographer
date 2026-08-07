@@ -115,10 +115,31 @@ impl CeremonyEngineApi for EmbeddedChoreographer {
             }
         })?;
         let report = draft.analyze();
+        let publishable = report.is_valid();
+        let definition_digest = if publishable {
+            let definition = draft.clone().publish().map_err(|error| ApiError::Refused {
+                reason: format!(
+                    "the analyzed definition could not derive its publication identity: {error}"
+                ),
+            })?;
+            Some(
+                definition
+                    .digest()
+                    .map_err(|error| ApiError::Refused {
+                        reason: format!(
+                            "the analyzed definition could not derive its publication identity: {error}"
+                        ),
+                    })?
+                    .to_hex(),
+            )
+        } else {
+            None
+        };
         Ok(DefinitionAnalysisView {
             definition_name: draft.name().as_str().to_owned(),
             definition_version: draft.version().as_str().to_owned(),
-            publishable: report.is_valid(),
+            publishable,
+            definition_digest,
             defects: report
                 .findings()
                 .iter()

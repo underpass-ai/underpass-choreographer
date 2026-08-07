@@ -24,6 +24,12 @@ pub struct DefinitionAnalysisView {
     pub definition_version: String,
     /// Whether the draft, as analyzed, could be published.
     pub publishable: bool,
+    /// Canonical hex digest the executable definition will publish with.
+    ///
+    /// Present exactly when the draft is publishable. This is the same
+    /// identity [`PublishedDefinitionView::digest`] returns and ceremony
+    /// instances bind to; it is not a hash of the source bytes.
+    pub definition_digest: Option<String>,
     pub defects: Vec<DefinitionDefectView>,
 }
 
@@ -51,6 +57,7 @@ mod tests {
             definition_name: "scope_discovery".to_owned(),
             definition_version: "1.0".to_owned(),
             publishable: false,
+            definition_digest: None,
             defects: vec![DefinitionDefectView {
                 severity: "error".to_owned(),
                 locus: "state `ORPHAN`".to_owned(),

@@ -433,6 +433,10 @@ async fn analysis_reports_every_defect_at_once() {
         "a draft with blocking defects must not read as publishable: {analysis:?}"
     );
     assert!(
+        analysis.definition_digest.is_none(),
+        "a defective draft must not claim a publication identity: {analysis:?}"
+    );
+    assert!(
         analysis
             .defects
             .iter()
@@ -467,6 +471,15 @@ async fn garbage_is_refused_as_not_a_definition_at_all() {
 async fn publication_is_idempotent_on_identical_content_and_immutable_otherwise() {
     let embedded = EmbeddedChoreographer::default();
 
+    let analysis = embedded
+        .analyze_definition(LINEAR_CEREMONY)
+        .await
+        .expect("a valid definition analyzes");
+    assert!(analysis.publishable);
+    let analyzed_digest = analysis
+        .definition_digest
+        .expect("a publishable analysis names the publication identity");
+
     // Qualified: the engine's own inherent method shares the name and takes
     // the domain type; consumers reach the contract through a generic bound.
     let first = CeremonyEngineApi::publish_definition(&embedded, LINEAR_CEREMONY)
@@ -474,6 +487,10 @@ async fn publication_is_idempotent_on_identical_content_and_immutable_otherwise(
         .expect("a valid definition publishes");
     assert_eq!(first.name, "api_linear");
     assert!(!first.digest.is_empty());
+    assert_eq!(
+        first.digest, analyzed_digest,
+        "analysis and publication must identify the same executable definition"
+    );
     assert!(!first.already_published);
 
     let again = CeremonyEngineApi::publish_definition(&embedded, LINEAR_CEREMONY)
