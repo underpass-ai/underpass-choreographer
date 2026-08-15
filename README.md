@@ -1,5 +1,9 @@
 # Underpass Choreographer
 
+> **⚠️ Project paused — this repository has moved.**
+> Active development continues at **[underpass-ai/made](https://github.com/underpass-ai/made)** (MADE by Underpass — ceremony-driven multi-agent deliberation).
+> This repository is kept for historical reference and is no longer maintained.
+
 > Part of [Underpass AI](https://underpassai.com) — memory and execution infrastructure for reliable AI agents.
 
 Event-driven coordination plane for councils of specialist agents. It runs
